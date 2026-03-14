@@ -1,0 +1,21 @@
+# Python venv (recreated per-platform)
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Runtime artifacts
+.dictation.log
+.dictation.pid
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code local settings
+.claude/settings.local.json
+settings.json
+
+# OS
+.DS_Store
+Thumbs.db

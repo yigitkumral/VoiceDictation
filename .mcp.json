@@ -1,0 +1,23 @@
+{
+  "mcpServers": {
+    "context7": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@upstash/context7-mcp@latest"
+      ]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "C:\\Users\\yigit\\Desktop\\Yazilim\\VoiceDictation"
+      ]
+    },
+    "fetch": {
+      "command": "python",
+      "args": ["-m", "mcp_server_fetch"]
+    }
+  }
+}

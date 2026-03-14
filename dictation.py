@@ -1,0 +1,622 @@
+"""
+Voice Dictation Tool — Whisper tabanli sesli yazim araci.
+
+State Machine ile yonetilen birlesik kayit sistemi:
+  Baslat: F13 (sniper butonu) VEYA "Zugzwang" (sesle)
+  Durdur & Gonder: F13 (tekrar bas) VEYA "Zugzwang" (sesle, toggle)
+
+Sessizlikte otomatik gonderme YOK — sen durdurana kadar kayit devam eder.
+State gecisleri mutex ile korunur — race condition yok.
+
+Cross-platform: Windows + macOS
+
+Kullanim:
+    cd voice-dictation
+    # Windows:
+    ./venv/Scripts/python dictation.py
+    # macOS:
+    ./venv/bin/python dictation.py
+
+Cikis: Ctrl+Alt+Q (Windows) / Cmd+Alt+Q (macOS)
+"""
+
+import sys
+import os
+import time
+import platform
+import threading
+import re
+from enum import Enum
+
+# Windows cp1254 encoding fix
+if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
+    try:
+        sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+        sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+    except Exception:
+        pass
+
+# CUDA DLL'lerini PATH'e ekle (Windows + venv icin gerekli)
+if platform.system() == "Windows":
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _nvidia_dir = os.path.join(_script_dir, "venv", "Lib", "site-packages", "nvidia")
+    if os.path.isdir(_nvidia_dir):
+        for _pkg in os.listdir(_nvidia_dir):
+            _dll_dir = os.path.join(_nvidia_dir, _pkg, "bin")
+            if os.path.isdir(_dll_dir):
+                os.add_dll_directory(_dll_dir)
+                os.environ["PATH"] = _dll_dir + os.pathsep + os.environ.get("PATH", "")
+
+import io
+import wave
+import struct
+import numpy as np
+import sounddevice as sd
+import pyperclip
+if platform.system() == "Windows":
+    import winsound
+from pynput import keyboard as pynput_kb
+from faster_whisper import WhisperModel
+
+# --- PLATFORM ---
+IS_MAC = platform.system() == "Darwin"
+IS_WIN = platform.system() == "Windows"
+
+# --- AYARLAR ---
+
+WAKE_WORD = "zugzwang"
+
+# Sniper buton
+HOTKEY_RECORD = pynput_kb.Key.f13
+HOTKEY_RECORD_MODIFIERS = set()
+if IS_MAC:
+    HOTKEY_RECORD = pynput_kb.KeyCode.from_char("r")
+    HOTKEY_RECORD_MODIFIERS = {pynput_kb.Key.ctrl, pynput_kb.Key.alt}
+
+HOTKEY_QUIT_MODIFIERS = {pynput_kb.Key.ctrl, pynput_kb.Key.alt}
+if IS_MAC:
+    HOTKEY_QUIT_MODIFIERS = {pynput_kb.Key.cmd, pynput_kb.Key.alt}
+HOTKEY_QUIT_KEY = pynput_kb.KeyCode.from_char("q")
+
+MODEL_SIZE = "turbo"
+DEVICE = "cuda"
+COMPUTE_TYPE = "float16"
+
+SAMPLE_RATE = 16000
+CHANNELS = 1
+
+# Sessizlik algilama
+SILENCE_THRESHOLD = 0.008
+STOP_CHECK_SILENCE = 0.35
+LISTEN_SILENCE_DURATION = 0.5
+NO_SPEECH_TIMEOUT = 30.0
+
+INITIAL_PROMPT = (
+    "Zugzwang, "
+    "Claude, Claude Code, BMAD, Zugzwang, API, commit, deploy, push, pull, "
+    "merge, branch, refactor, component, TypeScript, React, OpenClaw, PRD, "
+    "MCP, sprint, story, pipeline, Winston, Amelia, workflow, endpoint, "
+    "frontend, backend, repository, npm, Node.js, VS Code, extension, "
+    "Anthropic, Sonnet, Opus, Haiku, token, prompt, agent, sub-agent, "
+    "party mode, orchestrator, gateway, Tailscale, Parsec, Discord"
+)
+
+
+# --- STATE MACHINE ---
+
+class State(Enum):
+    LISTENING = "listening"     # Wake word bekliyor
+    RECORDING = "recording"    # Aktif kayit
+    PROCESSING = "processing"  # Transcribe + gonderim yapiliyor
+    COOLDOWN = "cooldown"      # Gonderim sonrasi kisa bekleme
+
+
+class StateMachine:
+    """Thread-safe state machine. Tum gecisler tek mutex ile korunur."""
+
+    def __init__(self):
+        self._state = State.LISTENING
+        self._lock = threading.Lock()
+
+    @property
+    def state(self):
+        return self._state
+
+    def transition(self, from_state, to_state):
+        """Atomic state gecisi. Basarili ise True doner."""
+        with self._lock:
+            if isinstance(from_state, (list, tuple)):
+                if self._state not in from_state:
+                    return False
+            else:
+                if self._state != from_state:
+                    return False
+            self._state = to_state
+            return True
+
+    def force(self, to_state):
+        """Zorla state degistir (hata durumlarinda)."""
+        with self._lock:
+            self._state = to_state
+
+
+sm = StateMachine()
+
+
+# --- SES GERI BILDIRIMI ---
+
+def _make_wav(tones, volume=0.3, rate=22050):
+    samples = []
+    for freq, dur_ms in tones:
+        n = int(rate * dur_ms / 1000)
+        t = np.linspace(0, dur_ms / 1000, n, False)
+        envelope = np.ones(n)
+        fade = max(1, int(n * 0.15))
+        envelope[:fade] = np.linspace(0, 1, fade)
+        envelope[-fade:] = np.linspace(1, 0, fade)
+        samples.extend((volume * np.sin(2 * np.pi * freq * t) * envelope).tolist())
+
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(rate)
+        for s in samples:
+            wf.writeframes(struct.pack("<h", int(s * 32767)))
+    return buf.getvalue()
+
+_WAV_RECORDING = _make_wav([(520, 150), (780, 150)], 0.04)
+_WAV_SENT = _make_wav([(880, 120), (880, 120)], 0.04)
+_WAV_ERROR = _make_wav([(280, 250)], 0.03)
+
+def sound_recording():
+    if IS_WIN:
+        threading.Thread(target=lambda: winsound.PlaySound(_WAV_RECORDING, winsound.SND_MEMORY), daemon=True).start()
+
+def sound_sent():
+    if IS_WIN:
+        threading.Thread(target=lambda: winsound.PlaySound(_WAV_SENT, winsound.SND_MEMORY), daemon=True).start()
+
+def sound_error():
+    if IS_WIN:
+        threading.Thread(target=lambda: winsound.PlaySound(_WAV_ERROR, winsound.SND_MEMORY), daemon=True).start()
+
+
+# --- PASTE/SEND ---
+PASTE_KEY = "v"
+MODIFIER = pynput_kb.Key.cmd if IS_MAC else pynput_kb.Key.ctrl
+paste_controller = pynput_kb.Controller()
+_suppress_hotkey = False  # paste_and_send sirasinda hotkey'leri yoksay
+
+def paste_and_send():
+    global _suppress_hotkey
+    _suppress_hotkey = True
+    try:
+        time.sleep(0.3)
+        paste_controller.press(MODIFIER)
+        paste_controller.press(PASTE_KEY)
+        paste_controller.release(PASTE_KEY)
+        paste_controller.release(MODIFIER)
+        time.sleep(0.2)
+        paste_controller.press(pynput_kb.Key.enter)
+        paste_controller.release(pynput_kb.Key.enter)
+    finally:
+        time.sleep(0.1)
+        _suppress_hotkey = False
+
+
+# --- AUDIO STATE ---
+
+audio_frames = []
+listen_frames = []
+audio_lock = threading.Lock()    # audio_frames koruma
+listen_lock = threading.Lock()   # listen_frames koruma
+audio_stream = None
+model = None
+speech_detected = False
+last_speech_time = 0
+listen_speech_detected = False
+listen_last_speech_time = 0
+current_modifiers = set()
+should_quit = threading.Event()
+
+
+# --- MODEL ---
+
+def load_model():
+    global model
+    print(f"\n[...] Model yukleniyor: {MODEL_SIZE} ({DEVICE})...")
+    print("   (Ilk seferde model indirilecek, birkac dakika surebilir)\n")
+    model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
+    if DEVICE == "cuda":
+        print("[...] GPU warm-up yapiliyor...")
+        _dummy = np.zeros(SAMPLE_RATE, dtype=np.float32)
+        list(model.transcribe(_dummy, language="tr")[0])
+        print("[OK] GPU hazir!\n")
+    else:
+        print("[OK] Model hazir!\n")
+
+
+def quick_transcribe(audio_data):
+    segments, _ = model.transcribe(
+        audio_data, language="tr", initial_prompt=INITIAL_PROMPT,
+        beam_size=1, vad_filter=True,
+        vad_parameters=dict(min_silence_duration_ms=300),
+    )
+    return " ".join(seg.text.strip() for seg in segments)
+
+
+# --- REGEX ---
+
+# Whisper varyasyonlari: Zugzwang, Zuckzwang, ZUXWANG, Zvank, Zook Zvank, vb.
+_WAKE_RE = re.compile(
+    r"\bzu[cgkx]+s?z?w?[ao]n?[gk]\b"  # Zugzwang, Zuckzwang, Zuxwang, Zukwank
+    r"|\bzux\s*wang\b"                  # ZUXWANG
+    r"|\bzugs?\s*wang\b"                # ZUGS WANG, ZUG WANG
+    r"|\bzuck\s*zwang\b"                # ZUCK ZWANG
+    r"|\bzuks?\s*wang\b"                # ZUK WANG
+    r"|\bzugz?\s*wang\b"                # ZUGZ WANG
+    r"|\bz[uü]k\s*z?v[ao]n[gk]\b"      # Zük Zvank, Zuk Vank
+    r"|\bzo+k\s*z?v[ao]n[gk]\b"         # Zook Zvank
+    r"|\bzvank\b"                        # Zvank (tam kelime, sadece bu form)
+    , re.IGNORECASE
+)
+
+def has_wake_word(text):
+    return bool(_WAKE_RE.search(text))
+
+def extract_message(text):
+    """Son 'zugzwang' oncesindeki mesaji cikar."""
+    matches = list(_WAKE_RE.finditer(text))
+    if matches:
+        m = matches[-1]
+        msg = text[:m.start()].strip().strip(".,;:!? ")
+        return msg if msg else None
+    return None
+
+
+# --- AUDIO CALLBACK ---
+
+def audio_callback(indata, frames, time_info, status):
+    global speech_detected, last_speech_time
+    global listen_speech_detected, listen_last_speech_time
+
+    level = np.abs(indata).mean()
+    state = sm.state
+
+    if state == State.RECORDING:
+        with audio_lock:
+            audio_frames.append(indata.copy())
+        if level > SILENCE_THRESHOLD:
+            speech_detected = True
+            last_speech_time = time.time()
+
+    elif state == State.LISTENING:
+        with listen_lock:
+            listen_frames.append(indata.copy())
+        if level > SILENCE_THRESHOLD:
+            listen_speech_detected = True
+            listen_last_speech_time = time.time()
+
+
+# --- CORE ACTIONS ---
+
+def do_start_recording():
+    """LISTENING -> RECORDING gecisi. Basarisizsa False doner."""
+    global audio_frames, speech_detected, last_speech_time
+
+    if not sm.transition(State.LISTENING, State.RECORDING):
+        return False
+
+    # Listen buffer'daki sesi kayda aktar — mesajin basi kaybolmasin
+    with listen_lock:
+        carry_over = list(listen_frames)
+        listen_frames.clear()
+    with audio_lock:
+        audio_frames.clear()
+        audio_frames.extend(carry_over)
+
+    speech_detected = bool(carry_over)
+    last_speech_time = time.time()
+
+    sound_recording()
+    print("[REC] KAYIT BASLADI - F13 veya \"Zugzwang\" ile durdur")
+
+    # Stop word checker baslat
+    threading.Thread(target=stop_word_checker, daemon=True).start()
+    return True
+
+
+def do_send(msg):
+    """RECORDING -> PROCESSING -> COOLDOWN -> LISTENING gecisi."""
+    global _suppress_hotkey
+    if not sm.transition(State.RECORDING, State.PROCESSING):
+        return
+
+    try:
+        pyperclip.copy(msg)
+        print(f"[OK] >> {msg}")
+        sound_sent()
+        paste_and_send()
+        print("[GONDERILDI]\n")
+    finally:
+        sm.force(State.COOLDOWN)
+        _suppress_hotkey = True  # Cooldown boyunca hotkey'leri bastir
+        with listen_lock:
+            listen_frames.clear()
+        listen_speech_detected = False
+        time.sleep(1.5)
+        _suppress_hotkey = False
+        sm.force(State.LISTENING)
+
+
+def do_stop_and_send():
+    """F13 ile durdurma: RECORDING -> transcribe -> send."""
+    global _suppress_hotkey
+    if not sm.transition(State.RECORDING, State.PROCESSING):
+        return
+
+    with audio_lock:
+        frames_copy = list(audio_frames)
+
+    if not frames_copy or not speech_detected:
+        print("[!] Ses algilanamadi.\n")
+        sound_error()
+        sm.force(State.LISTENING)
+        return
+
+    print("[STOP] Durduruldu, transcribe ediliyor...")
+    audio_data = np.concatenate(frames_copy, axis=0).flatten()
+    text = quick_transcribe(audio_data)
+
+    if text:
+        msg = extract_message(text) if has_wake_word(text) else text
+        if not msg:
+            msg = text
+
+        pyperclip.copy(msg)
+        print(f"[OK] >> {msg}")
+        sound_sent()
+        paste_and_send()
+        print("[GONDERILDI]\n")
+    else:
+        print("[!] Ses algilanamadi.\n")
+        sound_error()
+
+    sm.force(State.COOLDOWN)
+    _suppress_hotkey = True
+    with listen_lock:
+        listen_frames.clear()
+    listen_speech_detected = False
+    time.sleep(1.5)
+    _suppress_hotkey = False
+    sm.force(State.LISTENING)
+
+
+# --- STOP WORD CHECKER ---
+
+def stop_word_checker():
+    """Kayit sirasinda 'Zugzwang' stop word'unu arar."""
+    global speech_detected, last_speech_time
+    last_check_frame_count = 0
+
+    while sm.state == State.RECORDING and not should_quit.is_set():
+        time.sleep(0.5)
+
+        if sm.state != State.RECORDING:
+            return  # State degisti, cik
+
+        if not speech_detected:
+            if time.time() - last_speech_time > NO_SPEECH_TIMEOUT:
+                print(f"[IPTAL] {int(NO_SPEECH_TIMEOUT)}sn konusma algilanamadi.\n")
+                sound_error()
+                sm.force(State.LISTENING)
+                return
+            continue
+
+        elapsed = time.time() - last_speech_time
+        if elapsed < STOP_CHECK_SILENCE:
+            continue
+
+        with audio_lock:
+            current_frame_count = len(audio_frames)
+        if current_frame_count <= last_check_frame_count:
+            continue
+
+        with audio_lock:
+            if not audio_frames:
+                continue
+            frames_copy = list(audio_frames)
+
+        last_check_frame_count = current_frame_count
+        audio_data = np.concatenate(frames_copy, axis=0).flatten()
+        print("[...] \"Zugzwang\" stop kontrolu yapiliyor...")
+        text = quick_transcribe(audio_data)
+
+        if sm.state != State.RECORDING:
+            return  # Transcribe sirasinda state degisti
+
+        if not text:
+            continue
+
+        print(f"[CHECK] Duydum: {text}")
+
+        if has_wake_word(text):
+            msg = extract_message(text)
+            if msg:
+                do_send(msg)
+                return
+            else:
+                # Sadece "Zugzwang" soylenmis, mesaj yok — kaydi iptal et
+                print("[IPTAL] Sadece toggle word soylendi, mesaj yok.\n")
+                sound_error()
+                sm.force(State.COOLDOWN)
+                listen_frames.clear()
+                listen_speech_detected = False
+                time.sleep(1.0)
+                sm.force(State.LISTENING)
+                return
+
+        # Yeni konusma bekle
+        speech_detected = False
+        last_speech_time = time.time()
+
+
+# --- WAKE WORD LISTENER ---
+
+def wake_word_listener():
+    global listen_frames, listen_speech_detected, listen_last_speech_time
+
+    while not should_quit.is_set():
+        time.sleep(0.1)
+
+        if sm.state != State.LISTENING:
+            continue
+
+        if not listen_speech_detected:
+            with listen_lock:
+                if len(listen_frames) > int(SAMPLE_RATE / 1600 * 50):
+                    listen_frames.clear()
+            continue
+
+        elapsed = time.time() - listen_last_speech_time
+        if elapsed < LISTEN_SILENCE_DURATION:
+            continue
+
+        with listen_lock:
+            if not listen_frames:
+                continue
+            frames_copy = list(listen_frames)
+            listen_frames.clear()
+        listen_speech_detected = False
+
+        audio_data = np.concatenate(frames_copy, axis=0).flatten()
+
+        if len(audio_data) < SAMPLE_RATE * 0.5:
+            continue
+
+        text = quick_transcribe(audio_data)
+        if not text:
+            continue
+
+        print(f"[LISTEN] Duydum: {text}")
+
+        if has_wake_word(text):
+            matches = list(_WAKE_RE.finditer(text))
+            if len(matches) >= 2:
+                msg = text[matches[0].end():matches[-1].start()].strip().strip(".,;:!? ")
+                if msg:
+                    print(f"[WAKE+STOP] >> {msg}")
+                    # Tek nefeste soylenmis — direkt gonder
+                    sm.transition(State.LISTENING, State.PROCESSING)
+                    pyperclip.copy(msg)
+                    sound_sent()
+                    paste_and_send()
+                    print("[GONDERILDI]\n")
+                    sm.force(State.COOLDOWN)
+                    listen_frames.clear()
+                    listen_speech_detected = False
+                    time.sleep(1.0)
+                    sm.force(State.LISTENING)
+                continue
+
+            print(f"[WAKE] \"Zugzwang\" algilandi!")
+            do_start_recording()
+
+
+# --- HOTKEY HANDLER ---
+
+def toggle_recording():
+    state = sm.state
+    if state == State.RECORDING:
+        do_stop_and_send()
+    elif state == State.LISTENING:
+        do_start_recording()
+    # PROCESSING veya COOLDOWN'daysa hicbir sey yapma
+
+
+# --- PYNPUT LISTENER ---
+
+def on_press(key):
+    if _suppress_hotkey:
+        return  # paste_and_send sirasinda hotkey'leri yoksay
+
+    if HOTKEY_RECORD_MODIFIERS:
+        if key == HOTKEY_RECORD and HOTKEY_RECORD_MODIFIERS.issubset(current_modifiers):
+            toggle_recording()
+            return
+    else:
+        if key == HOTKEY_RECORD:
+            toggle_recording()
+            return
+
+    if key in (pynput_kb.Key.ctrl_l, pynput_kb.Key.ctrl_r, pynput_kb.Key.ctrl):
+        current_modifiers.add(pynput_kb.Key.ctrl)
+    elif key in (pynput_kb.Key.alt_l, pynput_kb.Key.alt_r, pynput_kb.Key.alt, pynput_kb.Key.alt_gr):
+        current_modifiers.add(pynput_kb.Key.alt)
+    elif key in (pynput_kb.Key.cmd_l, pynput_kb.Key.cmd_r, pynput_kb.Key.cmd):
+        current_modifiers.add(pynput_kb.Key.cmd)
+
+    if key == HOTKEY_QUIT_KEY and HOTKEY_QUIT_MODIFIERS.issubset(current_modifiers):
+        print("\n[CIKIS] Ctrl+Alt+Q algilandi.")
+        should_quit.set()
+        return False
+
+
+def on_release(key):
+    if key in (pynput_kb.Key.ctrl_l, pynput_kb.Key.ctrl_r, pynput_kb.Key.ctrl):
+        current_modifiers.discard(pynput_kb.Key.ctrl)
+    elif key in (pynput_kb.Key.alt_l, pynput_kb.Key.alt_r, pynput_kb.Key.alt, pynput_kb.Key.alt_gr):
+        current_modifiers.discard(pynput_kb.Key.alt)
+    elif key in (pynput_kb.Key.cmd_l, pynput_kb.Key.cmd_r, pynput_kb.Key.cmd):
+        current_modifiers.discard(pynput_kb.Key.cmd)
+
+
+# --- MAIN ---
+
+def main():
+    global audio_stream
+
+    os_name = "macOS" if IS_MAC else "Windows"
+    quit_combo = "Cmd+Alt+Q" if IS_MAC else "Ctrl+Alt+Q"
+    record_label = "F13 (sniper butonu)" if IS_WIN else "Ctrl+Option+R"
+
+    print("=" * 55)
+    print("  Voice Dictation Tool - Whisper STT")
+    print("=" * 55)
+    print(f"  Platform     : {os_name}")
+    print(f"  Toggle word  : \"{WAKE_WORD}\" (baslat + durdur)")
+    print(f"  Sniper buton : {record_label} (toggle)")
+    print(f"  Cikis        : {quit_combo}")
+    print(f"  Model        : {MODEL_SIZE} ({DEVICE})")
+    print(f"  Custom vocab : {len(INITIAL_PROMPT.split(','))} terim")
+    print("=" * 55)
+
+    load_model()
+
+    audio_stream = sd.InputStream(
+        samplerate=SAMPLE_RATE, channels=CHANNELS,
+        dtype="float32", callback=audio_callback,
+        blocksize=int(SAMPLE_RATE * 0.1),
+    )
+    audio_stream.start()
+
+    threading.Thread(target=wake_word_listener, daemon=True).start()
+
+    print("[HAZIR] Dinliyorum...\n")
+    print("   Baslat: F13 (sniper) veya \"Zugzwang\" de")
+    print("   Durdur: F13 (tekrar) veya \"Zugzwang\" de")
+    print(f"\n   Cikmak icin: {quit_combo}\n")
+
+    with pynput_kb.Listener(on_press=on_press, on_release=on_release) as listener:
+        should_quit.wait()
+        listener.stop()
+
+    print("Kapatiliyor...")
+    audio_stream.stop()
+    audio_stream.close()
+    print("Kapatildi.")
+
+
+if __name__ == "__main__":
+    main()
