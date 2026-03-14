@@ -313,6 +313,33 @@ def _has_speech(audio_data, threshold=SILENCE_THRESHOLD):
     return False
 
 
+# Bilinen halusinasyon kaliplari
+_HALLUCINATION_RE = re.compile(
+    r"^[\s!.?,;:]+$"                          # sadece noktalama
+    r"|Altyaz[ıi]\b"                            # Altyazı M.K., Altyazı M.D. (her yerde)
+    r"|^Apa\.?$"                              # Apa.
+    r"|^Okay\.?\s*$"                          # Okay.
+    r"|İzlediğiniz için teşekkür"             # YouTube outro
+    r"|Abone ol"                              # YouTube CTA
+    , re.IGNORECASE
+)
+
+
+def _is_hallucination(text):
+    """Bilinen halusinasyon kaliplarini ve tekrar eden kelimeleri filtrele."""
+    if not text or _HALLUCINATION_RE.search(text):
+        return True
+    # Tekrar eden kelime tespiti: ayni kelime 5+ kez tekrar ediyorsa halusinasyon
+    words = text.split()
+    if len(words) >= 5:
+        from collections import Counter
+        counts = Counter(words)
+        most_common_word, most_common_count = counts.most_common(1)[0]
+        if most_common_count / len(words) > 0.6:
+            return True
+    return False
+
+
 def quick_transcribe(audio_data):
     # Sessiz audio'yu transcribe etme (halusinasyon onleme)
     if not _has_speech(audio_data):
@@ -324,14 +351,19 @@ def quick_transcribe(audio_data):
                 audio_data, path_or_hf_repo=MLX_MODEL_REPO,
                 language="tr", initial_prompt=INITIAL_PROMPT,
             )
-            return result.get("text", "").strip()
+            text = result.get("text", "").strip()
         else:
             segments, _ = model.transcribe(
                 audio_data, language="tr", initial_prompt=INITIAL_PROMPT,
                 beam_size=1, vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=300),
             )
-            return " ".join(seg.text.strip() for seg in segments)
+            text = " ".join(seg.text.strip() for seg in segments)
+
+    if _is_hallucination(text):
+        log.debug(f"[FILTRE] Halusinasyon filtrelendi: {text[:60]}...")
+        return ""
+    return text
 
 
 # --- REGEX ---
