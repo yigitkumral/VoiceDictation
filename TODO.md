@@ -9,30 +9,34 @@
 ## Cross-Platform Setup
 
 - [x] Windows kurulum testi (git clone + setup.bat + start.bat)
-- [ ] macOS kurulum testi (git clone + setup.sh)
+- [x] macOS kurulum testi (git clone + setup.sh)
 - [x] macOS icin `start.sh` script'i olustur (start.bat karsiligi)
 - [x] setup.sh: macOS portaudio bagimliligi ekle (`brew install portaudio`)
 - [x] CUDA kurulum notu dokumante et (Windows icin CUDA Toolkit + cuBLAS)
-- [x] macOS'ta CPU fallback: DEVICE otomatik algilama ekle (CUDA yoksa CPU'ya dus)
+- [x] macOS'ta MLX-whisper entegrasyonu (Apple Silicon GPU destegi)
+- [x] Script'leri `scripts/` klasorune tasi (proje root temizligi)
 
 ## MacBook Pro Entegrasyonu
 
-- [ ] macOS hotkey testi: Ctrl+Option+R zaten tanimli, dogrula
-- [ ] Touchpad gesture / alternatif key binding arastirmasi
-- [ ] macOS mikrofon izni (Privacy & Security) dokumantasyonu
+- [x] macOS hotkey: Caps Lock double-tap toggle (400ms aralik)
+- [x] macOS mikrofon + accessibility izinleri dogrulanmis
 - [x] macOS ses geri bildirimi: winsound alternatifi (subprocess afplay)
+- [x] Ses seviyesi arttirildi (volume 0.04 -> 0.25)
 
 ## Bug Fix / Iyilestirme
 
+- [x] MLX GPU crash fix: transcribe_lock ile thread-safe GPU erisimi
+- [x] Halusinasyon filtresi: sessiz audio transcribe'a gonderilmez (_has_speech)
+- [x] extract_message fix: ilk wake word'den onceki mesaji al (Zugzwang temizleme)
+- [x] Python logging modulu — print yerine seviyeli loglama (DEBUG/INFO/WARNING)
 - [ ] Stop word checker: Whisper "Zugzwang" varyasyonlari icin regex genisletme (yeni varyasyonlar geldikce)
-- [ ] Stop word checker: Daha verimli tetikleme stratejisi (gereksiz transcribe azaltma)
 - [ ] Thread safety regresyon testi yaz (state machine gecisleri)
-- [ ] Mesaj icinde "Zugzwang" gecince erken kesme sorunu — context-aware stop word algilama
 
 ## Gelecek
 
 - [ ] Konfigurasyon dosyasi (JSON/YAML) — hardcoded ayarlari disari cikar (threshold, model, device, hotkey)
-- [ ] Python logging modulu — print yerine seviyeli loglama (DEBUG/INFO/WARNING)
 - [ ] Birim testleri (state machine, regex pattern, extract_message, audio buffer)
 - [ ] Windows baslatma: Startup klasorune .vbs koyarak otomatik baslat
+- [ ] macOS baslatma: Login Items veya LaunchAgent ile otomatik baslat
+- [ ] Hedef pencere secimi: herhangi bir pencereye yazma (aktif pencere disinda)
 - [ ] Multi-proje destegi: farkli wake word'ler ile farkli projelere yonlendirme

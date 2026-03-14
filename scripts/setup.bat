@@ -1,4 +1,5 @@
 @echo off
+cd /d "%~dp0\.."
 echo === Voice Dictation Setup (Windows) ===
 echo.
 
@@ -19,6 +20,8 @@ echo.
 echo [4/4] Kurulum tamamlandi!
 echo.
 echo Calistirmak icin:
+echo     scripts\start.bat
+echo     # veya
 echo     venv\Scripts\python dictation.py
 echo.
 pause

@@ -83,7 +83,12 @@ import pyperclip
 if IS_WIN:
     import winsound
 from pynput import keyboard as pynput_kb
-from faster_whisper import WhisperModel
+## MLX vs faster-whisper gecis: True=mlx, False=faster-whisper
+USE_MLX = IS_MAC  # macOS'ta MLX, Windows'ta faster-whisper
+if IS_MAC and USE_MLX:
+    import mlx_whisper
+else:
+    from faster_whisper import WhisperModel
 
 # --- AYARLAR ---
 
@@ -93,8 +98,9 @@ WAKE_WORD = "zugzwang"
 HOTKEY_RECORD = pynput_kb.Key.f13
 HOTKEY_RECORD_MODIFIERS = set()
 if IS_MAC:
-    HOTKEY_RECORD = pynput_kb.KeyCode.from_char("r")
-    HOTKEY_RECORD_MODIFIERS = {pynput_kb.Key.ctrl, pynput_kb.Key.alt}
+    HOTKEY_RECORD = pynput_kb.Key.caps_lock
+    HOTKEY_RECORD_MODIFIERS = set()  # modifier yok, double-tap ile calisir
+    DOUBLE_TAP_INTERVAL = 0.4  # 400ms icinde iki kez basarsa toggle
 
 HOTKEY_QUIT_MODIFIERS = {pynput_kb.Key.ctrl, pynput_kb.Key.alt}
 if IS_MAC:
@@ -102,9 +108,12 @@ if IS_MAC:
 HOTKEY_QUIT_KEY = pynput_kb.KeyCode.from_char("q")
 
 MODEL_SIZE = "turbo"
+MLX_MODEL_REPO = "mlx-community/whisper-turbo"
 
 # Platform-aware device secimi
 def _detect_device():
+    if IS_MAC and USE_MLX:
+        return "mlx", "float16"
     if IS_WIN:
         try:
             import ctranslate2 as _ct2
@@ -200,9 +209,9 @@ def _make_wav(tones, volume=0.3, rate=22050):
             wf.writeframes(struct.pack("<h", int(s * 32767)))
     return buf.getvalue()
 
-_WAV_RECORDING = _make_wav([(520, 150), (780, 150)], 0.04)
-_WAV_SENT = _make_wav([(880, 120), (880, 120)], 0.04)
-_WAV_ERROR = _make_wav([(280, 250)], 0.03)
+_WAV_RECORDING = _make_wav([(520, 150), (780, 150)], 0.25)
+_WAV_SENT = _make_wav([(880, 120), (880, 120)], 0.25)
+_WAV_ERROR = _make_wav([(280, 250)], 0.2)
 
 def _play_wav(wav_data):
     """Cross-platform WAV playback."""
@@ -257,6 +266,7 @@ audio_frames = []
 listen_frames = []
 audio_lock = threading.Lock()    # audio_frames koruma
 listen_lock = threading.Lock()   # listen_frames koruma
+transcribe_lock = threading.Lock()  # MLX GPU ayni anda tek transcribe
 audio_stream = None
 model = None
 speech_detected = False
@@ -265,6 +275,7 @@ listen_speech_detected = False
 listen_last_speech_time = 0
 current_modifiers = set()
 should_quit = threading.Event()
+_last_hotkey_tap = 0  # double-tap icin son basma zamani
 
 
 # --- MODEL ---
@@ -273,23 +284,54 @@ def load_model():
     global model
     log.info(f"[...] Model yukleniyor: {MODEL_SIZE} ({DEVICE})...")
     log.info("   (Ilk seferde model indirilecek, birkac dakika surebilir)")
-    model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
-    if DEVICE == "cuda":
-        log.info("[...] GPU warm-up yapiliyor...")
+    if IS_MAC and USE_MLX:
+        # mlx-whisper: ilk transcribe'da model otomatik yuklenir, warm-up yapalim
         _dummy = np.zeros(SAMPLE_RATE, dtype=np.float32)
-        list(model.transcribe(_dummy, language="tr")[0])
-        log.info("[OK] GPU hazir!")
+        mlx_whisper.transcribe(_dummy, path_or_hf_repo=MLX_MODEL_REPO, language="tr")
+        log.info("[OK] Model hazir! (MLX — Apple Silicon GPU)")
     else:
-        log.info("[OK] Model hazir!")
+        model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
+        if DEVICE == "cuda":
+            log.info("[...] GPU warm-up yapiliyor...")
+            _dummy = np.zeros(SAMPLE_RATE, dtype=np.float32)
+            list(model.transcribe(_dummy, language="tr")[0])
+            log.info("[OK] GPU hazir!")
+        else:
+            log.info("[OK] Model hazir!")
+
+
+def _has_speech(audio_data, threshold=SILENCE_THRESHOLD):
+    """Audio verisinde konusma var mi kontrol et (peak-based)."""
+    # Ortalama yerine: 100ms pencereler icinde en yuksek ortalamaya bak
+    window = int(SAMPLE_RATE * 0.1)
+    if len(audio_data) < window:
+        return np.abs(audio_data).mean() > threshold
+    # En az bir 100ms pencerede threshold'u asan ses varsa True
+    for i in range(0, len(audio_data) - window, window):
+        if np.abs(audio_data[i:i+window]).mean() > threshold:
+            return True
+    return False
 
 
 def quick_transcribe(audio_data):
-    segments, _ = model.transcribe(
-        audio_data, language="tr", initial_prompt=INITIAL_PROMPT,
-        beam_size=1, vad_filter=True,
-        vad_parameters=dict(min_silence_duration_ms=300),
-    )
-    return " ".join(seg.text.strip() for seg in segments)
+    # Sessiz audio'yu transcribe etme (halusinasyon onleme)
+    if not _has_speech(audio_data):
+        return ""
+
+    with transcribe_lock:
+        if IS_MAC and USE_MLX:
+            result = mlx_whisper.transcribe(
+                audio_data, path_or_hf_repo=MLX_MODEL_REPO,
+                language="tr", initial_prompt=INITIAL_PROMPT,
+            )
+            return result.get("text", "").strip()
+        else:
+            segments, _ = model.transcribe(
+                audio_data, language="tr", initial_prompt=INITIAL_PROMPT,
+                beam_size=1, vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=300),
+            )
+            return " ".join(seg.text.strip() for seg in segments)
 
 
 # --- REGEX ---
@@ -312,10 +354,10 @@ def has_wake_word(text):
     return bool(_WAKE_RE.search(text))
 
 def extract_message(text):
-    """Son 'zugzwang' oncesindeki mesaji cikar."""
+    """Ilk 'zugzwang' oncesindeki mesaji cikar."""
     matches = list(_WAKE_RE.finditer(text))
     if matches:
-        m = matches[-1]
+        m = matches[0]  # ilk wake word'den onceki mesaj
         msg = text[:m.start()].strip().strip(".,;:!? ")
         return msg if msg else None
     return None
@@ -591,6 +633,8 @@ def toggle_recording():
 # --- PYNPUT LISTENER ---
 
 def on_press(key):
+    global _last_hotkey_tap
+
     if _suppress_hotkey:
         return  # paste_and_send sirasinda hotkey'leri yoksay
 
@@ -600,6 +644,14 @@ def on_press(key):
             return
     else:
         if key == HOTKEY_RECORD:
+            if IS_MAC and hasattr(sys.modules[__name__], 'DOUBLE_TAP_INTERVAL'):
+                now = time.time()
+                if now - _last_hotkey_tap < DOUBLE_TAP_INTERVAL:
+                    _last_hotkey_tap = 0  # reset
+                    toggle_recording()
+                else:
+                    _last_hotkey_tap = now
+                return
             toggle_recording()
             return
 
@@ -632,7 +684,7 @@ def main():
 
     os_name = "macOS" if IS_MAC else "Windows"
     quit_combo = "Cmd+Alt+Q" if IS_MAC else "Ctrl+Alt+Q"
-    record_label = "F13 (sniper butonu)" if IS_WIN else "Ctrl+Option+R"
+    record_label = "F13 (sniper butonu)" if IS_WIN else "Caps Lock x2 (double-tap)"
 
     print("=" * 55)
     print("  Voice Dictation Tool - Whisper STT")

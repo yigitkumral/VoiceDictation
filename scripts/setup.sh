@@ -1,4 +1,5 @@
 #!/bin/bash
+cd "$(dirname "$0")/.."
 echo "=== Voice Dictation Setup (macOS) ==="
 echo
 
@@ -19,12 +20,13 @@ fi
 
 echo "[2/3] Bagimliliklar kuruluyor..."
 venv/bin/pip install -r requirements.txt
+venv/bin/pip install mlx-whisper
 
 echo
 echo "[3/3] Kurulum tamamlandi!"
 echo
 echo "Calistirmak icin:"
-echo "    ./start.sh"
+echo "    ./scripts/start.sh"
 echo "    # veya"
 echo "    venv/bin/python dictation.py"
 echo
