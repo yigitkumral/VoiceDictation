@@ -18,8 +18,14 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 
 | Platform | GPU | Hotkey | Ses Geri Bildirimi |
 |----------|-----|--------|--------------------|
-| Windows | CUDA (RTX 5070) | F13 (sniper) | winsound WAV |
-| macOS | CPU (fallback) | Ctrl+Option+R | Henuz yok (TODO) |
+| Windows | CUDA (otomatik algilama) | F13 (sniper) | winsound WAV |
+| macOS | CPU (fallback) | Ctrl+Option+R | afplay WAV |
+
+### Logging
+
+- `dictation.log` — proje kokunde, DEBUG seviyesinden itibaren
+- Konsol ciktisi INFO seviyesinden itibaren
+- Log dosyasi `.gitignore`'da, git'e girmez
 
 ### Teknoloji Stack
 
@@ -28,7 +34,7 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 - sounddevice + numpy (audio I/O)
 - pynput (global hotkey + keyboard simulation)
 - pyperclip (clipboard)
-- winsound (Windows ses geri bildirimi)
+- logging (dosya + konsol, seviyeli loglama)
 
 ---
 

@@ -2,25 +2,25 @@
 
 ## Proje Kurulumu
 
-- [ ] BMAD kurulumu (`_bmad/` dizini ve `.claude/commands/`)
-- [ ] Private GitHub repo olustur ve push et
-- [ ] README.md olustur (kullanim kilavuzu, kurulum talimatlari)
+- [x] BMAD kurulumu (`_bmad/` dizini ve `.claude/commands/`)
+- [x] Private GitHub repo olustur ve push et
+- [x] README.md olustur (kullanim kilavuzu, kurulum talimatlari)
 
 ## Cross-Platform Setup
 
-- [ ] Windows kurulum testi (git clone + setup.bat + start.bat)
+- [x] Windows kurulum testi (git clone + setup.bat + start.bat)
 - [ ] macOS kurulum testi (git clone + setup.sh)
-- [ ] macOS icin `start.sh` script'i olustur (start.bat karsiligi)
-- [ ] setup.sh: macOS portaudio bagimliligi ekle (`brew install portaudio`)
-- [ ] CUDA kurulum notu dokumante et (Windows icin CUDA Toolkit + cuBLAS)
-- [ ] macOS'ta CPU fallback: DEVICE otomatik algilama ekle (CUDA yoksa CPU'ya dus)
+- [x] macOS icin `start.sh` script'i olustur (start.bat karsiligi)
+- [x] setup.sh: macOS portaudio bagimliligi ekle (`brew install portaudio`)
+- [x] CUDA kurulum notu dokumante et (Windows icin CUDA Toolkit + cuBLAS)
+- [x] macOS'ta CPU fallback: DEVICE otomatik algilama ekle (CUDA yoksa CPU'ya dus)
 
 ## MacBook Pro Entegrasyonu
 
 - [ ] macOS hotkey testi: Ctrl+Option+R zaten tanimli, dogrula
 - [ ] Touchpad gesture / alternatif key binding arastirmasi
 - [ ] macOS mikrofon izni (Privacy & Security) dokumantasyonu
-- [ ] macOS ses geri bildirimi: winsound alternatifi (simpleaudio veya subprocess afplay)
+- [x] macOS ses geri bildirimi: winsound alternatifi (subprocess afplay)
 
 ## Bug Fix / Iyilestirme
 

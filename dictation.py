@@ -26,6 +26,7 @@ import time
 import platform
 import threading
 import re
+import logging
 from enum import Enum
 
 # Windows cp1254 encoding fix
@@ -36,8 +37,32 @@ if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
     except Exception:
         pass
 
+# --- PLATFORM ---
+IS_MAC = platform.system() == "Darwin"
+IS_WIN = platform.system() == "Windows"
+
+# --- LOGGING ---
+_LOG_DIR = os.path.dirname(os.path.abspath(__file__))
+_LOG_FILE = os.path.join(_LOG_DIR, "dictation.log")
+
+log = logging.getLogger("dictation")
+log.setLevel(logging.DEBUG)
+
+# Dosya handler — DEBUG seviyesinden itibaren her seyi yazar
+_fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+_fh.setLevel(logging.DEBUG)
+_fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
+
+# Konsol handler — INFO seviyesinden itibaren
+_ch = logging.StreamHandler(sys.stdout)
+_ch.setLevel(logging.INFO)
+_ch.setFormatter(logging.Formatter("%(message)s"))
+
+log.addHandler(_fh)
+log.addHandler(_ch)
+
 # CUDA DLL'lerini PATH'e ekle (Windows + venv icin gerekli)
-if platform.system() == "Windows":
+if IS_WIN:
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _nvidia_dir = os.path.join(_script_dir, "venv", "Lib", "site-packages", "nvidia")
     if os.path.isdir(_nvidia_dir):
@@ -50,17 +75,15 @@ if platform.system() == "Windows":
 import io
 import wave
 import struct
+import tempfile
+import subprocess
 import numpy as np
 import sounddevice as sd
 import pyperclip
-if platform.system() == "Windows":
+if IS_WIN:
     import winsound
 from pynput import keyboard as pynput_kb
 from faster_whisper import WhisperModel
-
-# --- PLATFORM ---
-IS_MAC = platform.system() == "Darwin"
-IS_WIN = platform.system() == "Windows"
 
 # --- AYARLAR ---
 
@@ -79,8 +102,20 @@ if IS_MAC:
 HOTKEY_QUIT_KEY = pynput_kb.KeyCode.from_char("q")
 
 MODEL_SIZE = "turbo"
-DEVICE = "cuda"
-COMPUTE_TYPE = "float16"
+
+# Platform-aware device secimi
+def _detect_device():
+    if IS_WIN:
+        try:
+            import ctranslate2 as _ct2
+            _types = _ct2.get_supported_compute_types("cuda")
+            if "float16" in _types:
+                return "cuda", "float16"
+        except Exception:
+            pass
+    return "cpu", "int8"
+
+DEVICE, COMPUTE_TYPE = _detect_device()
 
 SAMPLE_RATE = 16000
 CHANNELS = 1
@@ -169,17 +204,28 @@ _WAV_RECORDING = _make_wav([(520, 150), (780, 150)], 0.04)
 _WAV_SENT = _make_wav([(880, 120), (880, 120)], 0.04)
 _WAV_ERROR = _make_wav([(280, 250)], 0.03)
 
-def sound_recording():
+def _play_wav(wav_data):
+    """Cross-platform WAV playback."""
     if IS_WIN:
-        threading.Thread(target=lambda: winsound.PlaySound(_WAV_RECORDING, winsound.SND_MEMORY), daemon=True).start()
+        winsound.PlaySound(wav_data, winsound.SND_MEMORY)
+    elif IS_MAC:
+        try:
+            tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
+            tmp.write(wav_data)
+            tmp.close()
+            subprocess.run(["afplay", tmp.name], check=False)
+            os.unlink(tmp.name)
+        except Exception:
+            pass
+
+def sound_recording():
+    threading.Thread(target=lambda: _play_wav(_WAV_RECORDING), daemon=True).start()
 
 def sound_sent():
-    if IS_WIN:
-        threading.Thread(target=lambda: winsound.PlaySound(_WAV_SENT, winsound.SND_MEMORY), daemon=True).start()
+    threading.Thread(target=lambda: _play_wav(_WAV_SENT), daemon=True).start()
 
 def sound_error():
-    if IS_WIN:
-        threading.Thread(target=lambda: winsound.PlaySound(_WAV_ERROR, winsound.SND_MEMORY), daemon=True).start()
+    threading.Thread(target=lambda: _play_wav(_WAV_ERROR), daemon=True).start()
 
 
 # --- PASTE/SEND ---
@@ -225,16 +271,16 @@ should_quit = threading.Event()
 
 def load_model():
     global model
-    print(f"\n[...] Model yukleniyor: {MODEL_SIZE} ({DEVICE})...")
-    print("   (Ilk seferde model indirilecek, birkac dakika surebilir)\n")
+    log.info(f"[...] Model yukleniyor: {MODEL_SIZE} ({DEVICE})...")
+    log.info("   (Ilk seferde model indirilecek, birkac dakika surebilir)")
     model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
     if DEVICE == "cuda":
-        print("[...] GPU warm-up yapiliyor...")
+        log.info("[...] GPU warm-up yapiliyor...")
         _dummy = np.zeros(SAMPLE_RATE, dtype=np.float32)
         list(model.transcribe(_dummy, language="tr")[0])
-        print("[OK] GPU hazir!\n")
+        log.info("[OK] GPU hazir!")
     else:
-        print("[OK] Model hazir!\n")
+        log.info("[OK] Model hazir!")
 
 
 def quick_transcribe(audio_data):
@@ -320,7 +366,7 @@ def do_start_recording():
     last_speech_time = time.time()
 
     sound_recording()
-    print("[REC] KAYIT BASLADI - F13 veya \"Zugzwang\" ile durdur")
+    log.info("[REC] KAYIT BASLADI - F13 veya \"Zugzwang\" ile durdur")
 
     # Stop word checker baslat
     threading.Thread(target=stop_word_checker, daemon=True).start()
@@ -335,10 +381,10 @@ def do_send(msg):
 
     try:
         pyperclip.copy(msg)
-        print(f"[OK] >> {msg}")
+        log.info(f"[OK] >> {msg}")
         sound_sent()
         paste_and_send()
-        print("[GONDERILDI]\n")
+        log.info("[GONDERILDI]")
     finally:
         sm.force(State.COOLDOWN)
         _suppress_hotkey = True  # Cooldown boyunca hotkey'leri bastir
@@ -359,14 +405,22 @@ def do_stop_and_send():
     with audio_lock:
         frames_copy = list(audio_frames)
 
-    if not frames_copy or not speech_detected:
-        print("[!] Ses algilanamadi.\n")
+    if not frames_copy:
+        log.warning("[!] Ses algilanamadi (buffer bos).")
         sound_error()
         sm.force(State.LISTENING)
         return
 
-    print("[STOP] Durduruldu, transcribe ediliyor...")
+    log.info("[STOP] Durduruldu, transcribe ediliyor...")
     audio_data = np.concatenate(frames_copy, axis=0).flatten()
+    log.debug(f"Audio buffer: {len(audio_data)} sample ({len(audio_data)/SAMPLE_RATE:.1f}sn)")
+
+    # Cok kisa buffer'lari atla (0.3sn altinda anlamli ses olmaz)
+    if len(audio_data) < SAMPLE_RATE * 0.3:
+        log.warning("[!] Ses algilanamadi (buffer cok kisa).")
+        sound_error()
+        sm.force(State.LISTENING)
+        return
     text = quick_transcribe(audio_data)
 
     if text:
@@ -375,12 +429,12 @@ def do_stop_and_send():
             msg = text
 
         pyperclip.copy(msg)
-        print(f"[OK] >> {msg}")
+        log.info(f"[OK] >> {msg}")
         sound_sent()
         paste_and_send()
-        print("[GONDERILDI]\n")
+        log.info("[GONDERILDI]")
     else:
-        print("[!] Ses algilanamadi.\n")
+        log.warning("[!] Ses algilanamadi (transcribe bos).")
         sound_error()
 
     sm.force(State.COOLDOWN)
@@ -408,7 +462,7 @@ def stop_word_checker():
 
         if not speech_detected:
             if time.time() - last_speech_time > NO_SPEECH_TIMEOUT:
-                print(f"[IPTAL] {int(NO_SPEECH_TIMEOUT)}sn konusma algilanamadi.\n")
+                log.warning(f"[IPTAL] {int(NO_SPEECH_TIMEOUT)}sn konusma algilanamadi.")
                 sound_error()
                 sm.force(State.LISTENING)
                 return
@@ -430,7 +484,7 @@ def stop_word_checker():
 
         last_check_frame_count = current_frame_count
         audio_data = np.concatenate(frames_copy, axis=0).flatten()
-        print("[...] \"Zugzwang\" stop kontrolu yapiliyor...")
+        log.debug("[...] Stop word kontrolu yapiliyor...")
         text = quick_transcribe(audio_data)
 
         if sm.state != State.RECORDING:
@@ -439,7 +493,7 @@ def stop_word_checker():
         if not text:
             continue
 
-        print(f"[CHECK] Duydum: {text}")
+        log.info(f"[CHECK] Duydum: {text}")
 
         if has_wake_word(text):
             msg = extract_message(text)
@@ -448,7 +502,7 @@ def stop_word_checker():
                 return
             else:
                 # Sadece "Zugzwang" soylenmis, mesaj yok — kaydi iptal et
-                print("[IPTAL] Sadece toggle word soylendi, mesaj yok.\n")
+                log.info("[IPTAL] Sadece toggle word soylendi, mesaj yok.")
                 sound_error()
                 sm.force(State.COOLDOWN)
                 listen_frames.clear()
@@ -499,20 +553,19 @@ def wake_word_listener():
         if not text:
             continue
 
-        print(f"[LISTEN] Duydum: {text}")
+        log.debug(f"[LISTEN] Duydum: {text}")
 
         if has_wake_word(text):
             matches = list(_WAKE_RE.finditer(text))
             if len(matches) >= 2:
                 msg = text[matches[0].end():matches[-1].start()].strip().strip(".,;:!? ")
                 if msg:
-                    print(f"[WAKE+STOP] >> {msg}")
-                    # Tek nefeste soylenmis — direkt gonder
+                    log.info(f"[WAKE+STOP] >> {msg}")
                     sm.transition(State.LISTENING, State.PROCESSING)
                     pyperclip.copy(msg)
                     sound_sent()
                     paste_and_send()
-                    print("[GONDERILDI]\n")
+                    log.info("[GONDERILDI]")
                     sm.force(State.COOLDOWN)
                     listen_frames.clear()
                     listen_speech_detected = False
@@ -520,7 +573,7 @@ def wake_word_listener():
                     sm.force(State.LISTENING)
                 continue
 
-            print(f"[WAKE] \"Zugzwang\" algilandi!")
+            log.info("[WAKE] \"Zugzwang\" algilandi!")
             do_start_recording()
 
 
@@ -558,7 +611,7 @@ def on_press(key):
         current_modifiers.add(pynput_kb.Key.cmd)
 
     if key == HOTKEY_QUIT_KEY and HOTKEY_QUIT_MODIFIERS.issubset(current_modifiers):
-        print("\n[CIKIS] Ctrl+Alt+Q algilandi.")
+        log.info("[CIKIS] Ctrl+Alt+Q algilandi.")
         should_quit.set()
         return False
 
@@ -590,7 +643,9 @@ def main():
     print(f"  Cikis        : {quit_combo}")
     print(f"  Model        : {MODEL_SIZE} ({DEVICE})")
     print(f"  Custom vocab : {len(INITIAL_PROMPT.split(','))} terim")
+    print(f"  Log dosyasi  : {_LOG_FILE}")
     print("=" * 55)
+    log.info(f"Baslatildi: {os_name}, model={MODEL_SIZE}, device={DEVICE}")
 
     load_model()
 
@@ -603,19 +658,19 @@ def main():
 
     threading.Thread(target=wake_word_listener, daemon=True).start()
 
-    print("[HAZIR] Dinliyorum...\n")
-    print("   Baslat: F13 (sniper) veya \"Zugzwang\" de")
-    print("   Durdur: F13 (tekrar) veya \"Zugzwang\" de")
-    print(f"\n   Cikmak icin: {quit_combo}\n")
+    log.info("[HAZIR] Dinliyorum...\n"
+             "   Baslat: F13 (sniper) veya \"Zugzwang\" de\n"
+             "   Durdur: F13 (tekrar) veya \"Zugzwang\" de\n"
+             f"   Cikmak icin: {quit_combo}")
 
     with pynput_kb.Listener(on_press=on_press, on_release=on_release) as listener:
         should_quit.wait()
         listener.stop()
 
-    print("Kapatiliyor...")
+    log.info("Kapatiliyor...")
     audio_stream.stop()
     audio_stream.close()
-    print("Kapatildi.")
+    log.info("Kapatildi.")
 
 
 if __name__ == "__main__":

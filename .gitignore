@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 
 # Runtime artifacts
+dictation.log
 .dictation.log
 .dictation.pid
 
