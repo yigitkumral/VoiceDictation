@@ -42,16 +42,24 @@ IS_MAC = platform.system() == "Darwin"
 IS_WIN = platform.system() == "Windows"
 
 # --- LOGGING ---
-_LOG_DIR = os.path.dirname(os.path.abspath(__file__))
+from logging.handlers import TimedRotatingFileHandler
+
+_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+os.makedirs(_LOG_DIR, exist_ok=True)
 _LOG_FILE = os.path.join(_LOG_DIR, "dictation.log")
 
 log = logging.getLogger("dictation")
 log.setLevel(logging.DEBUG)
 
-# Dosya handler — DEBUG seviyesinden itibaren her seyi yazar
-_fh = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+# Dosya handler — gunluk rotate, tum gecmis saklanir
+_fh = TimedRotatingFileHandler(
+    _LOG_FILE, when="midnight", interval=1,
+    backupCount=0,  # 0 = sinirsiz, hicbir log silinmez
+    encoding="utf-8",
+)
+_fh.suffix = "%Y-%m-%d"  # dictation.log.2026-03-15
 _fh.setLevel(logging.DEBUG)
-_fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
+_fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
 
 # Konsol handler — INFO seviyesinden itibaren
 _ch = logging.StreamHandler(sys.stdout)
@@ -268,6 +276,7 @@ audio_lock = threading.Lock()    # audio_frames koruma
 listen_lock = threading.Lock()   # listen_frames koruma
 transcribe_lock = threading.Lock()  # MLX GPU ayni anda tek transcribe
 audio_stream = None
+_last_audio_callback = 0  # watchdog icin son callback zamani
 model = None
 speech_detected = False
 last_speech_time = 0
@@ -400,7 +409,9 @@ def extract_message(text):
 def audio_callback(indata, frames, time_info, status):
     global speech_detected, last_speech_time
     global listen_speech_detected, listen_last_speech_time
+    global _last_audio_callback
 
+    _last_audio_callback = time.time()
     level = np.abs(indata).mean()
     state = sm.state
 
@@ -595,10 +606,15 @@ def stop_word_checker():
 def wake_word_listener():
     global listen_frames, listen_speech_detected, listen_last_speech_time
 
+    _consecutive_empty = 0  # arka arkaya bos/filtreli sonuc sayaci
+    _backoff_time = 0.1     # bekleme suresi (halusinasyon dongusunu kirma)
+
     while not should_quit.is_set():
-        time.sleep(0.1)
+        time.sleep(_backoff_time)
 
         if sm.state != State.LISTENING:
+            _consecutive_empty = 0
+            _backoff_time = 0.1
             continue
 
         if not listen_speech_detected:
@@ -625,7 +641,14 @@ def wake_word_listener():
 
         text = quick_transcribe(audio_data)
         if not text:
+            # Bos sonuc — backoff artir (gereksiz transcribe'i azalt)
+            _consecutive_empty += 1
+            _backoff_time = min(2.0, 0.1 * (2 ** _consecutive_empty))
             continue
+
+        # Basarili transcribe — backoff sifirla
+        _consecutive_empty = 0
+        _backoff_time = 0.1
 
         log.debug(f"[LISTEN] Duydum: {text}")
 
@@ -733,13 +756,42 @@ def main():
 
     load_model()
 
-    audio_stream = sd.InputStream(
-        samplerate=SAMPLE_RATE, channels=CHANNELS,
-        dtype="float32", callback=audio_callback,
-        blocksize=int(SAMPLE_RATE * 0.1),
-    )
-    audio_stream.start()
+    def start_audio_stream():
+        global audio_stream, _last_audio_callback
+        audio_stream = sd.InputStream(
+            samplerate=SAMPLE_RATE, channels=CHANNELS,
+            dtype="float32", callback=audio_callback,
+            blocksize=int(SAMPLE_RATE * 0.1),
+        )
+        audio_stream.start()
+        _last_audio_callback = time.time()
 
+    start_audio_stream()
+
+    def audio_watchdog():
+        """Uyku/hibernate sonrasi audio stream'i yeniden baslat."""
+        global _last_audio_callback
+        while not should_quit.is_set():
+            time.sleep(3)
+            if _last_audio_callback and time.time() - _last_audio_callback > 5:
+                log.warning("[WATCHDOG] Audio stream yanitlamiyor, yeniden baslatiliyor...")
+                try:
+                    audio_stream.stop()
+                    audio_stream.close()
+                except Exception:
+                    pass
+                try:
+                    start_audio_stream()
+                    log.info("[WATCHDOG] Audio stream yeniden baslatildi.")
+                    # Kayit durumundaysa LISTENING'e don
+                    if sm.state == State.RECORDING:
+                        log.warning("[WATCHDOG] Kayit iptal edildi (stream kesildi).")
+                        sound_error()
+                        sm.force(State.LISTENING)
+                except Exception as e:
+                    log.error(f"[WATCHDOG] Stream baslatilamadi: {e}")
+
+    threading.Thread(target=audio_watchdog, daemon=True).start()
     threading.Thread(target=wake_word_listener, daemon=True).start()
 
     log.info("[HAZIR] Dinliyorum...\n"
