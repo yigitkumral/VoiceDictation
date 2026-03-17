@@ -325,20 +325,40 @@ def _has_speech(audio_data, threshold=SILENCE_THRESHOLD):
 # Bilinen halusinasyon kaliplari
 _HALLUCINATION_RE = re.compile(
     r"^[\s!.?,;:]+$"                          # sadece noktalama
-    r"|Altyaz[ıi]\b"                            # Altyazı M.K., Altyazı M.D. (her yerde)
     r"|^Apa\.?$"                              # Apa.
     r"|^Okay\.?\s*$"                          # Okay.
-    r"|İzlediğiniz için teşekkür"             # YouTube outro
+    r"|^Beep\.?\s*$"                          # Beep.
+    r"|^Donama\.?\s*$"                        # Donama.
     r"|Abone ol"                              # YouTube CTA
+    , re.IGNORECASE
+)
+
+# Temizlenebilir halusinasyon artiklari (uzun metinlerden cikarilir, kisa metinleri filtreler)
+_ARTIFACT_RE = re.compile(
+    r"Altyaz[ıi]\s*M\.?[A-Z]\.?[A-Z]?\.?"   # Altyazı M.K., Altyazı M.D.D.
+    r"|İzlediğiniz için teşekkür\w*"          # YouTube outro
+    r"|Abone ol\w*"                           # YouTube CTA
+    , re.IGNORECASE
+)
+
+# MLX-whisper sessizlikte urettigi Ingilizce baslangic halusinasyonlari
+_ENGLISH_HALLUC_RE = re.compile(
+    r"^(Thank you\.?\s*|Hold on[^.]*\.\s*|Beep\.?\s*|Come on\.?\s*|"
+    r"Okay\.?\s*|Please\b[^.]*\.\s*|Let me[^.]*\.\s*|"
+    r"So[,.]?\s+|Well[,.]?\s+|And\s+the\s+)"
     , re.IGNORECASE
 )
 
 
 def _is_hallucination(text):
-    """Bilinen halusinasyon kaliplarini ve tekrar eden kelimeleri filtrele."""
-    if not text or _HALLUCINATION_RE.search(text):
+    """Kisa metinler icin strict halusinasyon filtresi (wake word listener icin)."""
+    if not text:
         return True
-    # Tekrar eden kelime tespiti: ayni kelime 5+ kez tekrar ediyorsa halusinasyon
+    if _HALLUCINATION_RE.search(text):
+        return True
+    if _ARTIFACT_RE.search(text) and len(text.split()) < 10:
+        return True
+    # Tekrar eden kelime tespiti
     words = text.split()
     if len(words) >= 5:
         from collections import Counter
@@ -347,6 +367,51 @@ def _is_hallucination(text):
         if most_common_count / len(words) > 0.6:
             return True
     return False
+
+
+def _clean_transcription(text):
+    """Transcribe sonucunu temizle: halusinasyon artiklari cikar, gercek icerigi koru.
+
+    - Kisa metinlerde (<10 kelime) strict filtreleme
+    - Uzun metinlerde artiklari temizleyip gercek metni kurtarir
+    - Ingilizce baslangic halusinasyonlarini cikarir
+    """
+    if not text:
+        return ""
+
+    # 1) Ingilizce baslangic halusinasyonlarini temizle
+    cleaned = _ENGLISH_HALLUC_RE.sub("", text).strip()
+    if not cleaned:
+        return ""
+
+    # 2) Kisa metin: strict filtre
+    words = cleaned.split()
+    if len(words) < 10:
+        if _HALLUCINATION_RE.search(cleaned):
+            return ""
+        if _ARTIFACT_RE.search(cleaned):
+            return ""
+        # Tekrar kontrolu
+        if len(words) >= 5:
+            from collections import Counter
+            counts = Counter(words)
+            if counts.most_common(1)[0][1] / len(words) > 0.6:
+                return ""
+        return cleaned
+
+    # 3) Uzun metin: tekrar kontrolu
+    from collections import Counter
+    counts = Counter(words)
+    if counts.most_common(1)[0][1] / len(words) > 0.6:
+        return ""
+
+    # 4) Uzun metin: artiklari temizle ama gercek icerigi koru
+    cleaned = _ARTIFACT_RE.sub("", cleaned).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = re.sub(r"^[\s.,;:!?]+|[\s.,;:!?]+$", "", cleaned)
+    if not cleaned or len(cleaned.split()) < 3:
+        return ""
+    return cleaned
 
 
 def quick_transcribe(audio_data):
@@ -369,10 +434,13 @@ def quick_transcribe(audio_data):
             )
             text = " ".join(seg.text.strip() for seg in segments)
 
-    if _is_hallucination(text):
+    cleaned = _clean_transcription(text)
+    if not cleaned:
         log.debug(f"[FILTRE] Halusinasyon filtrelendi: {text[:60]}...")
         return ""
-    return text
+    if cleaned != text:
+        log.debug(f"[TEMIZLIK] '{text[:40]}...' -> '{cleaned[:40]}...'")
+    return cleaned
 
 
 # --- REGEX ---
