@@ -217,9 +217,9 @@ def _make_wav(tones, volume=0.3, rate=22050):
             wf.writeframes(struct.pack("<h", int(s * 32767)))
     return buf.getvalue()
 
-_WAV_RECORDING = _make_wav([(520, 150), (780, 150)], 0.25)
-_WAV_SENT = _make_wav([(880, 120), (880, 120)], 0.25)
-_WAV_ERROR = _make_wav([(280, 250)], 0.2)
+_WAV_RECORDING = _make_wav([(520, 150), (780, 150)], 0.05)
+_WAV_SENT = _make_wav([(880, 120), (880, 120)], 0.05)
+_WAV_ERROR = _make_wav([(280, 250)], 0.05)
 
 def _play_wav(wav_data):
     """Cross-platform WAV playback."""
@@ -309,7 +309,7 @@ def start_gui():
     if IS_MAC:
         _start_menubar_gui()
     else:
-        _start_tkinter_gui()
+        _start_tray_gui()
 
 
 def _start_menubar_gui():
@@ -361,74 +361,97 @@ def _start_menubar_gui():
     VDMenuBar().run()
 
 
-def _start_tkinter_gui():
-    """Windows icin tkinter GUI (sag ust kose)."""
-    import tkinter as tk
+def _start_tray_gui():
+    """Windows icin sistem tepsisi (pystray) — macOS menu bar karsiligi."""
+    import pystray
+    from PIL import Image, ImageDraw
 
-    root = tk.Tk()
-    root.title("VD")
-    root.overrideredirect(True)
-    root.attributes("-topmost", True)
-
-    w, h = 140, 50
-    screen_w = root.winfo_screenwidth()
-    x = screen_w - w - 10
-    y = 10
-    root.geometry(f"{w}x{h}+{x}+{y}")
-    root.configure(bg="#1a1a2e")
-
-    state_var = tk.StringVar(value="HAZIR")
-    state_label = tk.Label(
-        root, textvariable=state_var,
-        font=("Segoe UI", 11, "bold"), fg="#00ff88", bg="#1a1a2e",
-        anchor="w", padx=5,
-    )
-    state_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-    reset_btn = tk.Button(
-        root, text="↺", font=("Segoe UI", 14, "bold"),
-        fg="#ff6b6b", bg="#2a2a4e", activebackground="#3a3a6e",
-        bd=0, width=2, command=lambda: _do_reset(),
-    )
-    reset_btn.pack(side=tk.RIGHT, fill=tk.Y, padx=2, pady=2)
-
-    _state_display = {
-        State.LISTENING:  ("HAZIR",      "#00ff88"),
-        State.RECORDING:  ("KAYIT ●",    "#ff4444"),
-        State.PROCESSING: ("ISLIYOR...", "#ffaa00"),
-        State.COOLDOWN:   ("BEKLEME",    "#888888"),
+    _state_colors = {
+        State.LISTENING:  (0, 255, 136),   # yesil
+        State.RECORDING:  (255, 68, 68),    # kirmizi
+        State.PROCESSING: (255, 170, 0),    # sari
+        State.COOLDOWN:   (136, 136, 136),  # gri
+    }
+    _state_labels = {
+        State.LISTENING:  "Hazır",
+        State.RECORDING:  "Kayıt...",
+        State.PROCESSING: "İşliyor...",
+        State.COOLDOWN:   "Bekleme",
     }
 
-    def update_gui():
-        state = sm.state
-        text, color = _state_display.get(state, ("?", "#ffffff"))
-        state_var.set(text)
-        state_label.configure(fg=color)
-        root.after(200, update_gui)
+    def make_icon(color):
+        img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        draw.ellipse([4, 4, 60, 60], fill=color)
+        return img
 
-    _drag = {"x": 0, "y": 0}
-    def on_drag_start(e):
-        _drag["x"] = e.x
-        _drag["y"] = e.y
-    def on_drag(e):
-        x = root.winfo_x() + e.x - _drag["x"]
-        y = root.winfo_y() + e.y - _drag["y"]
-        root.geometry(f"+{x}+{y}")
-    state_label.bind("<Button-1>", on_drag_start)
-    state_label.bind("<B1-Motion>", on_drag)
+    def on_reset(icon, item):
+        _do_reset()
 
-    def check_quit():
-        if should_quit.is_set():
-            root.destroy()
-            return
-        root.after(500, check_quit)
+    def on_quit(icon, item):
+        should_quit.set()
+        icon.stop()
 
-    update_gui()
-    check_quit()
+    menu = pystray.Menu(
+        pystray.MenuItem(lambda item: f"Durum: {_state_labels.get(sm.state, '?')}", None, enabled=False),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("↺ Sıfırla", on_reset),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Çıkış", on_quit),
+    )
+
+    icon = pystray.Icon("VoiceDictation", make_icon((0, 255, 136)), "VD: Hazır", menu)
+
+    # Cift-tik destegi: icon olusturulduktan SONRA _message_handlers'i patch ediyoruz.
+    # pystray WM_LBUTTONDBLCLK (0x0203) mesajini yoksayar; biz WM_LBUTTONUP (0x0202)
+    # zamanlama ile algiliyoruz: 400ms icinde iki tik = cift tik = reset.
+    # Ayni zamanda WM_LBUTTONDBLCLK mesaji gelirse de reset yapiyoruz.
+    try:
+        from pystray._util import win32 as _pw32util
+        _WM_LBUTTONUP = 0x0202
+        _WM_LBUTTONDBLCLK = 0x0203
+        _DBLCLICK_MS = 0.4
+        _last_lbuttonup = [0.0]
+        _WM_NOTIFY_KEY = _pw32util.WM_NOTIFY
+        _orig_handler = icon._message_handlers.get(_WM_NOTIFY_KEY)
+
+        def _dblclick_notify(wparam, lparam):
+            if lparam == _WM_LBUTTONUP:
+                now = time.time()
+                if now - _last_lbuttonup[0] < _DBLCLICK_MS:
+                    _last_lbuttonup[0] = 0.0
+                    threading.Thread(target=_do_reset, daemon=True).start()
+                else:
+                    _last_lbuttonup[0] = now
+            elif lparam == _WM_LBUTTONDBLCLK:
+                _last_lbuttonup[0] = 0.0
+                threading.Thread(target=_do_reset, daemon=True).start()
+            elif _orig_handler:
+                _orig_handler(wparam, lparam)
+
+        icon._message_handlers[_WM_NOTIFY_KEY] = _dblclick_notify
+        log.debug("[Tray] Cift-tik instance patch uygulandi.")
+    except Exception as e:
+        log.warning(f"[Tray] Cift-tik patch basarisiz: {e}")
+
+    def update_loop():
+        last_state = None
+        while not should_quit.is_set():
+            state = sm.state
+            if state != last_state:
+                color = _state_colors.get(state, (136, 136, 136))
+                label = _state_labels.get(state, "?")
+                icon.icon = make_icon(color)
+                icon.title = f"VD: {label}"
+                last_state = state
+            time.sleep(0.3)
+        icon.stop()
+
+    threading.Thread(target=update_loop, daemon=True).start()
 
     global _gui
-    _gui = root
-    root.mainloop()
+    _gui = icon
+    icon.run()
 
 
 # --- MODEL ---

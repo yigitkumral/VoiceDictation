@@ -16,10 +16,10 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 
 ### Platform Destegi
 
-| Platform | GPU | Hotkey | Ses Geri Bildirimi |
-|----------|-----|--------|--------------------|
-| Windows | CUDA (otomatik algilama) | F13 (sniper) | winsound WAV |
-| macOS | CPU (fallback) | Ctrl+Option+R | afplay WAV |
+| Platform | GPU | Hotkey | Ses Geri Bildirimi | GUI |
+|----------|-----|--------|--------------------|-----|
+| Windows | CUDA (otomatik algilama) | F13 (sniper) | winsound WAV | pystray sistem tepsisi ikonu |
+| macOS | CPU (fallback) | Ctrl+Option+R | afplay WAV | rumps menu bar ikonu |
 
 ### Logging
 
@@ -34,7 +34,30 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 - sounddevice + numpy (audio I/O)
 - pynput (global hotkey + keyboard simulation)
 - pyperclip (clipboard)
+- pystray + Pillow (Windows sistem tepsisi GUI)
+- rumps (macOS menu bar GUI)
 - logging (dosya + konsol, seviyeli loglama)
+
+### Windows Auto-Start (Bilgisayar Acilisinda Otomatik Baslatma)
+
+Uygulama Windows baslarken otomatik calismali ve her zaman repodaki guncel kodu kullanmali.
+
+**Mekanizma:** Startup klasorune VBScript koyulur, VBScript konsolsuz olarak `start.bat`'i calistirir.
+
+**Dosyalar:**
+- `start.bat` — repo kokunde, `venv/Scripts/python.exe dictation.py` calistirir
+- `start.vbs` — repo kokunde, `start.bat`'i konsolsuz (gizli pencere) calistirir
+- Windows Startup klasoru kisayolu: `shell:startup` → `start.vbs` kisayolu
+
+**Guncelleme Akisi:**
+- `dictation.py` degistiginde startup kisayolu guncellenmez — zaten repo'dan calistirilir
+- Tek yapilmasi gereken: `git pull` veya kodu duzenlemek
+- Bir sonraki bilgisayar acilisinda yeni kod otomatik devreye girer
+
+**Kurulum Adimlari (bir kez yapilir):**
+1. `start.bat` ve `start.vbs` dosyalari repo kokunde olusturulur
+2. `Win + R` → `shell:startup` → VBScript'e kisayol koyulur
+3. Tamamdir — bir daha dokunulmaz
 
 ---
 
@@ -91,4 +114,4 @@ Kullanici ile **Turkce** iletisim kur.
 
 ---
 
-*Son Guncelleme: 14 Mart 2026*
+*Son Guncelleme: 19 Mart 2026*

@@ -17,6 +17,14 @@ dictation.log
 # Claude Code local settings
 .claude/settings.local.json
 settings.json
+.mcp.json
+
+# Windows local startup scripts
+start.bat
+start.vbs
+
+# Playwright MCP cache
+.playwright-mcp/
 
 # OS
 .DS_Store
