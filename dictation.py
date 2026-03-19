@@ -285,6 +285,150 @@ listen_last_speech_time = 0
 current_modifiers = set()
 should_quit = threading.Event()
 _last_hotkey_tap = 0  # double-tap icin son basma zamani
+_gui = None  # GUI referansi
+
+
+# --- MINI GUI (sag ust kose) ---
+
+def _do_reset():
+    """Durumu sifirla — hangi state'te olursa olsun LISTENING'e don."""
+    global speech_detected, listen_speech_detected
+    with audio_lock:
+        audio_frames.clear()
+    with listen_lock:
+        listen_frames.clear()
+    speech_detected = False
+    listen_speech_detected = False
+    sm.force(State.LISTENING)
+    sound_error()
+    log.info("[RESET] Kullanici tarafindan sifirlandi.")
+
+
+def start_gui():
+    """macOS menu bar icon ile durum gosterimi."""
+    if IS_MAC:
+        _start_menubar_gui()
+    else:
+        _start_tkinter_gui()
+
+
+def _start_menubar_gui():
+    """macOS menu bar uygulamasi (rumps) — tam ekranda da gorunur."""
+    import rumps
+
+    _state_icons = {
+        State.LISTENING:  "🟢",
+        State.RECORDING:  "🔴",
+        State.PROCESSING: "🟡",
+        State.COOLDOWN:   "⚪",
+    }
+    _state_labels = {
+        State.LISTENING:  "Hazır",
+        State.RECORDING:  "Kayıt...",
+        State.PROCESSING: "İşliyor...",
+        State.COOLDOWN:   "Bekleme",
+    }
+
+    class VDMenuBar(rumps.App):
+        def __init__(self):
+            super().__init__("VD", title="🟢", quit_button=None)
+            self.menu = [
+                rumps.MenuItem("Durum: Hazır", callback=None),
+                None,  # separator
+                rumps.MenuItem("↺ Sıfırla", callback=self.on_reset),
+                None,
+                rumps.MenuItem("Çıkış", callback=self.on_quit),
+            ]
+            self._status_item = self.menu["Durum: Hazır"]
+
+        @rumps.timer(0.3)
+        def update_status(self, _):
+            state = sm.state
+            icon = _state_icons.get(state, "⚪")
+            label = _state_labels.get(state, "?")
+            self.title = icon
+            self._status_item.title = f"Durum: {label}"
+            if should_quit.is_set():
+                rumps.quit_application()
+
+        def on_reset(self, _):
+            _do_reset()
+
+        def on_quit(self, _):
+            should_quit.set()
+            rumps.quit_application()
+
+    VDMenuBar().run()
+
+
+def _start_tkinter_gui():
+    """Windows icin tkinter GUI (sag ust kose)."""
+    import tkinter as tk
+
+    root = tk.Tk()
+    root.title("VD")
+    root.overrideredirect(True)
+    root.attributes("-topmost", True)
+
+    w, h = 140, 50
+    screen_w = root.winfo_screenwidth()
+    x = screen_w - w - 10
+    y = 10
+    root.geometry(f"{w}x{h}+{x}+{y}")
+    root.configure(bg="#1a1a2e")
+
+    state_var = tk.StringVar(value="HAZIR")
+    state_label = tk.Label(
+        root, textvariable=state_var,
+        font=("Segoe UI", 11, "bold"), fg="#00ff88", bg="#1a1a2e",
+        anchor="w", padx=5,
+    )
+    state_label.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+    reset_btn = tk.Button(
+        root, text="↺", font=("Segoe UI", 14, "bold"),
+        fg="#ff6b6b", bg="#2a2a4e", activebackground="#3a3a6e",
+        bd=0, width=2, command=lambda: _do_reset(),
+    )
+    reset_btn.pack(side=tk.RIGHT, fill=tk.Y, padx=2, pady=2)
+
+    _state_display = {
+        State.LISTENING:  ("HAZIR",      "#00ff88"),
+        State.RECORDING:  ("KAYIT ●",    "#ff4444"),
+        State.PROCESSING: ("ISLIYOR...", "#ffaa00"),
+        State.COOLDOWN:   ("BEKLEME",    "#888888"),
+    }
+
+    def update_gui():
+        state = sm.state
+        text, color = _state_display.get(state, ("?", "#ffffff"))
+        state_var.set(text)
+        state_label.configure(fg=color)
+        root.after(200, update_gui)
+
+    _drag = {"x": 0, "y": 0}
+    def on_drag_start(e):
+        _drag["x"] = e.x
+        _drag["y"] = e.y
+    def on_drag(e):
+        x = root.winfo_x() + e.x - _drag["x"]
+        y = root.winfo_y() + e.y - _drag["y"]
+        root.geometry(f"+{x}+{y}")
+    state_label.bind("<Button-1>", on_drag_start)
+    state_label.bind("<B1-Motion>", on_drag)
+
+    def check_quit():
+        if should_quit.is_set():
+            root.destroy()
+            return
+        root.after(500, check_quit)
+
+    update_gui()
+    check_quit()
+
+    global _gui
+    _gui = root
+    root.mainloop()
 
 
 # --- MODEL ---
@@ -867,10 +1011,14 @@ def main():
              "   Durdur: F13 (tekrar) veya \"Zugzwang\" de\n"
              f"   Cikmak icin: {quit_combo}")
 
-    with pynput_kb.Listener(on_press=on_press, on_release=on_release) as listener:
-        should_quit.wait()
-        listener.stop()
+    # pynput listener'i thread'de baslat (macOS'ta tkinter main thread olmali)
+    _pynput_listener = pynput_kb.Listener(on_press=on_press, on_release=on_release)
+    _pynput_listener.start()
 
+    # GUI main thread'de calis (macOS gereksinimi)
+    start_gui()  # bloklayici — should_quit olunca root.destroy() ile cikar
+
+    _pynput_listener.stop()
     log.info("Kapatiliyor...")
     audio_stream.stop()
     audio_stream.close()
