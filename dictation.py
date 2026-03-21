@@ -286,6 +286,10 @@ wake_word_enabled = True  # Anahtar kelime (Zugzwang) aktif mi
 current_modifiers = set()
 should_quit = threading.Event()
 _last_hotkey_tap = 0  # double-tap icin son basma zamani
+_hotkey_press_start = 0.0  # long-press reset icin baslangic zamani
+_long_press_timer = None  # long-press timer
+_long_press_fired = False  # timer tetiklendi mi
+LONG_PRESS_RESET = 1.25  # 1.25 saniye basili tutma = reset
 _gui = None  # GUI referansi
 
 
@@ -948,27 +952,49 @@ def toggle_recording():
 
 # --- PYNPUT LISTENER ---
 
+
+
+_reset_cooldown_until = 0.0  # reset sonrasi bounce engelleme
+
+def _long_press_trigger():
+    """Timer tetiklendi — 1.25sn doldu, hemen reset at."""
+    global _long_press_fired, _hotkey_press_start, _reset_cooldown_until
+    _long_press_fired = True
+    _hotkey_press_start = 0.0
+    _reset_cooldown_until = time.time() + 0.8  # 800ms cooldown
+    log.info(f"[RESET] Long-press algilandi ({LONG_PRESS_RESET}sn)")
+    _do_reset()
+
+
 def on_press(key):
-    global _last_hotkey_tap
+    global _last_hotkey_tap, _hotkey_press_start, _long_press_timer, _long_press_fired
 
     if _suppress_hotkey:
         return  # paste_and_send sirasinda hotkey'leri yoksay
 
+    # Reset sonrasi bounce engelleme
+    if time.time() < _reset_cooldown_until:
+        return
+
     if HOTKEY_RECORD_MODIFIERS:
         if key == HOTKEY_RECORD and HOTKEY_RECORD_MODIFIERS.issubset(current_modifiers):
-            toggle_recording()
+            if _hotkey_press_start == 0.0 and not _long_press_fired:
+                _hotkey_press_start = time.time()
+                _long_press_fired = False
+                _long_press_timer = threading.Timer(LONG_PRESS_RESET, _long_press_trigger)
+                _long_press_timer.daemon = True
+                _long_press_timer.start()
             return
     else:
         if key == HOTKEY_RECORD:
+            if _hotkey_press_start == 0.0 and not _long_press_fired:
+                _hotkey_press_start = time.time()
+                _long_press_fired = False
+                _long_press_timer = threading.Timer(LONG_PRESS_RESET, _long_press_trigger)
+                _long_press_timer.daemon = True
+                _long_press_timer.start()
             if IS_MAC and hasattr(sys.modules[__name__], 'DOUBLE_TAP_INTERVAL'):
-                now = time.time()
-                if now - _last_hotkey_tap < DOUBLE_TAP_INTERVAL:
-                    _last_hotkey_tap = 0  # reset
-                    toggle_recording()
-                else:
-                    _last_hotkey_tap = now
                 return
-            toggle_recording()
             return
 
     if key in (pynput_kb.Key.ctrl_l, pynput_kb.Key.ctrl_r, pynput_kb.Key.ctrl):
@@ -985,6 +1011,39 @@ def on_press(key):
 
 
 def on_release(key):
+    global _last_hotkey_tap, _hotkey_press_start, _long_press_timer, _long_press_fired
+
+    # Hotkey release: timer tetiklendiyse (reset oldu) hicbir sey yapma, yoksa toggle
+    is_hotkey = False
+    if HOTKEY_RECORD_MODIFIERS:
+        is_hotkey = (key == HOTKEY_RECORD and HOTKEY_RECORD_MODIFIERS.issubset(current_modifiers))
+    else:
+        is_hotkey = (key == HOTKEY_RECORD)
+
+    if is_hotkey:
+        # Timer'i iptal et (henuz tetiklenmediyse)
+        if _long_press_timer:
+            _long_press_timer.cancel()
+            _long_press_timer = None
+        _hotkey_press_start = 0.0
+        if _long_press_fired:
+            # Reset zaten oldu, toggle yapma
+            _long_press_fired = False
+            return
+        # Kisa basma — normal toggle
+        if _suppress_hotkey:
+            return
+        if IS_MAC and hasattr(sys.modules[__name__], 'DOUBLE_TAP_INTERVAL'):
+            now = time.time()
+            if now - _last_hotkey_tap < DOUBLE_TAP_INTERVAL:
+                _last_hotkey_tap = 0
+                toggle_recording()
+            else:
+                _last_hotkey_tap = now
+            return
+        toggle_recording()
+        return
+
     if key in (pynput_kb.Key.ctrl_l, pynput_kb.Key.ctrl_r, pynput_kb.Key.ctrl):
         current_modifiers.discard(pynput_kb.Key.ctrl)
     elif key in (pynput_kb.Key.alt_l, pynput_kb.Key.alt_r, pynput_kb.Key.alt, pynput_kb.Key.alt_gr):
