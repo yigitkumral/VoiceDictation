@@ -282,6 +282,7 @@ speech_detected = False
 last_speech_time = 0
 listen_speech_detected = False
 listen_last_speech_time = 0
+wake_word_enabled = True  # Anahtar kelime (Zugzwang) aktif mi
 current_modifiers = set()
 should_quit = threading.Event()
 _last_hotkey_tap = 0  # double-tap icin son basma zamani
@@ -332,9 +333,13 @@ def _start_menubar_gui():
     class VDMenuBar(rumps.App):
         def __init__(self):
             super().__init__("VD", title="🟢", quit_button=None)
+            self._wake_item = rumps.MenuItem(
+                "🗣️ Anahtar Kelime: Açık", callback=self.on_toggle_wake
+            )
             self.menu = [
                 rumps.MenuItem("Durum: Hazır", callback=None),
                 None,  # separator
+                self._wake_item,
                 rumps.MenuItem("↺ Sıfırla", callback=self.on_reset),
                 None,
                 rumps.MenuItem("Çıkış", callback=self.on_quit),
@@ -348,8 +353,15 @@ def _start_menubar_gui():
             label = _state_labels.get(state, "?")
             self.title = icon
             self._status_item.title = f"Durum: {label}"
+            self._wake_item.title = f"🗣️ Anahtar Kelime: {'Açık' if wake_word_enabled else 'Kapalı'}"
             if should_quit.is_set():
                 rumps.quit_application()
+
+        def on_toggle_wake(self, _):
+            global wake_word_enabled
+            wake_word_enabled = not wake_word_enabled
+            state = "ACIK" if wake_word_enabled else "KAPALI"
+            log.info(f"[WAKE] Anahtar kelime: {state}")
 
         def on_reset(self, _):
             _do_reset()
@@ -388,6 +400,12 @@ def _start_tray_gui():
     def on_reset(icon, item):
         _do_reset()
 
+    def on_toggle_wake(icon, item):
+        global wake_word_enabled
+        wake_word_enabled = not wake_word_enabled
+        state = "ACIK" if wake_word_enabled else "KAPALI"
+        log.info(f"[WAKE] Anahtar kelime: {state}")
+
     def on_quit(icon, item):
         should_quit.set()
         icon.stop()
@@ -395,6 +413,11 @@ def _start_tray_gui():
     menu = pystray.Menu(
         pystray.MenuItem(lambda item: f"Durum: {_state_labels.get(sm.state, '?')}", None, enabled=False),
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem(
+            lambda item: f"🗣️ Anahtar Kelime: {'Açık' if wake_word_enabled else 'Kapalı'}",
+            on_toggle_wake,
+            checked=lambda item: wake_word_enabled,
+        ),
         pystray.MenuItem("↺ Sıfırla", on_reset),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Çıkış", on_quit),
@@ -744,7 +767,7 @@ def do_stop_and_send():
     text = quick_transcribe(audio_data)
 
     if text:
-        msg = extract_message(text) if has_wake_word(text) else text
+        msg = extract_message(text) if (wake_word_enabled and has_wake_word(text)) else text
         if not msg:
             msg = text
 
@@ -815,7 +838,7 @@ def stop_word_checker():
 
         log.info(f"[CHECK] Duydum: {text}")
 
-        if has_wake_word(text):
+        if wake_word_enabled and has_wake_word(text):
             msg = extract_message(text)
             if msg:
                 do_send(msg)
@@ -846,6 +869,9 @@ def wake_word_listener():
 
     while not should_quit.is_set():
         time.sleep(_backoff_time)
+
+        if not wake_word_enabled:
+            continue
 
         if sm.state != State.LISTENING:
             _consecutive_empty = 0
