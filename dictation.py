@@ -701,10 +701,12 @@ def do_start_recording():
     if not sm.transition(State.LISTENING, State.RECORDING):
         return False
 
-    # Listen buffer'daki sesi kayda aktar — mesajin basi kaybolmasin
+    # Listen buffer'daki sesi kayda aktar — sadece son 3 saniye (arka plan birikmesi onlenir)
     with listen_lock:
-        carry_over = list(listen_frames)
+        all_frames = list(listen_frames)
         listen_frames.clear()
+    max_carry_frames = int(SAMPLE_RATE / (SAMPLE_RATE * 0.1) * 3)  # ~3 saniye (30 frame)
+    carry_over = all_frames[-max_carry_frames:] if len(all_frames) > max_carry_frames else all_frames
     with audio_lock:
         audio_frames.clear()
         audio_frames.extend(carry_over)
@@ -881,6 +883,12 @@ def wake_word_listener():
             _consecutive_empty = 0
             _backoff_time = 0.1
             continue
+
+        # Buffer boyut siniri: maksimum 30 saniye tut (arka plan birikmesini onle)
+        _max_listen_frames = int(SAMPLE_RATE / (SAMPLE_RATE * 0.1) * 30)  # ~30sn = 300 frame
+        with listen_lock:
+            if len(listen_frames) > _max_listen_frames:
+                listen_frames[:] = listen_frames[-_max_listen_frames:]
 
         if not listen_speech_detected:
             with listen_lock:
