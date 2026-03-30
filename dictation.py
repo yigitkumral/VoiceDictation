@@ -282,7 +282,7 @@ speech_detected = False
 last_speech_time = 0
 listen_speech_detected = False
 listen_last_speech_time = 0
-wake_word_enabled = True  # Anahtar kelime (Zugzwang) aktif mi
+wake_word_enabled = False  # Anahtar kelime (Zugzwang) varsayilan kapali, tray'den acilabilir
 current_modifiers = set()
 should_quit = threading.Event()
 _last_hotkey_tap = 0  # double-tap icin son basma zamani
@@ -684,7 +684,7 @@ def audio_callback(indata, frames, time_info, status):
             speech_detected = True
             last_speech_time = time.time()
 
-    elif state == State.LISTENING:
+    elif state == State.LISTENING and wake_word_enabled:
         with listen_lock:
             listen_frames.append(indata.copy())
         if level > SILENCE_THRESHOLD:
@@ -705,7 +705,7 @@ def do_start_recording():
     with listen_lock:
         all_frames = list(listen_frames)
         listen_frames.clear()
-    max_carry_frames = int(SAMPLE_RATE / (SAMPLE_RATE * 0.1) * 3)  # ~3 saniye (30 frame)
+    max_carry_frames = int(SAMPLE_RATE / (SAMPLE_RATE * 0.1) * 1)  # ~1 saniye (10 frame)
     carry_over = all_frames[-max_carry_frames:] if len(all_frames) > max_carry_frames else all_frames
     with audio_lock:
         audio_frames.clear()
