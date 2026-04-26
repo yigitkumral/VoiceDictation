@@ -12,7 +12,7 @@
       "args": [
         "-y",
         "@modelcontextprotocol/server-filesystem",
-        "C:\\Users\\yigit\\Desktop\\Yazilim\\VoiceDictation"
+        "<PROJECT_ROOT_ABSOLUTE_PATH>"
       ]
     },
     "fetch": {

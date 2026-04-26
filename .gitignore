@@ -26,6 +26,9 @@ start.vbs
 # Playwright MCP cache
 .playwright-mcp/
 
+# BMAD outputs (kisisel PRD/story/dokuman ureticileri)
+_bmad-output/
+
 # OS
 .DS_Store
 Thumbs.db

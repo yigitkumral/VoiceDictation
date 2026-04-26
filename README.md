@@ -99,4 +99,4 @@ Ayarlar `dictation.py` icinde sabittir:
 
 ## Lisans
 
-Private proje.
+[MIT License](LICENSE) — serbest kullanim. Ticari/akademik/kisisel her amac icin kullanabilir, degistirebilir, dagitabilirsin. Tek sart: telif notunu ekleri yerinde tut.
