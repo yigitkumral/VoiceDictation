@@ -20,14 +20,19 @@
 - [x] CUDA kurulum notu dokumante (Windows icin CUDA Toolkit + cuBLAS)
 - [x] macOS'ta MLX-whisper entegrasyonu (Apple Silicon GPU destegi)
 - [x] Windows auto-start: Startup klasorunde `start.vbs` ile gizli pencere
-- [x] macOS auto-start: LaunchAgent plist ile login sonrasi otomatik calisma
+- [x] macOS auto-start: Login Items + AppleScript .app launcher (`scripts/VoiceDictation.app`)
+  - LaunchAgent ve `start.sh` Login Items denendi, macOS Tahoe TCC kisitlamasi nedeniyle calismadi
+  - AppleScript .app `Automation` kategorisinde oldugu icin Desktop'a erisebiliyor
 - [x] Script'leri `scripts/` klasorune tasi (proje root temizligi)
 
 ## Hotkey + GUI
 
 - [x] Windows: F13 (Logitech G502 sniper button) toggle
 - [x] macOS: Caps Lock double-tap toggle (400ms aralik)
-- [x] Long-press reset (F13 1.25sn basili tutunca kayit iptal)
+- [x] Reset: Windows long-press (F13 1.25sn) / macOS triple-tap (Caps Lock x3 400ms penceresi)
+  - Caps Lock OS-level toggle key oldugundan long-press tetiklenemiyor; triple-tap kullanilir
+  - RECORDING durumunda 2. tap'tan sonra DOUBLE_TAP_INTERVAL gecikme (3. tap iptal edebilsin)
+- [x] Cikis hotkey'i kaldirildi (Cmd+Alt+Q macOS oturum kapatma sistem kisayoluyla cakisiyordu)
 - [x] macOS mikrofon + accessibility izinleri dogrulanmis
 - [x] Windows GUI: pystray sistem tepsisi ikonu (tkinter yerine)
 - [x] macOS GUI: rumps menu bar ikonu
@@ -35,12 +40,14 @@
 
 ## Wake Word
 
-- [x] Default wake word: "Diktasyon" (eskiden "Zugzwang")
+- [x] Default wake word: "Diktasyon"
 - [x] Whisper varyasyonlari icin regex (diktasyon, diktason, diktatsyon, dictation, ...)
 - [x] Tray menusunden wake word degistirilebilir (tkinter dialog Windows, rumps Window macOS)
-- [x] Eski "Zugzwang" yedek regex'i hala mevcut (set_wake_word("zugzwang") ile aktif)
 - [x] Anahtar kelime dinleme aciksa wake word ile baslatma + durdurma
-- [x] "Zugzwang [mesaj] Zugzwang" tek nefes modu (artik "Diktasyon [mesaj] Diktasyon")
+- [x] "Diktasyon [mesaj] Diktasyon" tek nefes modu
+- [x] INITIAL_PROMPT'tan "Diktasyon"/"Zugzwang" cikarildi (Whisper false-positive olarak hayal ediyordu)
+- [x] Whisper "Diktasyon Diktasyon" tekrar bug fix: 2 match + bos mesaj durumu artik tek wake gibi davraniyor (start_recording)
+- [x] Tum "Zugzwang" referanslari "Diktasyon"a guncellendi (kod, README, CLAUDE, TODO, banner)
 - [ ] Wake word degisikliklerinin disk'te persist edilmesi (su an restart'ta default'a doner)
 - [ ] Yeni wake word'lerin Whisper varyasyon regex'lerini otomatik genisletme
 
@@ -48,19 +55,27 @@
 
 - [x] Tray menusunden toplanti kaydi baslat/durdur (F13 lecture sirasinda ignore)
 - [x] **RAM-only**: ses dosyasi DISKE YAZILMAZ, sadece transkript MD dosyalari
-- [x] Canli transkript (LIVE.md): VAD-bazli cumle akisi (1.5sn sessizlik), turbo + beam=1
+- [x] Canli transkript (LIVE.md): VAD-bazli cumle akisi, turbo + beam=1
+  - LIVE_SILENCE_DURATION: 1.5sn -> **0.8sn** (dogal konusma araligi)
+  - LIVE_MAX_CHUNK_SECONDS: 25sn -> **12sn** (surekli konusan icin akiskan canli yazim)
+  - Yeni `LECTURE_LIVE_VAD_THRESHOLD = 0.025` (mac dahili mic baseline 0.005-0.015 oldugundan SILENCE_THRESHOLD 0.008 cumle araligi yakalayamiyordu)
 - [x] Final transkript (.md): kayit bitince tum ses, beam=5 ile yuksek kalite
 - [x] Live thread'in stop'ta join edilmesi (final paragraf "Final transkript hazir" sonrasi yazilmiyor)
 - [x] Tek kapanma sesi (ikinci sound_sent kaldirildi)
 - [x] Tray ikonu lecture aktifken mor renk
 - [x] Editor otomatik acma (canli MD'yi VS Code'da)
 - [x] Tani log'u: stop'ta chunks/samples buffer durumu
+- [x] Transkript MD'lere kapanis footer'i: `Transkript tamamlandi. Sure: ... • Model: ...`
 
 ## Dosyadan Transkript
 
-- [x] Tray menusunden "Ses dosyasini dok..." (tkinter file picker)
+- [x] Tray menusunden "Ses dosyasini dok..." — Windows: tkinter, **macOS: osascript native picker**
+  - Daha onceki tkinter macOS'ta rumps ile main-thread/GIL deadlock yapip SIGABRT crash ediyordu
 - [x] CLI alternatif: `--transcribe FILE` (headless, daemon gereksiz)
-- [x] AAC/MP3/WAV/M4A/FLAC/OGG/MP4 destegi (PyAV uzerinden)
+- [x] AAC/MP3/WAV/M4A/FLAC/OGG/MP4 destegi
+- [x] **macOS'ta `.qta` (Voice Memos lossless) destegi** + AIFF/CAF
+- [x] **macOS'ta ffmpeg yerine `afconvert` (native)** — ffmpeg dependency'si kaldirildi
+  - mlx_whisper'in dahili load_audio'su ffmpeg gerektiriyordu; afconvert ile pre-load edip numpy verilirse atlanir
 - [x] Cikti: ses dosyasi yaninda `.md` + Desktop/VoiceDictation_Lectures kopyasi
 - [x] 80dk AAC -> ~4dk islem (CUDA + turbo, ~20x realtime)
 
@@ -86,18 +101,35 @@
 - [ ] Thread safety regresyon testi yaz (state machine gecisleri)
 - [ ] Yeni Whisper varyasyonlari geldikce wake word regex'i genislet
 
-## Bekleyen Testler — macOS
+## macOS Test Sonuclari (2026-04-26)
 
-Tum yeni ozellikler **Windows'ta test edildi**, macOS'ta henuz test edilmedi:
+Tum testler macOS Tahoe 26.3 + Apple Silicon + MLX uzerinde gecti:
 
-- [ ] **macOS'ta lecture mode** — RAM-only kayit, canli MD akisi, final pass
-  - rumps thread'inden tkinter file dialog acilabiliyor mu? (macOS Cocoa main-thread gereksinimi)
-  - mlx-whisper ile lecture mode performansi (Apple Silicon GPU, beam=5)
-  - Uzun kayitlarda (1+ saat) RAM tuketimi
-- [ ] **macOS'ta dosyadan transkript** — tray "Ses dosyasini dok..." menusu
-- [ ] **macOS'ta editor opener** — sistem default fallback (`open` komutu)
-- [ ] **macOS'ta wake word degistirme** — rumps Window dialog
-- [ ] **macOS'ta tray hiyerarsi** — submenu yapisi rumps'ta nasil gozukuyor
+- [x] **Hotkey diktasyon** — Caps Lock x2 toggle calisti
+- [x] **Triple-tap reset** — Caps Lock x3 ile kayit iptal calisti (long-press fix)
+- [x] **Wake word** — "Diktasyon" + Whisper varyasyonlari yakaladi
+- [x] **Tek nefes modu** — `Diktasyon [mesaj] Diktasyon` calisti
+- [x] **Lecture mode** — RAM-only canli MD + final pass calisti, MLX 40x realtime
+- [x] **Dosyadan transkript** — m4a + qta (Voice Memos), afconvert ile, osascript picker
+- [x] **Anahtar kelime degistirme** — rumps Window dialog
+- [x] **Halusinasyon filtresi** — sessiz kayit `Altyazi M.K.` vb. yakaladi
+- [x] **Tray hiyerarsi** — rumps submenu (🎤 Toplanti / ⚙ Ayarlar)
+- [x] **Auto-start** — Login Items + AppleScript .app launcher
+  - Mac restart sonrasi otomatik baslama dogrulandi
+  - Caps Lock x2 ilk denemede calisti (Input Monitoring + Accessibility izinleri verildi: VoiceDictation + applet)
+
+**Tespit edilen ve duzeltilen sorunlar bu session'da:**
+1. macOS Caps Lock long-press tetiklenmiyor (OS toggle key) → triple-tap kullanildi
+2. INITIAL_PROMPT'taki "Diktasyon" Whisper'i hayal etmeye zorluyor → cikarildi
+3. Whisper "Diktasyon" demeye karsi "Diktasyon Diktasyon" yaziyor → tekrar handler eklendi
+4. Mac mic baseline 0.005-0.015 oldugundan lecture VAD cumle araligi yakalayamiyor → ayri threshold (0.025)
+5. Lecture VAD timing default'lari surekli konusmacida force-flush'a takilmis → 0.8sn / 12sn
+6. mlx_whisper file transcribe icin ffmpeg gerekiyor, mac'te yok → afconvert (native) ile pre-load
+7. tkinter file picker rumps ile main-thread cakismasi yapip SIGABRT crash → osascript native picker
+8. Voice Memos lossless `.qta` formati picker'da yoktu → eklendi
+9. Cmd+Alt+Q quit hotkey macOS oturum kapatma kisayoluyla cakisiyor → kaldirildi
+10. macOS LaunchAgent + Login Items + start.sh + ad-hoc imzali shell .app — TCC kisitlamasi nedeniyle Desktop'a erisim sessizce reddediliyor → AppleScript .app launcher (`Automation` kategorisi calisir)
+11. Login Items'tan baslatilan .app'in Caps Lock'u yakalamasi icin **Input Monitoring** ve **Accessibility** izinleri "VoiceDictation" + "applet" entry'lerine verilmeli (System Settings -> Privacy & Security)
 
 ## Gelecek (Yapilacaklar)
 

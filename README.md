@@ -84,8 +84,8 @@ venv/bin/python dictation.py
 |-------|---------|-------|
 | Kaydi baslat/durdur | F13 (sniper butonu) | Caps Lock double-tap |
 | Kaydi baslat/durdur | "Diktasyon" de | "Diktasyon" de |
-| Long-press reset (kayit iptal) | F13 1.25sn basili tut | Caps Lock 1.25sn basili tut |
-| Cikis | Ctrl+Alt+Q | Cmd+Alt+Q |
+| Reset (kayit iptal) | F13 1.25sn basili tut | Caps Lock 3x tap (triple-tap) |
+| Cikis | Tray/Menu bar -> Cikis | Tray/Menu bar -> Cikis |
 
 ### Nasil Calisir (Hizli Diktasyon)
 
@@ -139,18 +139,28 @@ Hizli diktasyondan farkli olarak, **uzun kayitlar** icin tasarlanmistir (toplant
 
 ### Dosyadan Transkript
 
-Elindeki bir ses dosyasini (AAC, MP3, WAV, M4A, FLAC, OGG, MP4 vb.) yuksek kaliteyle Markdown'a cevirir.
+Elindeki bir ses dosyasini (AAC, MP3, WAV, M4A, FLAC, OGG, MP4, **macOS'ta `.qta` Voice Memos lossless** dahil) yuksek kaliteyle Markdown'a cevirir.
 
 **GUI:** Tray sag tik → 🎤 Toplanti → **Ses dosyasini dok...** → dosya secici
+- Windows: tkinter dosya dialog'u
+- macOS: AppleScript native picker
 
 **CLI (headless, daemon gereksiz):**
 ```bash
+# Windows
 venv/Scripts/python dictation.py --transcribe "FILE.aac"
+
+# macOS (qta dahil)
+venv/bin/python dictation.py --transcribe "Yeni Kayit.qta"
 ```
 
-Cikti: ses dosyasi yaninda `.md` + `~/Desktop/VoiceDictation_Lectures/<isim>.md` (iki kopya).
+Cikti: ses dosyasi yaninda `.md` + `~/Desktop/VoiceDictation_Lectures/<isim>.md` (iki kopya). Her transkript sonunda `Transkript tamamlandi. Sure: ... • Model: ...` footer'i bulunur.
 
-> Performans: 1 saatlik AAC → ~3-5 dakika islem (CUDA + turbo, ~20x realtime)
+> **macOS not:** ffmpeg gerekmiyor — `afconvert` (macOS native, dahili) ile dosya 16kHz mono PCM'e on yuklenir.
+
+> **Performans:** 1 saatlik AAC → ~3-5 dakika islem (CUDA + turbo, ~20x realtime; macOS MLX ~40x realtime).
+
+> **macOS Voice Memos dosyalarina ulasma:** Voice Memos sandbox'inda saklar, dogrudan dosya seciciden gorunmez. Bir kayda Voice Memos uygulamasinda **suruklenip Desktop'a birakilir**, sonra picker'dan secilir.
 
 ### Anahtar Kelime Degistirme
 
@@ -160,7 +170,7 @@ Default wake word "diktasyon" (Whisper'in genis varyasyon regex'i ile). Degistir
 2. Yeni kelime gir, kaydet
 3. Yeni kelime hemen aktif olur (basit kelime sinirli case-insensitive eslesme)
 
-**Not:** Default 'diktasyon'a donmek icin dialog'a `diktasyon` yaz. Eski 'zugzwang' yedek pattern'i hala mevcut, `zugzwang` yazarsan o aktif olur.
+**Not:** Default 'diktasyon'a donmek icin dialog'a `diktasyon` yaz.
 
 > Su an wake word degisikligi RAM'de tutulur, daemon restart'ta default'a doner. Disk persist `config.json` ile gelecek.
 
@@ -177,9 +187,10 @@ Ayarlar dosya icinde:
 | `SILENCE_THRESHOLD` | `0.008` | Ses algilama esigi |
 | `NO_SPEECH_TIMEOUT` | `30.0` | Konusma olmadan zaman asimi (sn) |
 | `WAKE_WORD_DEFAULT` | `"diktasyon"` | Default tetikleme kelimesi |
-| `LIVE_SILENCE_DURATION` | `1.5` | Lecture mode'da cumle sonu sessizlik (sn) |
+| `LIVE_SILENCE_DURATION` | `0.8` | Lecture mode'da cumle sonu sessizlik (sn) |
 | `LIVE_MIN_CHUNK_SECONDS` | `3.0` | Minimum chunk transcribe suresi |
-| `LIVE_MAX_CHUNK_SECONDS` | `25.0` | Maksimum chunk (zorla bolme) |
+| `LIVE_MAX_CHUNK_SECONDS` | `12.0` | Maksimum chunk (zorla bolme) |
+| `LECTURE_LIVE_VAD_THRESHOLD` | `0.025` | Lecture VAD esigi (mic baseline gurultusu yuksekse artir) |
 
 ### Environment Variable
 
@@ -208,9 +219,35 @@ Uygulamanin her boot/login'de otomatik calismasini istiyorsan:
 
 ### macOS
 
-1. `~/Library/LaunchAgents/com.voicedictation.app.plist` olustur (proje icindeki sablon kullanilabilir)
-2. `launchctl load ~/Library/LaunchAgents/com.voicedictation.app.plist`
-3. Tamam — bir sonraki login'de otomatik baslar
+**Yontem: Login Items + AppleScript .app launcher** (`scripts/VoiceDictation.app`).
+
+> **Not:** Naive Login Items (`start.sh`) ya da LaunchAgent calismiyor cunku macOS Tahoe TCC
+> Desktop klasorune erisimi engelliyor. AppleScript .app'i ise `Automation` TCC kategorisinde,
+> `do shell script` araciligiyla repo'ya erisebiliyor.
+
+1. **System Settings** ac → **General** → **Login Items & Extensions**
+2. Onceki entry varsa (`start.sh` veya LaunchAgent) **−** ile kaldir
+3. **Open at Login** bolumunde **+** → `Cmd+Shift+G` → su yolu yapistir:
+   ```
+   /Users/<kullanici>/Desktop/Yazilim/VoiceDictation/scripts/VoiceDictation.app
+   ```
+4. **Open** → liste sonuna **VoiceDictation** eklenir
+5. Bir sonraki login'de otomatik baslar
+
+**Ilk acilista** macOS mikrofon ve otomasyon izinlerini soracaktir — **Izin Ver**.
+
+**Caps Lock hotkey'i icin ek izin gerekiyor:** System Settings -> Privacy & Security ->
+1. **Input Monitoring (Giris Izleme)** → `VoiceDictation` ve `applet` entry'lerini AC
+2. **Accessibility (Erisilebilirlik)** → `VoiceDictation` ve `applet` entry'lerini AC
+
+Bu izinler verilmeden Caps Lock hotkey'i Login Items'tan baslatilan instance'ta calismaz
+(manuel `bash scripts/start.sh` ile baslatilirsa Terminal'in izinleri miras kalir, calisir
+— ama auto-start senaryosu icin yukaridaki izinler sart). Sonraki acilislarda sessizce baslar.
+
+**Guncelleme:** `git pull` veya kod duzenlemesi sonrasi hicbir sey yapma; bir sonraki login'de
+yeni kod devreye girer (.app sadece launcher, dictation.py'yi her zaman repo'dan calistirir).
+
+> Daha onceki LaunchAgent kurulumu varsa kaldirmak icin: `launchctl bootout gui/$(id -u)/com.voicedictation.app && rm -f ~/Library/LaunchAgents/com.voicedictation.app.plist`
 
 ## Loglar
 

@@ -12,21 +12,21 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 - **State Machine (Dictation mode):** LISTENING -> RECORDING -> PROCESSING -> COOLDOWN (mutex ile korunan thread-safe gecisler)
 - **Mode (ortogonal eksen):** DICTATION (varsayilan, anlik) ↔ LECTURE (toplanti/ders, RAM-only)
 - **Audio Pipeline:** sounddevice (mikrofon) -> numpy (buffer) -> faster-whisper (STT) -> pyperclip (clipboard) -> pynput (paste+enter)
-- **Wake Word:** "Zugzwang" toggle (baslatir + durdurur), genis regex pattern ile Whisper varyasyonlarini yakalar
-- **Hotkey:** F13 (Windows, Logitech G502 sniper button) / Ctrl+Option+R (macOS)
+- **Wake Word:** "Diktasyon" toggle (baslatir + durdurur), genis regex pattern ile Whisper varyasyonlarini yakalar (diktason, dictation, diktatsyon, ...)
+- **Hotkey:** F13 (Windows, Logitech G502 sniper button) / Caps Lock x2 (macOS double-tap)
 
 ### Platform Destegi
 
 | Platform | GPU | Hotkey | Ses Geri Bildirimi | GUI |
 |----------|-----|--------|--------------------|-----|
 | Windows | CUDA (otomatik algilama) | F13 (sniper) | winsound WAV | pystray sistem tepsisi ikonu |
-| macOS | CPU (fallback) | Ctrl+Option+R | afplay WAV | rumps menu bar ikonu |
+| macOS | MLX (Apple Silicon GPU) | Caps Lock x2 (double-tap) | afplay WAV | rumps menu bar ikonu |
 
 ### Modlar
 
 #### Dictation Mode (varsayilan)
 
-- F13 veya "Zugzwang" ile baslar/durur, anlik transcribe (turbo, beam=1)
+- F13 / Caps Lock x2 veya "Diktasyon" ile baslar/durur, anlik transcribe (turbo, beam=1)
 - Ses tamamen RAM'de — transcribe sonrasi silinir
 - Cikti: clipboard'a kopyalanir + aktif pencereye otomatik paste + Enter
 
@@ -37,8 +37,13 @@ Tray menusunden **"🎙 Toplanti Kaydi Baslat"** ile baslatilir; lecture aktifke
 **Onemli ilke: Ses dosyasi DISKE YAZILMAZ — RAM-only.** Tum ses bellekte tutulur, kayit bitince transcribe edilir ve buffer temizlenir. Diskte sadece Markdown transkriptleri kalir.
 
 **Iki seviye transkript:**
-- **Canli (LIVE.md):** VAD-bazli cumle akisi — 1.5sn sessizlik = paragraf sonu, transcribe (turbo, beam=1), MD'ye append; lecture baslarken VS Code'da otomatik acilir, dosya degisimini canli izleyebilirsin
+- **Canli (LIVE.md):** VAD-bazli cumle akisi — 0.8sn sessizlik = paragraf sonu, max 12sn force-flush, transcribe (turbo, beam=1), MD'ye append; lecture baslarken VS Code'da otomatik acilir, dosya degisimini canli izleyebilirsin
 - **Final (.md):** kayit bitince tum ses tek seferde, beam=5 ile yuksek kalite, ayri dosya
+- **Footer:** her transkript sonuna `Transkript tamamlandi. Sure: ... • Model: ...` satiri eklenir
+
+**VAD esikleri:**
+- `SILENCE_THRESHOLD = 0.008` — dictation kayit no-speech timeout icin
+- `LECTURE_LIVE_VAD_THRESHOLD = 0.025` — lecture cumle sonu sessizlik tespiti (mac dahili mic baseline 0.005-0.015 oldugundan ayri tutuldu)
 
 **Cikti:**
 ```
@@ -49,13 +54,18 @@ Tray menusunden **"🎙 Toplanti Kaydi Baslat"** ile baslatilir; lecture aktifke
 
 #### Dosyadan Transkript
 
-Mevcut bir ses dosyasini (AAC, MP3, WAV, M4A, FLAC, OGG, MP4 vb.) yuksek kaliteyle MD'ye cevirir.
+Mevcut bir ses dosyasini (AAC, MP3, WAV, M4A, FLAC, OGG, MP4, **macOS'ta `.qta` Voice Memos lossless dahil**) yuksek kaliteyle MD'ye cevirir.
 
 - **GUI:** Tray menusu → "📁 Ses dosyasini dok..." → dosya secici
+  - Windows: tkinter file dialog
+  - macOS: **osascript native picker** (tkinter rumps ile main-thread cakismasi yapiyor, kullanilmiyor)
 - **CLI (headless, daemon gereksiz):**
   ```bash
-  venv/Scripts/python dictation.py --transcribe "FILE.aac"
+  venv/Scripts/python dictation.py --transcribe "FILE.aac"   # Windows
+  venv/bin/python dictation.py --transcribe "FILE.qta"        # macOS
   ```
+
+**macOS audio decoder:** mlx_whisper'in dahili `load_audio` ffmpeg subprocess gerektiriyor; ffmpeg yerine **`afconvert` (macOS native)** ile dosya 16kHz mono PCM'e on yuklenir, numpy olarak verilir. ffmpeg dependency'si gerekmiyor.
 
 Cikti: ses dosyasi yaninda `.md` + `~/Desktop/VoiceDictation_Lectures/<isim>.md` (iki kopya).
 
@@ -120,21 +130,39 @@ Uygulama Windows baslarken otomatik calismali ve her zaman repodaki guncel kodu 
 
 ### macOS Auto-Start (Login'de Otomatik Baslatma)
 
-**Mekanizma:** LaunchAgent plist ile login sonrasi `scripts/start.sh` calistirilir.
+**Mekanizma:** Login Items -> `scripts/VoiceDictation.app` (osacompile uretilen AppleScript .app).
+.app `do shell script` ile `venv/bin/python -u dictation.py` calistirir.
+
+> **NEDEN AppleScript .app:** macOS Tahoe Desktop'a TCC kisitlamasi koyuyor.
+> - LaunchAgent: mikrofon TCC dialog'u arka planda gosterilemiyor, hang oluyor
+> - Login Items + start.sh: TextEdit ile aciliyor, execute olmuyor
+> - Login Items + ad-hoc imzali shell-script-app: TCC sessizce reddediyor (`PermissionError`)
+> - **Login Items + AppleScript .app:** `Automation` TCC kategorisinde, calisir ✅
 
 **Dosyalar:**
-- `scripts/start.sh` — `nohup venv/bin/python -u dictation.py` calistirir
-- `~/Library/LaunchAgents/com.voicedictation.app.plist` — LaunchAgent tanimi
+- `scripts/VoiceDictation.app/` — osacompile uretilen .app bundle
+  - `Contents/Resources/Scripts/main.scpt` — `do shell script "cd ... && nohup ... &"`
+  - `Contents/Info.plist` — `LSUIElement=true` (dock'ta gorunmez)
+- `scripts/start.sh` — manuel baslatma icin (Login Items'ta kullanilmaz)
 
 **Guncelleme Akisi:**
-- `dictation.py` degistiginde plist guncellenmez — zaten repo'dan calistirilir
+- `dictation.py` degistiginde .app guncellenmez — zaten repo'dan calistirilir
 - Tek yapilmasi gereken: `git pull` veya kodu duzenlemek
 - Bir sonraki login'de yeni kod otomatik devreye girer
 
 **Kurulum Adimlari (bir kez yapilir):**
-1. `~/Library/LaunchAgents/com.voicedictation.app.plist` olusturulur
-2. `launchctl load ~/Library/LaunchAgents/com.voicedictation.app.plist`
-3. Tamamdir — bir daha dokunulmaz
+1. System Settings -> General -> Login Items & Extensions
+2. "Open at Login" altinda **+** -> `Cmd+Shift+G` -> `scripts/VoiceDictation.app` yolunu yapistir
+3. Ilk acilista mikrofon + otomasyon izinleri istenir, "Izin Ver" denir
+4. **Privacy & Security -> Input Monitoring** + **Accessibility**: `VoiceDictation` ve `applet` entry'lerini AC (pynput Caps Lock hotkey ve paste icin gerekli; .app'in iki executable adi var: CFBundleName + osacompile applet binary)
+5. Tamamdir — bir daha dokunulmaz
+
+**.app yeniden olusturulmasi gerekirse** (osacompile + codesign):
+```bash
+osacompile -o scripts/VoiceDictation.app <(echo 'do shell script "cd '\''/full/path/to/repo'\'' && nohup venv/bin/python -u dictation.py > /dev/null 2>&1 &"')
+# LSUIElement=true ekle Info.plist'e (dock gizleme)
+codesign --sign - --force --deep scripts/VoiceDictation.app
+```
 
 ---
 

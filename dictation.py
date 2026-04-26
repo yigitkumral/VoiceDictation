@@ -2,8 +2,8 @@
 Voice Dictation Tool — Whisper tabanli sesli yazim araci.
 
 State Machine ile yonetilen birlesik kayit sistemi:
-  Baslat: F13 (sniper butonu) VEYA "Zugzwang" (sesle)
-  Durdur & Gonder: F13 (tekrar bas) VEYA "Zugzwang" (sesle, toggle)
+  Baslat: F13 (Windows sniper butonu) / Caps Lock x2 (macOS double-tap) VEYA "Diktasyon" (sesle)
+  Durdur & Gonder: Ayni hotkey (toggle) VEYA "Diktasyon" (sesle, toggle)
 
 Sessizlikte otomatik gonderme YOK — sen durdurana kadar kayit devam eder.
 State gecisleri mutex ile korunur — race condition yok.
@@ -17,7 +17,7 @@ Kullanim:
     # macOS:
     ./venv/bin/python dictation.py
 
-Cikis: Ctrl+Alt+Q (Windows) / Cmd+Alt+Q (macOS)
+Cikis: Tray menusu / Menu bar -> Cikis
 """
 
 import sys
@@ -111,10 +111,8 @@ if IS_MAC:
     HOTKEY_RECORD_MODIFIERS = set()  # modifier yok, double-tap ile calisir
     DOUBLE_TAP_INTERVAL = 0.4  # 400ms icinde iki kez basarsa toggle
 
-HOTKEY_QUIT_MODIFIERS = {pynput_kb.Key.ctrl, pynput_kb.Key.alt}
-if IS_MAC:
-    HOTKEY_QUIT_MODIFIERS = {pynput_kb.Key.cmd, pynput_kb.Key.alt}
-HOTKEY_QUIT_KEY = pynput_kb.KeyCode.from_char("q")
+# Cikis hotkey'i kaldirildi: macOS'ta Cmd+Alt+Q sistem kisayoluyla cakisiyor
+# (oturum kapatma). Cikis sadece tray menusunden yapilir.
 
 MODEL_SIZE = "turbo"
 LECTURE_MODEL_SIZE = "turbo"  # Toplanti/ders/dosya transkripti icin (turbo = large-v3-turbo)
@@ -147,13 +145,18 @@ LISTEN_SILENCE_DURATION = 0.5
 NO_SPEECH_TIMEOUT = 30.0
 
 # Lecture live (VAD-bazli anlik transcribe)
-LIVE_SILENCE_DURATION = 1.5    # 1.5sn sessizlik = cumle sonu, transcribe et
+LIVE_SILENCE_DURATION = 0.8    # 0.8sn sessizlik = cumle sonu, transcribe et (dogal konusma araligi)
 LIVE_MIN_CHUNK_SECONDS = 3.0   # bu kadar olmadan transcribe etme (cok kisa chunk gurultu)
-LIVE_MAX_CHUNK_SECONDS = 25.0  # bu kadar olduysa zorla bol (hizli konusmaci icin)
+LIVE_MAX_CHUNK_SECONDS = 12.0  # bu kadar olduysa zorla bol (surekli konusan icin akiskan canli yazim)
+# Lecture VAD esigi: cumle sonu sessizligini ayirt etmek icin SILENCE_THRESHOLD'dan yuksek tutulur.
+# Mac dahili mikrofonu baseline 0.005-0.015 gurultu uretir; 0.025 konusma vs. fon gurultusu ayrimi yapar.
+LECTURE_LIVE_VAD_THRESHOLD = 0.025
 
 INITIAL_PROMPT = (
-    "Diktasyon, "
-    "Claude, Claude Code, BMAD, Diktasyon, Zugzwang, API, commit, deploy, push, pull, "
+    # NOT: Wake word ("Diktasyon") buraya KOYULMAZ — prompt'a eklenirse Whisper
+    # belirsiz/kisa seslerde wake word'u hayal eder ve false-positive trigger atar.
+    # Wake word algilama regex pattern'i ile yapilir, vocabulary boost'a gerek yok.
+    "Claude, Claude Code, BMAD, API, commit, deploy, push, pull, "
     "merge, branch, refactor, component, TypeScript, React, OpenClaw, PRD, "
     "MCP, sprint, story, pipeline, Winston, Amelia, workflow, endpoint, "
     "frontend, backend, repository, npm, Node.js, VS Code, extension, "
@@ -290,14 +293,17 @@ speech_detected = False
 last_speech_time = 0
 listen_speech_detected = False
 listen_last_speech_time = 0
-wake_word_enabled = False  # Anahtar kelime (Zugzwang) varsayilan kapali, tray'den acilabilir
+wake_word_enabled = False  # Anahtar kelime (Diktasyon) varsayilan kapali, tray'den acilabilir
 current_modifiers = set()
 should_quit = threading.Event()
 _last_hotkey_tap = 0  # double-tap icin son basma zamani
-_hotkey_press_start = 0.0  # long-press reset icin baslangic zamani
-_long_press_timer = None  # long-press timer
-_long_press_fired = False  # timer tetiklendi mi
-LONG_PRESS_RESET = 1.25  # 1.25 saniye basili tutma = reset
+_hotkey_press_start = 0.0  # long-press reset icin baslangic zamani (Windows)
+_long_press_timer = None  # long-press timer (Windows)
+_long_press_fired = False  # timer tetiklendi mi (Windows)
+LONG_PRESS_RESET = 1.25  # 1.25 saniye basili tutma = reset (Windows F13)
+# macOS Caps Lock toggle key oldugu icin long-press calismaz; triple-tap kullanilir.
+_hotkey_tap_count = 0  # macOS triple-tap sayaci
+_pending_toggle_timer = None  # macOS: 2. tap sonrasi geciktirilmis toggle (3. tap iptal edebilsin)
 _gui = None  # GUI referansi
 
 # --- LECTURE / FILE MODE STATE ---
@@ -430,7 +436,7 @@ def _start_menubar_gui():
                     message=(
                         f"Mevcut: \"{wake_word_string}\"\n\n"
                         "Yeni anahtar kelime girin (boş = iptal).\n"
-                        "Default 'zugzwang' için 'zugzwang' yazın."
+                        "Default 'diktasyon' için 'diktasyon' yazın."
                     ),
                     default_text=wake_word_string,
                     ok="Kaydet",
@@ -796,11 +802,41 @@ def _get_lectures_dir():
     return base
 
 
+def _load_audio_via_afconvert(path, target_sr=SAMPLE_RATE):
+    """macOS native: afconvert ile herhangi bir formati 16kHz mono PCM'e cevir, numpy array dondur.
+    ffmpeg gerektirmez. m4a/aac/mp3/wav/aiff/caf/flac/alac/ogg desteklenir."""
+    import subprocess, tempfile, wave as _wave
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+        tmp_path = tmp.name
+    try:
+        result = subprocess.run(
+            ["afconvert", "-f", "WAVE", "-d", f"LEI16@{target_sr}", "-c", "1", path, tmp_path],
+            capture_output=True, text=True
+        )
+        if result.returncode != 0:
+            raise RuntimeError(f"afconvert basarisiz: {result.stderr.strip()}")
+        with _wave.open(tmp_path, "rb") as wf:
+            frames = wf.readframes(wf.getnframes())
+            audio_np = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+        return audio_np
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
+
 def _transcribe_audio_path(audio, beam_size=5):
     """Dosya yolu VEYA numpy array'inden transkript al (faster-whisper / MLX).
-    (text, segments) doner."""
+    (text, segments) doner.
+
+    macOS'ta dosya yolu gelirse afconvert ile pre-load edilir (ffmpeg gerekmez)."""
     if isinstance(audio, str):
         label = os.path.basename(audio)
+        if IS_MAC:
+            log.info(f"[TRANSCRIBE] afconvert ile yukleniyor: {label}")
+            audio = _load_audio_via_afconvert(audio)
+            label = f"{label} (decoded {len(audio)/SAMPLE_RATE:.0f}sn)"
     else:
         label = f"RAM buffer ({len(audio)/SAMPLE_RATE:.0f}sn)"
     log.info(f"[TRANSCRIBE] Calisiyor: {label}")
@@ -884,7 +920,9 @@ def _write_lecture_markdown(md_path, segments, audio_duration, source_path, head
                 m = int(start_sec // 60); s = int(start_sec % 60)
                 f.write(f"**[{m:02d}:{s:02d}]** {paragraph}\n\n")
         else:
-            f.write("_(Konusma algilanamadi.)_\n")
+            f.write("_(Konusma algilanamadi.)_\n\n")
+        f.write("---\n\n")
+        f.write(f"_**Transkript tamamlandi.** Sure: {_format_seconds(audio_duration)} • Model: {LECTURE_MODEL_SIZE} ({DEVICE})_\n")
 
 
 def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
@@ -1256,7 +1294,7 @@ def _prompt_change_wake_word():
             "Yeni anahtar kelime girin (boş bırakırsanız değişmez).\n"
             "Not: Whisper'ın sizin telaffuzunuzu nasıl yazdığına bağlı; "
             "tek heceli ya da yaygın olmayan kelimeler daha iyi yakalanır.\n"
-            "Default 'zugzwang' geri yüklemek için 'zugzwang' yazın.",
+            "Default 'diktasyon' geri yüklemek için 'diktasyon' yazın.",
             parent=root,
         )
         try:
@@ -1272,29 +1310,55 @@ def _prompt_change_wake_word():
         log.error(f"[WAKE] Dialog hatasi: {e}", exc_info=True)
 
 
-def _pick_file_and_transcribe():
-    """Tray menusunden cagrilir: tkinter dosya secici ac, secileni transcribe et."""
+def _pick_audio_file_macos():
+    """macOS native AppleScript file picker (osascript). tkinter rumps ile main-thread
+    cakismasi yapip GIL deadlock'a girdigi icin kullanilmiyor."""
+    import subprocess
+    script = (
+        'set theFile to choose file with prompt '
+        '"Transkripte edilecek ses dosyasini sec" '
+        'of type {"wav","mp3","m4a","aac","flac","ogg","wma","opus","aif","aiff","caf","qta","mp4","mov","mkv","webm"}\n'
+        'POSIX path of theFile'
+    )
     try:
-        import tkinter as tk
-        from tkinter import filedialog
-        root = tk.Tk()
-        root.withdraw()
-        try:
-            root.attributes("-topmost", True)
-        except Exception:
-            pass
-        path = filedialog.askopenfilename(
-            title="Transkripte edilecek ses dosyasini sec",
-            filetypes=[
-                ("Ses dosyalari", "*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.wma *.opus"),
-                ("Video (sesi cikarilir)", "*.mp4 *.mov *.mkv *.avi *.webm"),
-                ("Tum dosyalar", "*.*"),
-            ],
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, timeout=300
         )
-        try:
-            root.destroy()
-        except Exception:
-            pass
+        if result.returncode != 0:
+            # Kullanici iptal ettiyse stderr'de "User canceled" / -128 olur
+            return None
+        return result.stdout.strip() or None
+    except Exception as e:
+        log.error(f"[FILE] osascript hatasi: {e}")
+        return None
+
+
+def _pick_file_and_transcribe():
+    """Tray menusunden cagrilir: dosya secici ac, secileni transcribe et."""
+    try:
+        if IS_MAC:
+            path = _pick_audio_file_macos()
+        else:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+            except Exception:
+                pass
+            path = filedialog.askopenfilename(
+                title="Transkripte edilecek ses dosyasini sec",
+                filetypes=[
+                    ("Ses dosyalari", "*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.wma *.opus *.qta *.aif *.aiff *.caf"),
+                    ("Video (sesi cikarilir)", "*.mp4 *.mov *.mkv *.avi *.webm"),
+                    ("Tum dosyalar", "*.*"),
+                ],
+            )
+            try:
+                root.destroy()
+            except Exception:
+                pass
         if not path:
             log.info("[FILE] Secim iptal edildi.")
             return
@@ -1321,15 +1385,6 @@ _DEFAULT_WAKE_RE = re.compile(
     r"|\bdic?tat?ion\b"                      # dictation, diction, dictaion
     , re.IGNORECASE
 )
-# Yedek: eski Zugzwang regex (kullanici geri donmek isterse 'zugzwang' yazabilir)
-_ZUGZWANG_RE = re.compile(
-    r"\bzu[cgkx]+s?z?w?[ao]n?[gk]\b"
-    r"|\bzux\s*wang\b|\bzugs?\s*wang\b|\bzuck\s*zwang\b"
-    r"|\bzuks?\s*wang\b|\bzugz?\s*wang\b"
-    r"|\bz[uü]k\s*z?v[ao]n[gk]\b|\bzo+k\s*z?v[ao]n[gk]\b|\bzvank\b"
-    , re.IGNORECASE
-)
-
 # Aktif wake word regex'i (runtime'da set_wake_word ile degisir)
 _WAKE_RE = _DEFAULT_WAKE_RE
 
@@ -1337,7 +1392,7 @@ _WAKE_RE = _DEFAULT_WAKE_RE
 def set_wake_word(new_word):
     """Tray menusunden cagrilir: yeni wake word'u aktif et, regex'i guncelle.
 
-    Default 'zugzwang' icin genis Whisper varyasyon pattern korunur.
+    Default 'diktasyon' icin genis Whisper varyasyon pattern korunur.
     Diger kelimeler icin basit kelime sinirli case-insensitive eslesme uretilir
     (Whisper varyasyonlarini yakalayamayabilir; gelistirici kullanicilar el ile
     regex pattern de girebilir, parantez/escape karakterleri olduğu gibi calisir).
@@ -1351,10 +1406,6 @@ def set_wake_word(new_word):
     if wake_word_string == WAKE_WORD_DEFAULT:
         _WAKE_RE = _DEFAULT_WAKE_RE
         log.info(f"[WAKE] Default '{WAKE_WORD_DEFAULT}' regex'i (genis Whisper varyasyonlari) aktif.")
-    elif wake_word_string == "zugzwang":
-        # Eski default — yedek regex aktif
-        _WAKE_RE = _ZUGZWANG_RE
-        log.info("[WAKE] Eski Zugzwang regex'i (yedek pattern) aktif.")
     else:
         try:
             # Eger kullanici regex meta karakterleri kullanmadiysa basit eslesme;
@@ -1403,7 +1454,7 @@ def audio_callback(indata, frames, time_info, status):
             lecture_audio_chunks.append(chunk)
         with lecture_live_buffer_lock:
             lecture_live_buffer.append(chunk)
-        if level > SILENCE_THRESHOLD:
+        if level > LECTURE_LIVE_VAD_THRESHOLD:
             lecture_live_speech_detected = True
             lecture_live_last_speech_time = time.time()
 
@@ -1451,7 +1502,8 @@ def do_start_recording():
     last_speech_time = time.time()
 
     sound_recording()
-    log.info("[REC] KAYIT BASLADI - F13 veya \"Zugzwang\" ile durdur")
+    record_label = "F13" if IS_WIN else "Caps Lock x2"
+    log.info(f"[REC] KAYIT BASLADI - {record_label} veya \"{wake_word_string.capitalize()}\" ile durdur")
 
     # Stop word checker baslat
     threading.Thread(target=stop_word_checker, daemon=True).start()
@@ -1535,7 +1587,7 @@ def do_stop_and_send():
 # --- STOP WORD CHECKER ---
 
 def stop_word_checker():
-    """Kayit sirasinda 'Zugzwang' stop word'unu arar."""
+    """Kayit sirasinda wake word'u (default: 'Diktasyon') stop word olarak arar."""
     global speech_detected, last_speech_time
     last_check_frame_count = 0
 
@@ -1586,7 +1638,7 @@ def stop_word_checker():
                 do_send(msg)
                 return
             else:
-                # Sadece "Zugzwang" soylenmis, mesaj yok — kaydi iptal et
+                # Sadece wake word soylenmis, mesaj yok — kaydi iptal et
                 log.info("[IPTAL] Sadece toggle word soylendi, mesaj yok.")
                 sound_error()
                 sm.force(State.COOLDOWN)
@@ -1683,9 +1735,14 @@ def wake_word_listener():
                     listen_speech_detected = False
                     time.sleep(1.0)
                     sm.force(State.LISTENING)
+                    continue
+                # Birden fazla match var ama arada mesaj yok (Whisper tekrar hatasi:
+                # "Diktasyon Diktasyon"). Tek wake gibi davran, kayit baslat.
+                log.info(f"[WAKE] \"{wake_word_string.capitalize()}\" algilandi (Whisper tekrar etti, tek event sayildi).")
+                do_start_recording()
                 continue
 
-            log.info("[WAKE] \"Zugzwang\" algilandi!")
+            log.info(f"[WAKE] \"{wake_word_string.capitalize()}\" algilandi!")
             do_start_recording()
 
 
@@ -1740,14 +1797,13 @@ def on_press(key):
             return
     else:
         if key == HOTKEY_RECORD:
-            if _hotkey_press_start == 0.0 and not _long_press_fired:
+            # macOS: Caps Lock toggle key, long-press algilanamaz; tap-counting on_release'de.
+            if not IS_MAC and _hotkey_press_start == 0.0 and not _long_press_fired:
                 _hotkey_press_start = time.time()
                 _long_press_fired = False
                 _long_press_timer = threading.Timer(LONG_PRESS_RESET, _long_press_trigger)
                 _long_press_timer.daemon = True
                 _long_press_timer.start()
-            if IS_MAC and hasattr(sys.modules[__name__], 'DOUBLE_TAP_INTERVAL'):
-                return
             return
 
     if key in (pynput_kb.Key.ctrl_l, pynput_kb.Key.ctrl_r, pynput_kb.Key.ctrl):
@@ -1757,14 +1813,19 @@ def on_press(key):
     elif key in (pynput_kb.Key.cmd_l, pynput_kb.Key.cmd_r, pynput_kb.Key.cmd):
         current_modifiers.add(pynput_kb.Key.cmd)
 
-    if key == HOTKEY_QUIT_KEY and HOTKEY_QUIT_MODIFIERS.issubset(current_modifiers):
-        log.info("[CIKIS] Ctrl+Alt+Q algilandi.")
-        should_quit.set()
-        return False
+
+def _delayed_toggle():
+    """macOS: 2. tap sonrasi 400ms gecikmeli toggle. 3. tap gelirse iptal edilir."""
+    global _hotkey_tap_count, _last_hotkey_tap, _pending_toggle_timer
+    _hotkey_tap_count = 0
+    _last_hotkey_tap = 0
+    _pending_toggle_timer = None
+    toggle_recording()
 
 
 def on_release(key):
     global _last_hotkey_tap, _hotkey_press_start, _long_press_timer, _long_press_fired
+    global _hotkey_tap_count, _pending_toggle_timer
 
     # Hotkey release: timer tetiklendiyse (reset oldu) hicbir sey yapma, yoksa toggle
     is_hotkey = False
@@ -1787,12 +1848,36 @@ def on_release(key):
         if _suppress_hotkey:
             return
         if IS_MAC and hasattr(sys.modules[__name__], 'DOUBLE_TAP_INTERVAL'):
+            # macOS Caps Lock: 2 tap = toggle, 3 tap = reset (DOUBLE_TAP_INTERVAL penceresi)
             now = time.time()
             if now - _last_hotkey_tap < DOUBLE_TAP_INTERVAL:
-                _last_hotkey_tap = 0
-                toggle_recording()
+                _hotkey_tap_count += 1
             else:
-                _last_hotkey_tap = now
+                _hotkey_tap_count = 1
+            _last_hotkey_tap = now
+
+            if _hotkey_tap_count >= 3:
+                # Triple-tap: bekleyen toggle varsa iptal et, reset at
+                if _pending_toggle_timer:
+                    _pending_toggle_timer.cancel()
+                    _pending_toggle_timer = None
+                _hotkey_tap_count = 0
+                _last_hotkey_tap = 0
+                log.info("[RESET] Triple-tap algilandi")
+                threading.Thread(target=_do_reset, daemon=True).start()
+            elif _hotkey_tap_count == 2:
+                if sm.state == State.RECORDING:
+                    # RECORDING: olasi 3. tap icin DOUBLE_TAP_INTERVAL kadar bekle
+                    if _pending_toggle_timer:
+                        _pending_toggle_timer.cancel()
+                    _pending_toggle_timer = threading.Timer(DOUBLE_TAP_INTERVAL, _delayed_toggle)
+                    _pending_toggle_timer.daemon = True
+                    _pending_toggle_timer.start()
+                else:
+                    # LISTENING/PROCESSING/COOLDOWN: gecikmeden toggle
+                    _hotkey_tap_count = 0
+                    _last_hotkey_tap = 0
+                    toggle_recording()
             return
         toggle_recording()
         return
@@ -1846,7 +1931,6 @@ def main():
         sys.exit(_run_headless_transcribe(args.transcribe))
 
     os_name = "macOS" if IS_MAC else "Windows"
-    quit_combo = "Cmd+Alt+Q" if IS_MAC else "Ctrl+Alt+Q"
     record_label = "F13 (sniper butonu)" if IS_WIN else "Caps Lock x2 (double-tap)"
 
     print("=" * 55)
@@ -1855,7 +1939,7 @@ def main():
     print(f"  Platform     : {os_name}")
     print(f"  Toggle word  : \"{wake_word_string}\" (baslat + durdur)")
     print(f"  Sniper buton : {record_label} (toggle)")
-    print(f"  Cikis        : {quit_combo}")
+    print(f"  Cikis        : Tray/Menu bar -> Cikis")
     print(f"  Model        : {MODEL_SIZE} ({DEVICE})")
     print(f"  Custom vocab : {len(INITIAL_PROMPT.split(','))} terim")
     print(f"  Log dosyasi  : {_LOG_FILE}")
@@ -1903,9 +1987,9 @@ def main():
     threading.Thread(target=wake_word_listener, daemon=True).start()
 
     log.info("[HAZIR] Dinliyorum...\n"
-             "   Baslat: F13 (sniper) veya \"Zugzwang\" de\n"
-             "   Durdur: F13 (tekrar) veya \"Zugzwang\" de\n"
-             f"   Cikmak icin: {quit_combo}")
+             f"   Baslat: {record_label} veya \"{WAKE_WORD_DEFAULT.capitalize()}\" de\n"
+             f"   Durdur: {record_label} (tekrar) veya \"{WAKE_WORD_DEFAULT.capitalize()}\" de\n"
+             f"   Cikmak icin: Tray/Menu bar -> Cikis")
 
     # pynput listener'i thread'de baslat (macOS'ta tkinter main thread olmali)
     _pynput_listener = pynput_kb.Listener(on_press=on_press, on_release=on_release)
