@@ -21,6 +21,12 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 | Windows | CUDA (otomatik algilama) | F13 (sniper) | winsound WAV | pystray sistem tepsisi ikonu |
 | macOS | CPU (fallback) | Ctrl+Option+R | afplay WAV | rumps menu bar ikonu |
 
+### Baslatma
+
+```bash
+source venv/bin/activate && python dictation.py
+```
+
 ### Logging
 
 - `dictation.log` — proje kokunde, DEBUG seviyesinden itibaren
@@ -57,6 +63,24 @@ Uygulama Windows baslarken otomatik calismali ve her zaman repodaki guncel kodu 
 **Kurulum Adimlari (bir kez yapilir):**
 1. `start.bat` ve `start.vbs` dosyalari repo kokunde olusturulur
 2. `Win + R` → `shell:startup` → VBScript'e kisayol koyulur
+3. Tamamdir — bir daha dokunulmaz
+
+### macOS Auto-Start (Login'de Otomatik Baslatma)
+
+**Mekanizma:** LaunchAgent plist ile login sonrasi `scripts/start.sh` calistirilir.
+
+**Dosyalar:**
+- `scripts/start.sh` — `nohup venv/bin/python -u dictation.py` calistirir
+- `~/Library/LaunchAgents/com.voicedictation.app.plist` — LaunchAgent tanimi
+
+**Guncelleme Akisi:**
+- `dictation.py` degistiginde plist guncellenmez — zaten repo'dan calistirilir
+- Tek yapilmasi gereken: `git pull` veya kodu duzenlemek
+- Bir sonraki login'de yeni kod otomatik devreye girer
+
+**Kurulum Adimlari (bir kez yapilir):**
+1. `~/Library/LaunchAgents/com.voicedictation.app.plist` olusturulur
+2. `launchctl load ~/Library/LaunchAgents/com.voicedictation.app.plist`
 3. Tamamdir — bir daha dokunulmaz
 
 ---

@@ -593,10 +593,16 @@ def _clean_transcription(text):
                 return ""
         return cleaned
 
-    # 3) Uzun metin: tekrar kontrolu
+    # 3) Uzun metin: tekrar kontrolu (esik yuksek tutulur, gercek icerik korunur)
     from collections import Counter
     counts = Counter(words)
-    if counts.most_common(1)[0][1] / len(words) > 0.6:
+    most_word, most_count = counts.most_common(1)[0]
+    ratio = most_count / len(words)
+    # 20+ kelimede sadece %75+ tekrar halusinasyon sayilir (gercek konusmada tekrar normal)
+    if len(words) >= 20 and ratio > 0.75:
+        return ""
+    # 10-19 kelimede %65+ tekrar halusinasyon
+    elif len(words) < 20 and ratio > 0.65:
         return ""
 
     # 4) Uzun metin: artiklari temizle ama gercek icerigi koru
@@ -630,7 +636,7 @@ def quick_transcribe(audio_data):
 
     cleaned = _clean_transcription(text)
     if not cleaned:
-        log.debug(f"[FILTRE] Halusinasyon filtrelendi: {text[:60]}...")
+        log.debug(f"[FILTRE] Halusinasyon filtrelendi ({len(text.split())} kelime): {text[:80]}...")
         return ""
     if cleaned != text:
         log.debug(f"[TEMIZLIK] '{text[:40]}...' -> '{cleaned[:40]}...'")
