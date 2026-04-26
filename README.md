@@ -234,15 +234,42 @@ Uygulamanin her boot/login'de otomatik calismasini istiyorsan:
 4. **Open** → liste sonuna **VoiceDictation** eklenir
 5. Bir sonraki login'de otomatik baslar
 
-**Ilk acilista** macOS mikrofon ve otomasyon izinlerini soracaktir — **Izin Ver**.
+### macOS Izinleri (ZORUNLU — Tum 4 Izin Verilmeli)
 
-**Caps Lock hotkey'i icin ek izin gerekiyor:** System Settings -> Privacy & Security ->
-1. **Input Monitoring (Giris Izleme)** → `VoiceDictation` ve `applet` entry'lerini AC
-2. **Accessibility (Erisilebilirlik)** → `VoiceDictation` ve `applet` entry'lerini AC
+macOS Tahoe TCC kisitlamalari nedeniyle VoiceDictation **dort ayri izin** gerektirir. Bu
+izinler **bir kez** verilir ve sonra tekrar sorulmaz. Eksik izin → bozuk ozellik:
 
-Bu izinler verilmeden Caps Lock hotkey'i Login Items'tan baslatilan instance'ta calismaz
-(manuel `bash scripts/start.sh` ile baslatilirsa Terminal'in izinleri miras kalir, calisir
-— ama auto-start senaryosu icin yukaridaki izinler sart). Sonraki acilislarda sessizce baslar.
+| Izin | Nereden | Hangi ozellik icin |
+|------|---------|--------------------|
+| **Mikrofon** | Ilk acilista otomatik dialog | Ses kaydi (zorunlu — yoksa hicbir sey calismaz) |
+| **Otomasyon** | Ilk acilista otomatik dialog | `do shell script` (.app launcher) |
+| **Giris Izleme** (Input Monitoring) | System Settings → Privacy & Security → Input Monitoring | Caps Lock hotkey yakalama (pynput) |
+| **Erisilebilirlik** (Accessibility) | System Settings → Privacy & Security → Accessibility | Cmd+V + Enter gonderme (paste-and-send) |
+
+**Eksik izin → ne bozulur:**
+- Mikrofon yoksa → kayit yapilamaz (bos transkript)
+- Otomasyon yoksa → .app launcher hata verir, dictation hic baslamaz
+- Input Monitoring yoksa → Caps Lock x2 algilanmaz, sadece wake word ("Diktasyon") calisir
+- Accessibility yoksa → metin clipboard'a kopyalanir ama yapismaz, manuel Cmd+V gerekir
+
+**Kurulum adimlari:**
+
+1. Login Items'a ekle (yukaridaki adimlar)
+2. Ilk acilista mikrofon + otomasyon dialog'lari → **Izin Ver**
+3. System Settings → Privacy & Security:
+   - **Input Monitoring** → liste sonunda `applet` entry'sinin toggle'ini AC
+   - **Accessibility** → ayni sekilde `applet` toggle'ini AC
+4. Dictation'i yeniden baslat (izin degisikligi icin)
+
+**Birden fazla entry varsa:** macOS bazen eski .app denemelerinden stale entry birakir
+(`VoiceDictation`, eski Python yolu, vb.). Bunlari **−** butonu ile silebilirsin. Asil aktif
+entry: `applet` (osacompile'in urettigi AppleScript runtime binary).
+
+> Not: Manuel `bash scripts/start.sh` ile baslatildiginda Terminal'in mevcut izinleri
+> miras alinir, ekstra izin istenmez. Yukaridaki izinler **otomatik baslatma** (Login Items)
+> senaryosu icin sart.
+
+Sonraki acilislarda sessizce baslar.
 
 **Guncelleme:** `git pull` veya kod duzenlemesi sonrasi hicbir sey yapma; bir sonraki login'de
 yeni kod devreye girer (.app sadece launcher, dictation.py'yi her zaman repo'dan calistirir).

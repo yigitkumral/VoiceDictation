@@ -153,9 +153,23 @@ Uygulama Windows baslarken otomatik calismali ve her zaman repodaki guncel kodu 
 **Kurulum Adimlari (bir kez yapilir):**
 1. System Settings -> General -> Login Items & Extensions
 2. "Open at Login" altinda **+** -> `Cmd+Shift+G` -> `scripts/VoiceDictation.app` yolunu yapistir
-3. Ilk acilista mikrofon + otomasyon izinleri istenir, "Izin Ver" denir
-4. **Privacy & Security -> Input Monitoring** + **Accessibility**: `VoiceDictation` ve `applet` entry'lerini AC (pynput Caps Lock hotkey ve paste icin gerekli; .app'in iki executable adi var: CFBundleName + osacompile applet binary)
-5. Tamamdir — bir daha dokunulmaz
+3. Ilk acilista **mikrofon** + **otomasyon** izinleri istenir → "Izin Ver"
+4. Privacy & Security panellerinde manuel toggle:
+   - **Input Monitoring** → `applet` entry'sini AC (Caps Lock hotkey icin)
+   - **Accessibility** → `applet` entry'sini AC (Cmd+V + Enter gonderme icin)
+5. Dictation'i bir kez yeniden baslat (izin degisikligi icin)
+6. Tamamdir — bir daha dokunulmaz
+
+**ZORUNLU 4 IZIN:**
+| Izin | Eksikse ne bozulur |
+|------|-------------------|
+| Mikrofon | Hicbir kayit yapilamaz |
+| Otomasyon | .app launcher hata, dictation baslamaz |
+| Input Monitoring | Caps Lock algilanmaz (sadece wake word calisir) |
+| Accessibility | Metin clipboard'da kalir, paste etmez |
+
+> Stale entry'ler: macOS eski .app denemelerinden TCC'de "VoiceDictation" gibi entry'ler
+> birakabilir. **−** butonuyla silinebilir. Aktif olan: `applet`.
 
 **.app yeniden olusturulmasi gerekirse** (osacompile + codesign):
 ```bash
