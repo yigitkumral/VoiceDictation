@@ -877,20 +877,76 @@ def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
     return primary_md
 
 
-def _open_in_vscode(path):
-    """Cross-platform: VS Code'da dosyayi ac (silently fail). PATH'te 'code' yoksa atla."""
+def _copy_path_to_clipboard(path):
+    """Dosya yolunu clipboard'a kopyala (editor acilamadiginda kullanici manuel acsin)."""
+    try:
+        pyperclip.copy(path)
+        log.info("[EDITOR] Dosya yolu clipboard'a kopyalandi.")
+    except Exception as e:
+        log.error(f"[EDITOR] Clipboard'a yazilamadi: {e}")
+
+
+def _open_in_editor(path):
+    """Cross-platform editor opener. Sirayla denenir:
+
+       1. ENV var: VOICEDICTATION_EDITOR (kullanici override)
+          - "none" -> hicbir editor acma, sadece path'i clipboard'a koy
+          - diger -> verilen komutu calistir (orn. "notepad++", "obsidian", "subl")
+       2. VS Code (PATH'te 'code' veya 'code.cmd' varsa)
+       3. Sistem default (Windows: os.startfile, macOS: open, Linux: xdg-open)
+       4. Hicbiri olmazsa clipboard fallback
+    """
+    import shutil
+
+    # 1) ENV override
+    custom = os.environ.get("VOICEDICTATION_EDITOR", "").strip()
+    if custom:
+        if custom.lower() == "none":
+            log.info(f"[EDITOR] VOICEDICTATION_EDITOR=none -> manuel acmak gerekecek: {path}")
+            _copy_path_to_clipboard(path)
+            return
+        try:
+            if IS_WIN:
+                flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                subprocess.Popen(f'{custom} "{path}"', shell=True, creationflags=flags)
+            else:
+                subprocess.Popen([custom, path])
+            log.info(f"[EDITOR] {custom} ile acildi: {path}")
+            return
+        except Exception as e:
+            log.warning(f"[EDITOR] {custom} acilamadi, fallback'e geciliyor: {e}")
+
+    # 2) VS Code (PATH'te varsa)
+    code_cmd = shutil.which("code") or (shutil.which("code.cmd") if IS_WIN else None)
+    if code_cmd:
+        try:
+            if IS_WIN:
+                flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+                subprocess.Popen(f'code "{path}"', shell=True, creationflags=flags)
+            else:
+                subprocess.Popen(["code", path])
+            log.info(f"[EDITOR] VS Code ile acildi: {path}")
+            log.info("[EDITOR] Markdown preview: Ctrl+K V (yan panel) veya Ctrl+Shift+V (yeni tab)")
+            return
+        except Exception as e:
+            log.warning(f"[EDITOR] VS Code acilamadi: {e}")
+
+    # 3) Sistem default (Markdown association ne ise — Notepad/Typora/Obsidian/...)
     try:
         if IS_WIN:
-            # Windows'ta 'code' aslinda 'code.cmd', shell=True ile bulunur.
-            # CREATE_NO_WINDOW ile flash console olmaz.
-            flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-            subprocess.Popen(f'code "{path}"', shell=True, creationflags=flags)
+            os.startfile(path)
+        elif IS_MAC:
+            subprocess.Popen(["open", path])
         else:
-            subprocess.Popen(["code", path])
-        log.info(f"[VSCode] Acildi: {path}")
-        log.info("[VSCode] Markdown preview icin: Ctrl+K V (yan panel) veya Ctrl+Shift+V (yeni tab)")
+            subprocess.Popen(["xdg-open", path])
+        log.info(f"[EDITOR] Sistem default ile acildi: {path}")
+        return
     except Exception as e:
-        log.warning(f"[VSCode] Acilamadi (manuel ac): {e}")
+        log.warning(f"[EDITOR] Sistem default acilamadi: {e}")
+
+    # 4) Hicbiri olmadi -> clipboard fallback
+    log.warning(f"[EDITOR] Hicbir editor acilamadi. Manuel ac: {path}")
+    _copy_path_to_clipboard(path)
 
 
 def _init_live_md(md_path, source_label):
@@ -1030,8 +1086,8 @@ def start_lecture_recording():
         target=lambda: _live_transcribe_loop(lecture_live_md_path), daemon=True
     ).start()
 
-    # VS Code'da canli dosyayi ac
-    _open_in_vscode(lecture_live_md_path)
+    # Editor'da canli dosyayi ac (VS Code > sistem default > clipboard fallback)
+    _open_in_editor(lecture_live_md_path)
 
     return True
 

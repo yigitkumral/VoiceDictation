@@ -1,5 +1,9 @@
 # VoiceDictation
 
+> 🇹🇷 **Bu proje Türkçe konuşma tanıma için özelleştirilmiştir.**
+> Whisper modeli `language="tr"` ile çalışır, `INITIAL_PROMPT` Türkçe vocabulary boost'u, halüsinasyon filtreleri (Altyazı M.K., Donama, vb.) Türkçe Whisper çıktılarına göre yazılmıştır. Wake word "Zugzwang"'ın regex pattern'ları Whisper'ın **Türkçe** modda ürettiği varyasyonları yakalar (Zukzwank, Zük Zvank, Zugswang...).
+> Başka bir dilde kullanmak için kod adaptasyonu gerekir; arayüz, log mesajları, yorumlar Türkçedir.
+
 Lokal Whisper modeli ile calisan cross-platform sesli yazim araci. Konusmani metne cevirip aktif pencereye yapistirip gonderir.
 
 ## Ozellikler
