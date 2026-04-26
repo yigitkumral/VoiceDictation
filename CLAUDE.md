@@ -9,7 +9,8 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 ### Mimari
 
 - **Tek dosya:** `dictation.py` — tum uygulama burasi
-- **State Machine:** LISTENING -> RECORDING -> PROCESSING -> COOLDOWN (mutex ile korunan thread-safe gecisler)
+- **State Machine (Dictation mode):** LISTENING -> RECORDING -> PROCESSING -> COOLDOWN (mutex ile korunan thread-safe gecisler)
+- **Mode (ortogonal eksen):** DICTATION (varsayilan, anlik) ↔ LECTURE (toplanti/ders, RAM-only)
 - **Audio Pipeline:** sounddevice (mikrofon) -> numpy (buffer) -> faster-whisper (STT) -> pyperclip (clipboard) -> pynput (paste+enter)
 - **Wake Word:** "Zugzwang" toggle (baslatir + durdurur), genis regex pattern ile Whisper varyasyonlarini yakalar
 - **Hotkey:** F13 (Windows, Logitech G502 sniper button) / Ctrl+Option+R (macOS)
@@ -21,6 +22,58 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 | Windows | CUDA (otomatik algilama) | F13 (sniper) | winsound WAV | pystray sistem tepsisi ikonu |
 | macOS | CPU (fallback) | Ctrl+Option+R | afplay WAV | rumps menu bar ikonu |
 
+### Modlar
+
+#### Dictation Mode (varsayilan)
+
+- F13 veya "Zugzwang" ile baslar/durur, anlik transcribe (turbo, beam=1)
+- Ses tamamen RAM'de — transcribe sonrasi silinir
+- Cikti: clipboard'a kopyalanir + aktif pencereye otomatik paste + Enter
+
+#### Lecture Mode (toplanti/ders)
+
+Tray menusunden **"🎙 Toplanti Kaydi Baslat"** ile baslatilir; lecture aktifken F13 dictation hotkey **ignore edilir**, tray ikonu **mor**a doner.
+
+**Onemli ilke: Ses dosyasi DISKE YAZILMAZ — RAM-only.** Tum ses bellekte tutulur, kayit bitince transcribe edilir ve buffer temizlenir. Diskte sadece Markdown transkriptleri kalir.
+
+**Iki seviye transkript:**
+- **Canli (LIVE.md):** VAD-bazli cumle akisi — 1.5sn sessizlik = paragraf sonu, transcribe (turbo, beam=1), MD'ye append; lecture baslarken VS Code'da otomatik acilir, dosya degisimini canli izleyebilirsin
+- **Final (.md):** kayit bitince tum ses tek seferde, beam=5 ile yuksek kalite, ayri dosya
+
+**Cikti:**
+```
+~/Desktop/VoiceDictation_Lectures/
+├── 2026-04-26_15-51-09_LIVE.md   (canli akan, beam=1)
+└── 2026-04-26_15-51-09.md         (final, beam=5)
+```
+
+#### Dosyadan Transkript
+
+Mevcut bir ses dosyasini (AAC, MP3, WAV, M4A, FLAC, OGG, MP4 vb.) yuksek kaliteyle MD'ye cevirir.
+
+- **GUI:** Tray menusu → "📁 Ses dosyasini dok..." → dosya secici
+- **CLI (headless, daemon gereksiz):**
+  ```bash
+  venv/Scripts/python dictation.py --transcribe "FILE.aac"
+  ```
+
+Cikti: ses dosyasi yaninda `.md` + `~/Desktop/VoiceDictation_Lectures/<isim>.md` (iki kopya).
+
+### Tray Menusu
+
+```
+─────────────────────────
+ Durum: <state>
+─────────────────────────
+ 🎙 Toplanti Kaydi Baslat / ⏹ Durdur
+ 📁 Ses dosyasini dok...
+─────────────────────────
+ 🗣️ Anahtar Kelime: Acik/Kapali
+ ↺ Sifirla
+─────────────────────────
+ Cikis
+```
+
 ### Baslatma
 
 ```bash
@@ -29,9 +82,9 @@ source venv/bin/activate && python dictation.py
 
 ### Logging
 
-- `dictation.log` — proje kokunde, DEBUG seviyesinden itibaren
+- `logs/dictation.log` — DEBUG seviyesinden itibaren, gunluk rotate
 - Konsol ciktisi INFO seviyesinden itibaren
-- Log dosyasi `.gitignore`'da, git'e girmez
+- Log dizini `.gitignore`'da, git'e girmez
 
 ### Teknoloji Stack
 
@@ -138,4 +191,4 @@ Kullanici ile **Turkce** iletisim kur.
 
 ---
 
-*Son Guncelleme: 19 Mart 2026*
+*Son Guncelleme: 26 Nisan 2026 (Lecture mode + RAM-only canli transkripsiyon + dosyadan cevirme)*

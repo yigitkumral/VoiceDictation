@@ -116,7 +116,9 @@ if IS_MAC:
 HOTKEY_QUIT_KEY = pynput_kb.KeyCode.from_char("q")
 
 MODEL_SIZE = "turbo"
+LECTURE_MODEL_SIZE = "turbo"  # Toplanti/ders/dosya transkripti icin (turbo = large-v3-turbo)
 MLX_MODEL_REPO = "mlx-community/whisper-turbo"
+MLX_LECTURE_MODEL_REPO = "mlx-community/whisper-turbo"
 
 # Platform-aware device secimi
 def _detect_device():
@@ -142,6 +144,11 @@ SILENCE_THRESHOLD = 0.008
 STOP_CHECK_SILENCE = 0.35
 LISTEN_SILENCE_DURATION = 0.5
 NO_SPEECH_TIMEOUT = 30.0
+
+# Lecture live (VAD-bazli anlik transcribe)
+LIVE_SILENCE_DURATION = 1.5    # 1.5sn sessizlik = cumle sonu, transcribe et
+LIVE_MIN_CHUNK_SECONDS = 3.0   # bu kadar olmadan transcribe etme (cok kisa chunk gurultu)
+LIVE_MAX_CHUNK_SECONDS = 25.0  # bu kadar olduysa zorla bol (hizli konusmaci icin)
 
 INITIAL_PROMPT = (
     "Zugzwang, "
@@ -292,6 +299,22 @@ _long_press_fired = False  # timer tetiklendi mi
 LONG_PRESS_RESET = 1.25  # 1.25 saniye basili tutma = reset
 _gui = None  # GUI referansi
 
+# --- LECTURE / FILE MODE STATE ---
+# RAM-only: ses dosyasi DISKE YAZILMIYOR. Sadece bellekte chunk'lar tutulur,
+# kayit bitince transcribe edilir ve buffer temizlenir.
+lecture_active = False
+lecture_audio_chunks = []                     # tum kayit (numpy chunk listesi) - RAM
+lecture_audio_chunks_lock = threading.Lock()
+lecture_start_time = 0.0
+lecture_lock = threading.Lock()
+
+# Live transcribe (VAD-bazli, anlik MD'ye append)
+lecture_live_buffer = []                      # cumle bazli flush icin numpy chunks
+lecture_live_buffer_lock = threading.Lock()
+lecture_live_md_path = None                   # canli MD dosyasi
+lecture_live_speech_detected = False          # bu chunk'ta konusma algilandi mi
+lecture_live_last_speech_time = 0.0           # son konusma zamani (silence olcumu icin)
+
 
 # --- MINI GUI (sag ust kose) ---
 
@@ -340,9 +363,18 @@ def _start_menubar_gui():
             self._wake_item = rumps.MenuItem(
                 "🗣️ Anahtar Kelime: Açık", callback=self.on_toggle_wake
             )
+            self._lecture_item = rumps.MenuItem(
+                "🎙 Toplantı Kaydı Başlat", callback=self.on_lecture_toggle
+            )
+            self._file_item = rumps.MenuItem(
+                "📁 Ses dosyasını dök...", callback=self.on_pick_file
+            )
             self.menu = [
                 rumps.MenuItem("Durum: Hazır", callback=None),
                 None,  # separator
+                self._lecture_item,
+                self._file_item,
+                None,
                 self._wake_item,
                 rumps.MenuItem("↺ Sıfırla", callback=self.on_reset),
                 None,
@@ -352,11 +384,17 @@ def _start_menubar_gui():
 
         @rumps.timer(0.3)
         def update_status(self, _):
-            state = sm.state
-            icon = _state_icons.get(state, "⚪")
-            label = _state_labels.get(state, "?")
-            self.title = icon
-            self._status_item.title = f"Durum: {label}"
+            if lecture_active:
+                self.title = "🟣"
+                self._status_item.title = "Durum: Toplantı Kaydı"
+                self._lecture_item.title = "⏹ Toplantı Kaydını Durdur"
+            else:
+                state = sm.state
+                icon = _state_icons.get(state, "⚪")
+                label = _state_labels.get(state, "?")
+                self.title = icon
+                self._status_item.title = f"Durum: {label}"
+                self._lecture_item.title = "🎙 Toplantı Kaydı Başlat"
             self._wake_item.title = f"🗣️ Anahtar Kelime: {'Açık' if wake_word_enabled else 'Kapalı'}"
             if should_quit.is_set():
                 rumps.quit_application()
@@ -366,6 +404,15 @@ def _start_menubar_gui():
             wake_word_enabled = not wake_word_enabled
             state = "ACIK" if wake_word_enabled else "KAPALI"
             log.info(f"[WAKE] Anahtar kelime: {state}")
+
+        def on_lecture_toggle(self, _):
+            if lecture_active:
+                threading.Thread(target=stop_lecture_recording, daemon=True).start()
+            else:
+                threading.Thread(target=start_lecture_recording, daemon=True).start()
+
+        def on_pick_file(self, _):
+            threading.Thread(target=_pick_file_and_transcribe, daemon=True).start()
 
         def on_reset(self, _):
             _do_reset()
@@ -388,6 +435,7 @@ def _start_tray_gui():
         State.PROCESSING: (255, 170, 0),    # sari
         State.COOLDOWN:   (136, 136, 136),  # gri
     }
+    _LECTURE_COLOR = (170, 70, 255)  # mor — toplanti/ders modu
     _state_labels = {
         State.LISTENING:  "Hazır",
         State.RECORDING:  "Kayıt...",
@@ -410,12 +458,36 @@ def _start_tray_gui():
         state = "ACIK" if wake_word_enabled else "KAPALI"
         log.info(f"[WAKE] Anahtar kelime: {state}")
 
+    def on_lecture_toggle(icon, item):
+        if lecture_active:
+            threading.Thread(target=stop_lecture_recording, daemon=True).start()
+        else:
+            threading.Thread(target=start_lecture_recording, daemon=True).start()
+        try:
+            icon.update_menu()
+        except Exception:
+            pass
+
+    def on_pick_file(icon, item):
+        threading.Thread(target=_pick_file_and_transcribe, daemon=True).start()
+
     def on_quit(icon, item):
         should_quit.set()
         icon.stop()
 
     menu = pystray.Menu(
-        pystray.MenuItem(lambda item: f"Durum: {_state_labels.get(sm.state, '?')}", None, enabled=False),
+        pystray.MenuItem(
+            lambda item: (f"Durum: 🟣 Toplantı Kaydı" if lecture_active
+                          else f"Durum: {_state_labels.get(sm.state, '?')}"),
+            None, enabled=False,
+        ),
+        pystray.Menu.SEPARATOR,
+        pystray.MenuItem(
+            lambda item: ("⏹  Toplantı Kaydını Durdur" if lecture_active
+                          else "🎙  Toplantı Kaydı Başlat"),
+            on_lecture_toggle,
+        ),
+        pystray.MenuItem("📁 Ses dosyasını dök...", on_pick_file),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(
             lambda item: f"🗣️ Anahtar Kelime: {'Açık' if wake_word_enabled else 'Kapalı'}",
@@ -463,14 +535,25 @@ def _start_tray_gui():
 
     def update_loop():
         last_state = None
+        last_lecture = False
         while not should_quit.is_set():
             state = sm.state
-            if state != last_state:
-                color = _state_colors.get(state, (136, 136, 136))
-                label = _state_labels.get(state, "?")
+            cur_lecture = lecture_active
+            if state != last_state or cur_lecture != last_lecture:
+                if cur_lecture:
+                    color = _LECTURE_COLOR
+                    label = "Toplantı Kaydı"
+                else:
+                    color = _state_colors.get(state, (136, 136, 136))
+                    label = _state_labels.get(state, "?")
                 icon.icon = make_icon(color)
                 icon.title = f"VD: {label}"
+                try:
+                    icon.update_menu()
+                except Exception:
+                    pass
                 last_state = state
+                last_lecture = cur_lecture
             time.sleep(0.3)
         icon.stop()
 
@@ -643,6 +726,419 @@ def quick_transcribe(audio_data):
     return cleaned
 
 
+# --- LECTURE / FILE TRANSCRIBE ---
+
+def _get_desktop_path():
+    """Cross-platform masaustu yolu."""
+    return os.path.join(os.path.expanduser("~"), "Desktop")
+
+
+def _get_lectures_dir():
+    """Masaustunde 'VoiceDictation_Lectures' klasorunu garantile.
+    NOT: ses dosyasi diske yazilmiyor (RAM-only); sadece transkript MD'leri burada."""
+    base = os.path.join(_get_desktop_path(), "VoiceDictation_Lectures")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
+def _transcribe_audio_path(audio, beam_size=5):
+    """Dosya yolu VEYA numpy array'inden transkript al (faster-whisper / MLX).
+    (text, segments) doner."""
+    if isinstance(audio, str):
+        label = os.path.basename(audio)
+    else:
+        label = f"RAM buffer ({len(audio)/SAMPLE_RATE:.0f}sn)"
+    log.info(f"[TRANSCRIBE] Calisiyor: {label}")
+    t0 = time.time()
+    if IS_MAC and USE_MLX:
+        result = mlx_whisper.transcribe(
+            audio, path_or_hf_repo=MLX_LECTURE_MODEL_REPO,
+            language="tr", initial_prompt=INITIAL_PROMPT,
+        )
+        text = result.get("text", "").strip()
+        segments = [
+            {"start": float(s.get("start", 0.0)),
+             "end": float(s.get("end", 0.0)),
+             "text": s.get("text", "").strip()}
+            for s in result.get("segments", [])
+        ]
+    else:
+        if model is None:
+            raise RuntimeError("Model henuz yuklenmedi (load_model cagir).")
+        with transcribe_lock:
+            segs, _info = model.transcribe(
+                audio, language="tr", initial_prompt=INITIAL_PROMPT,
+                beam_size=beam_size, vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500),
+            )
+            segments = []
+            for s in segs:
+                segments.append({
+                    "start": float(s.start),
+                    "end": float(s.end),
+                    "text": s.text.strip(),
+                })
+        text = " ".join(s["text"] for s in segments).strip()
+    elapsed = time.time() - t0
+    log.info(f"[TRANSCRIBE] Tamamlandi ({elapsed:.0f}sn islem, {len(segments)} segment).")
+    return text, segments
+
+
+def _format_seconds(total):
+    total = int(total)
+    h = total // 3600
+    m = (total % 3600) // 60
+    s = total % 60
+    if h > 0:
+        return f"{h}sa {m}dk {s}sn"
+    if m > 0:
+        return f"{m}dk {s}sn"
+    return f"{s}sn"
+
+
+def _segments_to_paragraphs(segments, target_seconds=30):
+    """Segmentleri ~target_seconds uzunlugunda paragraflara grupla."""
+    paragraphs = []
+    cur = []
+    cur_start = None
+    for seg in segments:
+        if not cur:
+            cur_start = seg["start"]
+        cur.append(seg["text"])
+        if seg["end"] - cur_start >= target_seconds:
+            paragraphs.append((cur_start, " ".join(cur).strip()))
+            cur = []
+            cur_start = None
+    if cur and cur_start is not None:
+        paragraphs.append((cur_start, " ".join(cur).strip()))
+    return paragraphs
+
+
+def _write_lecture_markdown(md_path, segments, audio_duration, source_path, header_title="Toplanti / Ders Transkripti"):
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    paragraphs = _segments_to_paragraphs(segments, target_seconds=30)
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write(f"# {header_title}\n\n")
+        f.write(f"- **Tarih:** {timestamp}\n")
+        f.write(f"- **Ses suresi:** {_format_seconds(audio_duration)}\n")
+        f.write(f"- **Model:** {LECTURE_MODEL_SIZE} ({DEVICE})\n")
+        f.write(f"- **Kaynak:** `{source_path}`\n\n")
+        f.write("---\n\n")
+        if paragraphs:
+            for start_sec, paragraph in paragraphs:
+                m = int(start_sec // 60); s = int(start_sec % 60)
+                f.write(f"**[{m:02d}:{s:02d}]** {paragraph}\n\n")
+        else:
+            f.write("_(Konusma algilanamadi.)_\n")
+
+
+def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
+    """Dis ses dosyasini transkripte et, Markdown olarak yanına ve Desktop'a yaz.
+
+    output_dir verilmezse: ses dosyasi ile ayni klasore + Desktop/VoiceDictation_Lectures'e iki kopya.
+    Donus: olusan ana .md yolu (basarisizsa None).
+    """
+    if not os.path.isfile(audio_path):
+        log.error(f"[FILE] Dosya bulunamadi: {audio_path}")
+        return None
+    try:
+        text, segments = _transcribe_audio_path(audio_path, beam_size=5)
+    except Exception as e:
+        log.error(f"[FILE] Transcribe hatasi: {e}", exc_info=True)
+        return None
+
+    if not segments and not text:
+        log.warning("[FILE] Transkript bos.")
+        return None
+
+    audio_dur = max((s["end"] for s in segments), default=0.0)
+    title = header_title or "Ses Dosyasi Transkripti"
+    base_name = os.path.splitext(os.path.basename(audio_path))[0]
+
+    primary_md = os.path.splitext(audio_path)[0] + ".md"
+    try:
+        _write_lecture_markdown(primary_md, segments, audio_dur, audio_path, header_title=title)
+        log.info(f"[FILE] Yazildi: {primary_md}")
+    except Exception as e:
+        log.error(f"[FILE] Yazma hatasi (kaynak yaninda): {e}")
+        primary_md = None
+
+    # Masaustu kopyasi (her zaman)
+    try:
+        base = _get_lectures_dir()
+        desktop_md = os.path.join(base, base_name + ".md")
+        _write_lecture_markdown(desktop_md, segments, audio_dur, audio_path, header_title=title)
+        log.info(f"[FILE] Masaustu kopyasi: {desktop_md}")
+        if primary_md is None:
+            primary_md = desktop_md
+    except Exception as e:
+        log.error(f"[FILE] Masaustu kopya hatasi: {e}")
+
+    return primary_md
+
+
+def _open_in_vscode(path):
+    """Cross-platform: VS Code'da dosyayi ac (silently fail). PATH'te 'code' yoksa atla."""
+    try:
+        if IS_WIN:
+            # Windows'ta 'code' aslinda 'code.cmd', shell=True ile bulunur.
+            # CREATE_NO_WINDOW ile flash console olmaz.
+            flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
+            subprocess.Popen(f'code "{path}"', shell=True, creationflags=flags)
+        else:
+            subprocess.Popen(["code", path])
+        log.info(f"[VSCode] Acildi: {path}")
+        log.info("[VSCode] Markdown preview icin: Ctrl+K V (yan panel) veya Ctrl+Shift+V (yeni tab)")
+    except Exception as e:
+        log.warning(f"[VSCode] Acilamadi (manuel ac): {e}")
+
+
+def _init_live_md(md_path, source_label):
+    """Canli MD dosyasini header'la initialize et."""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write("# Toplanti / Ders — CANLI Transkript\n\n")
+        f.write(f"- **Baslangic:** {timestamp}\n")
+        f.write(f"- **Mod:** Canli (turbo, beam=1, cumle sonlarinda)\n")
+        f.write(f"- **Ses kaynagi:** {source_label}\n")
+        f.write("- _Final transkript kayit bitince ayri dosyada yazilacak (paragraf yapisi + segment timestamp)._\n\n")
+        f.write("---\n\n")
+
+
+def _append_live_paragraph(md_path, offset_sec, text):
+    """Canli MD'ye timestamp'li paragraf ekle."""
+    m = int(offset_sec // 60); s = int(offset_sec % 60)
+    try:
+        with open(md_path, "a", encoding="utf-8") as f:
+            f.write(f"**[{m:02d}:{s:02d}]** {text}\n\n")
+    except Exception as e:
+        log.error(f"[LIVE] MD yazma hatasi: {e}")
+
+
+def _live_transcribe_loop(md_path):
+    """Lecture aktifken: VAD ile cumle sonlarinda transcribe et, MD'ye append et.
+
+    Tetiklenme:
+      - Buffer >= LIVE_MIN_CHUNK_SECONDS VE son konusmadan >= LIVE_SILENCE_DURATION gecti
+      - Ya da buffer >= LIVE_MAX_CHUNK_SECONDS (zorla bolme)
+    """
+    global lecture_live_buffer, lecture_live_speech_detected, lecture_live_last_speech_time
+    log.info("[LIVE] Loop basladi.")
+    while not should_quit.is_set():
+        time.sleep(0.3)
+        if not lecture_active:
+            break
+
+        with lecture_live_buffer_lock:
+            buf_count = len(lecture_live_buffer)
+        # 100ms blok varsayimi (audio_callback blocksize = SAMPLE_RATE*0.1)
+        buf_seconds = buf_count * 0.1
+        if buf_seconds < LIVE_MIN_CHUNK_SECONDS:
+            continue
+
+        silence_elapsed = time.time() - lecture_live_last_speech_time
+        force_flush = buf_seconds >= LIVE_MAX_CHUNK_SECONDS
+        sentence_end = (
+            lecture_live_speech_detected
+            and silence_elapsed >= LIVE_SILENCE_DURATION
+        )
+        if not (force_flush or sentence_end):
+            continue
+
+        with lecture_live_buffer_lock:
+            if not lecture_live_buffer:
+                continue
+            frames = list(lecture_live_buffer)
+            lecture_live_buffer.clear()
+        # speech bayragini sifirla; bir sonraki chunk icin yeni konusma beklenir
+        lecture_live_speech_detected = False
+
+        # Bu chunk'in offset'i: simdi - lecture_start - chunk_uzunlugu
+        chunk_seconds = len(frames) * 0.1
+        offset_now = (time.time() - lecture_start_time) - chunk_seconds
+        offset_sec = max(0.0, offset_now)
+
+        try:
+            audio = np.concatenate(frames, axis=0).flatten()
+            text = quick_transcribe(audio)
+            if not text:
+                log.debug(f"[LIVE] Bos chunk (offset={offset_sec:.0f}sn, sure={chunk_seconds:.0f}sn)")
+                continue
+            log.info(f"[LIVE] [{int(offset_sec//60):02d}:{int(offset_sec%60):02d}] {text[:80]}{'...' if len(text)>80 else ''}")
+            _append_live_paragraph(md_path, offset_sec, text)
+        except Exception as e:
+            log.error(f"[LIVE] Transcribe hatasi: {e}", exc_info=True)
+
+    # Lecture bitti — kalan buffer'i da flush et (varsa)
+    with lecture_live_buffer_lock:
+        if lecture_live_buffer:
+            frames = list(lecture_live_buffer)
+            lecture_live_buffer.clear()
+        else:
+            frames = []
+    if frames:
+        chunk_seconds = len(frames) * 0.1
+        if chunk_seconds >= 1.0:  # cok kisa olani atla
+            offset_now = (time.time() - lecture_start_time) - chunk_seconds
+            offset_sec = max(0.0, offset_now)
+            try:
+                audio = np.concatenate(frames, axis=0).flatten()
+                text = quick_transcribe(audio)
+                if text:
+                    log.info(f"[LIVE] (final flush) [{int(offset_sec//60):02d}:{int(offset_sec%60):02d}] {text[:80]}")
+                    _append_live_paragraph(md_path, offset_sec, text)
+            except Exception as e:
+                log.error(f"[LIVE] Final flush hatasi: {e}")
+    log.info("[LIVE] Loop bitti.")
+
+
+def start_lecture_recording():
+    """Tray menusunden cagrilir: RAM-only kayit baslat, live MD olustur, VS Code'da ac.
+    DISKE SES YAZILMIYOR — tum ses bellekte tutulur, kayit bitince transcribe edilip silinir."""
+    global lecture_active, lecture_start_time, lecture_live_md_path
+    global lecture_live_speech_detected, lecture_live_last_speech_time
+    with lecture_lock:
+        if lecture_active:
+            log.warning("[LECTURE] Zaten kayitta.")
+            return False
+        try:
+            base_dir = _get_lectures_dir()
+            ts = time.strftime("%Y-%m-%d_%H-%M-%S")
+            # Live MD
+            lecture_live_md_path = os.path.join(base_dir, f"{ts}_LIVE.md")
+            _init_live_md(lecture_live_md_path, "RAM-only — diske ses dosyasi YAZILMIYOR")
+            # Buffer / VAD reset
+            with lecture_audio_chunks_lock:
+                lecture_audio_chunks.clear()
+            with lecture_live_buffer_lock:
+                lecture_live_buffer.clear()
+            lecture_live_speech_detected = False
+            lecture_live_last_speech_time = time.time()
+            lecture_start_time = time.time()
+            lecture_active = True
+        except Exception as e:
+            log.error(f"[LECTURE] Baslatma hatasi: {e}", exc_info=True)
+            sound_error()
+            return False
+
+    sound_recording()
+    log.info("[LECTURE] Toplanti kaydi basladi (RAM-only, diske ses yazilmiyor)")
+    log.info(f"[LECTURE] Canli MD: {lecture_live_md_path}")
+
+    # Live transcribe thread'i baslat
+    threading.Thread(
+        target=lambda: _live_transcribe_loop(lecture_live_md_path), daemon=True
+    ).start()
+
+    # VS Code'da canli dosyayi ac
+    _open_in_vscode(lecture_live_md_path)
+
+    return True
+
+
+def stop_lecture_recording():
+    """Tray menusunden cagrilir: RAM buffer'i transcribe et, sonra bellegi temizle."""
+    global lecture_active, lecture_live_md_path
+    with lecture_lock:
+        if not lecture_active:
+            return False
+        live_md = lecture_live_md_path
+        duration = time.time() - lecture_start_time
+        lecture_active = False  # bu live_loop'un sonunu tetikler
+        lecture_live_md_path = None
+
+    # Audio chunks'i bir snapshot'a al ve buffer'i hemen temizle (RAM hassasligi)
+    with lecture_audio_chunks_lock:
+        chunks = list(lecture_audio_chunks)
+        lecture_audio_chunks.clear()
+
+    log.info(f"[LECTURE] Kayit durduruldu ({_format_seconds(duration)}). Final transcribe RAM uzerinden basliyor...")
+    sound_sent()
+
+    def _bg(chunks_local, live_md_local, duration_local):
+        try:
+            if not chunks_local:
+                log.warning("[LECTURE] Audio buffer bos, final pass atlandi.")
+                return
+            audio_data = np.concatenate(chunks_local, axis=0).flatten()
+            # RAM kullanimi: chunks_local'i hemen birak
+            chunks_local = None
+
+            text, segments = _transcribe_audio_path(audio_data, beam_size=5)
+            # Transcribe sonrasi audio_data'yi da birak
+            audio_data = None
+
+            if not segments and not text:
+                log.warning("[LECTURE] Final transkript bos.")
+                sound_error()
+                return
+            audio_dur = max((s["end"] for s in segments), default=duration_local)
+            base = _get_lectures_dir()
+            md_name = (
+                os.path.basename(live_md_local).replace("_LIVE.md", ".md")
+                if live_md_local else
+                f"{time.strftime('%Y-%m-%d_%H-%M-%S')}.md"
+            )
+            md_path = os.path.join(base, md_name)
+            _write_lecture_markdown(
+                md_path, segments, audio_dur,
+                "(RAM-only — diske ses dosyasi yazilmadi)",
+                header_title="Toplanti / Ders Transkripti",
+            )
+            log.info(f"[LECTURE] Final transcript yazildi: {md_path}")
+            if live_md_local and os.path.isfile(live_md_local):
+                try:
+                    with open(live_md_local, "a", encoding="utf-8") as f:
+                        f.write(f"\n---\n\n_**Final transkript hazir:** `{md_path}` (paragraf yapili, beam=5 ile)._\n")
+                except Exception:
+                    pass
+            sound_sent()
+        except Exception as e:
+            log.error(f"[LECTURE] Final transcribe hatasi: {e}", exc_info=True)
+            sound_error()
+
+    threading.Thread(target=_bg, args=(chunks, live_md, duration), daemon=True).start()
+    return True
+
+
+def _pick_file_and_transcribe():
+    """Tray menusunden cagrilir: tkinter dosya secici ac, secileni transcribe et."""
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        path = filedialog.askopenfilename(
+            title="Transkripte edilecek ses dosyasini sec",
+            filetypes=[
+                ("Ses dosyalari", "*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.wma *.opus"),
+                ("Video (sesi cikarilir)", "*.mp4 *.mov *.mkv *.avi *.webm"),
+                ("Tum dosyalar", "*.*"),
+            ],
+        )
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        if not path:
+            log.info("[FILE] Secim iptal edildi.")
+            return
+        log.info(f"[FILE] Secildi: {path}")
+        sound_recording()
+        result = transcribe_file_to_markdown(path)
+        if result:
+            sound_sent()
+        else:
+            sound_error()
+    except Exception as e:
+        log.error(f"[FILE] Picker hatasi: {e}", exc_info=True)
+        sound_error()
+
+
 # --- REGEX ---
 
 # Whisper varyasyonlari: Zugzwang, Zuckzwang, ZUXWANG, Zvank, Zook Zvank, vb.
@@ -681,6 +1177,21 @@ def audio_callback(indata, frames, time_info, status):
 
     _last_audio_callback = time.time()
     level = np.abs(indata).mean()
+
+    # Lecture mode: RAM-only — diske ses YAZMIYORUZ. Iki paralel buffer:
+    #   1) full-duration chunks → final pass icin
+    #   2) live buffer → cumle bazli VAD flush
+    if lecture_active:
+        global lecture_live_speech_detected, lecture_live_last_speech_time
+        chunk = indata.copy()
+        with lecture_audio_chunks_lock:
+            lecture_audio_chunks.append(chunk)
+        with lecture_live_buffer_lock:
+            lecture_live_buffer.append(chunk)
+        if level > SILENCE_THRESHOLD:
+            lecture_live_speech_detected = True
+            lecture_live_last_speech_time = time.time()
+
     state = sm.state
 
     if state == State.RECORDING:
@@ -703,6 +1214,10 @@ def audio_callback(indata, frames, time_info, status):
 def do_start_recording():
     """LISTENING -> RECORDING gecisi. Basarisizsa False doner."""
     global audio_frames, speech_detected, last_speech_time
+
+    if lecture_active:
+        log.debug("[REC] Lecture mode aktif, dictation kayit baslatilmadi.")
+        return False
 
     if not sm.transition(State.LISTENING, State.RECORDING):
         return False
@@ -885,6 +1400,12 @@ def wake_word_listener():
         if not wake_word_enabled:
             continue
 
+        if lecture_active:
+            # Lecture sirasinda wake word listener bekler
+            _consecutive_empty = 0
+            _backoff_time = 0.5
+            continue
+
         if sm.state != State.LISTENING:
             _consecutive_empty = 0
             _backoff_time = 0.1
@@ -956,6 +1477,9 @@ def wake_word_listener():
 # --- HOTKEY HANDLER ---
 
 def toggle_recording():
+    if lecture_active:
+        log.debug("[HOTKEY] Lecture mode aktif, F13 yoksayildi.")
+        return
     state = sm.state
     if state == State.RECORDING:
         do_stop_and_send()
@@ -1068,8 +1592,43 @@ def on_release(key):
 
 # --- MAIN ---
 
+def _run_headless_transcribe(file_path):
+    """--transcribe FILE: GUI/audio stream baslatmadan tek seferlik transcribe."""
+    print("=" * 55)
+    print("  Voice Dictation - Tek Seferlik Transkript")
+    print("=" * 55)
+    print(f"  Kaynak : {file_path}")
+    print(f"  Model  : {LECTURE_MODEL_SIZE} ({DEVICE})")
+    print("=" * 55)
+    log.info(f"[HEADLESS] Transcribe basliyor: {file_path}")
+
+    if not os.path.isfile(file_path):
+        print(f"\n[HATA] Dosya bulunamadi: {file_path}")
+        log.error(f"[HEADLESS] Dosya bulunamadi: {file_path}")
+        return 1
+
+    load_model()
+
+    out = transcribe_file_to_markdown(file_path)
+    if out:
+        print(f"\n[OK] Transkript yazildi: {out}")
+        return 0
+    print("\n[HATA] Transcribe basarisiz.")
+    return 1
+
+
 def main():
     global audio_stream
+
+    import argparse
+    parser = argparse.ArgumentParser(prog="dictation", add_help=True,
+                                     description="Voice Dictation - Whisper STT")
+    parser.add_argument("--transcribe", metavar="FILE", default=None,
+                        help="Headless: ses dosyasini transkripte et ve cik")
+    args, _unknown = parser.parse_known_args()
+
+    if args.transcribe:
+        sys.exit(_run_headless_transcribe(args.transcribe))
 
     os_name = "macOS" if IS_MAC else "Windows"
     quit_combo = "Cmd+Alt+Q" if IS_MAC else "Ctrl+Alt+Q"
