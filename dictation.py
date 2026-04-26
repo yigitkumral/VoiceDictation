@@ -100,7 +100,8 @@ else:
 
 # --- AYARLAR ---
 
-WAKE_WORD = "zugzwang"
+WAKE_WORD_DEFAULT = "diktasyon"
+wake_word_string = WAKE_WORD_DEFAULT  # runtime'da degistirilebilir (tray menusunden)
 
 # Sniper buton
 HOTKEY_RECORD = pynput_kb.Key.f13
@@ -151,8 +152,8 @@ LIVE_MIN_CHUNK_SECONDS = 3.0   # bu kadar olmadan transcribe etme (cok kisa chun
 LIVE_MAX_CHUNK_SECONDS = 25.0  # bu kadar olduysa zorla bol (hizli konusmaci icin)
 
 INITIAL_PROMPT = (
-    "Zugzwang, "
-    "Claude, Claude Code, BMAD, Zugzwang, API, commit, deploy, push, pull, "
+    "Diktasyon, "
+    "Claude, Claude Code, BMAD, Diktasyon, Zugzwang, API, commit, deploy, push, pull, "
     "merge, branch, refactor, component, TypeScript, React, OpenClaw, PRD, "
     "MCP, sprint, story, pipeline, Winston, Amelia, workflow, endpoint, "
     "frontend, backend, repository, npm, Node.js, VS Code, extension, "
@@ -314,6 +315,7 @@ lecture_live_buffer_lock = threading.Lock()
 lecture_live_md_path = None                   # canli MD dosyasi
 lecture_live_speech_detected = False          # bu chunk'ta konusma algilandi mi
 lecture_live_last_speech_time = 0.0           # son konusma zamani (silence olcumu icin)
+lecture_live_thread = None                    # live transcribe thread handle (stop'ta join icin)
 
 
 # --- MINI GUI (sag ust kose) ---
@@ -360,22 +362,36 @@ def _start_menubar_gui():
     class VDMenuBar(rumps.App):
         def __init__(self):
             super().__init__("VD", title="🟢", quit_button=None)
-            self._wake_item = rumps.MenuItem(
-                "🗣️ Anahtar Kelime: Açık", callback=self.on_toggle_wake
-            )
+            # Toplanti submenu items
             self._lecture_item = rumps.MenuItem(
                 "🎙 Toplantı Kaydı Başlat", callback=self.on_lecture_toggle
             )
             self._file_item = rumps.MenuItem(
                 "📁 Ses dosyasını dök...", callback=self.on_pick_file
             )
+            # Ayarlar submenu items
+            self._wake_item = rumps.MenuItem(
+                "🗣️ Anahtar Kelime Dinleme: Açık", callback=self.on_toggle_wake
+            )
+            self._wake_change_item = rumps.MenuItem(
+                f"✏️  Anahtar Kelime: \"{wake_word_string}\" (değiştir...)",
+                callback=self.on_change_wake_word,
+            )
+            # Submenu containers
+            toplanti_submenu = rumps.MenuItem("🎤 Toplantı")
+            toplanti_submenu.add(self._lecture_item)
+            toplanti_submenu.add(self._file_item)
+
+            ayarlar_submenu = rumps.MenuItem("⚙ Ayarlar")
+            ayarlar_submenu.add(self._wake_item)
+            ayarlar_submenu.add(self._wake_change_item)
+
             self.menu = [
                 rumps.MenuItem("Durum: Hazır", callback=None),
                 None,  # separator
-                self._lecture_item,
-                self._file_item,
+                toplanti_submenu,
+                ayarlar_submenu,
                 None,
-                self._wake_item,
                 rumps.MenuItem("↺ Sıfırla", callback=self.on_reset),
                 None,
                 rumps.MenuItem("Çıkış", callback=self.on_quit),
@@ -395,7 +411,8 @@ def _start_menubar_gui():
                 self.title = icon
                 self._status_item.title = f"Durum: {label}"
                 self._lecture_item.title = "🎙 Toplantı Kaydı Başlat"
-            self._wake_item.title = f"🗣️ Anahtar Kelime: {'Açık' if wake_word_enabled else 'Kapalı'}"
+            self._wake_item.title = f"🗣️ Anahtar Kelime Dinleme: {'Açık' if wake_word_enabled else 'Kapalı'}"
+            self._wake_change_item.title = f"✏️  Anahtar Kelime: \"{wake_word_string}\" (değiştir...)"
             if should_quit.is_set():
                 rumps.quit_application()
 
@@ -404,6 +421,27 @@ def _start_menubar_gui():
             wake_word_enabled = not wake_word_enabled
             state = "ACIK" if wake_word_enabled else "KAPALI"
             log.info(f"[WAKE] Anahtar kelime: {state}")
+
+        def on_change_wake_word(self, _):
+            # rumps Window ile string input alma (tkinter macOS thread sorunlu)
+            try:
+                w = rumps.Window(
+                    title="Anahtar Kelime Değiştir",
+                    message=(
+                        f"Mevcut: \"{wake_word_string}\"\n\n"
+                        "Yeni anahtar kelime girin (boş = iptal).\n"
+                        "Default 'zugzwang' için 'zugzwang' yazın."
+                    ),
+                    default_text=wake_word_string,
+                    ok="Kaydet",
+                    cancel="İptal",
+                    dimensions=(320, 24),
+                )
+                response = w.run()
+                if response.clicked and response.text and response.text.strip():
+                    set_wake_word(response.text.strip())
+            except Exception as e:
+                log.error(f"[WAKE] Dialog hatasi: {e}", exc_info=True)
 
         def on_lecture_toggle(self, _):
             if lecture_active:
@@ -471,9 +509,35 @@ def _start_tray_gui():
     def on_pick_file(icon, item):
         threading.Thread(target=_pick_file_and_transcribe, daemon=True).start()
 
+    def on_change_wake_word(icon, item):
+        threading.Thread(target=_prompt_change_wake_word, daemon=True).start()
+
     def on_quit(icon, item):
         should_quit.set()
         icon.stop()
+
+    # Submenu: Toplanti
+    toplanti_menu = pystray.Menu(
+        pystray.MenuItem(
+            lambda item: ("⏹  Toplantı Kaydını Durdur" if lecture_active
+                          else "🎙  Toplantı Kaydı Başlat"),
+            on_lecture_toggle,
+        ),
+        pystray.MenuItem("📁 Ses dosyasını dök...", on_pick_file),
+    )
+
+    # Submenu: Ayarlar
+    ayarlar_menu = pystray.Menu(
+        pystray.MenuItem(
+            lambda item: f"🗣️ Anahtar Kelime Dinleme: {'Açık' if wake_word_enabled else 'Kapalı'}",
+            on_toggle_wake,
+            checked=lambda item: wake_word_enabled,
+        ),
+        pystray.MenuItem(
+            lambda item: f"✏️  Anahtar Kelime: \"{wake_word_string}\" (değiştir...)",
+            on_change_wake_word,
+        ),
+    )
 
     menu = pystray.Menu(
         pystray.MenuItem(
@@ -482,18 +546,9 @@ def _start_tray_gui():
             None, enabled=False,
         ),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem(
-            lambda item: ("⏹  Toplantı Kaydını Durdur" if lecture_active
-                          else "🎙  Toplantı Kaydı Başlat"),
-            on_lecture_toggle,
-        ),
-        pystray.MenuItem("📁 Ses dosyasını dök...", on_pick_file),
+        pystray.MenuItem("🎤 Toplantı", toplanti_menu),
+        pystray.MenuItem("⚙ Ayarlar", ayarlar_menu),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem(
-            lambda item: f"🗣️ Anahtar Kelime: {'Açık' if wake_word_enabled else 'Kapalı'}",
-            on_toggle_wake,
-            checked=lambda item: wake_word_enabled,
-        ),
         pystray.MenuItem("↺ Sıfırla", on_reset),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Çıkış", on_quit),
@@ -916,16 +971,24 @@ def _open_in_editor(path):
         except Exception as e:
             log.warning(f"[EDITOR] {custom} acilamadi, fallback'e geciliyor: {e}")
 
-    # 2) VS Code (PATH'te varsa)
-    code_cmd = shutil.which("code") or (shutil.which("code.cmd") if IS_WIN else None)
+    # 2) VS Code — Windows'ta code.cmd ONCELIKLI (Code.exe yeni bos window acar,
+    # code.cmd ise mevcut instance'a dosyayi tab olarak ekler)
+    if IS_WIN:
+        code_cmd = shutil.which("code.cmd") or shutil.which("code")
+    else:
+        code_cmd = shutil.which("code")
     if code_cmd:
         try:
+            # shell=False + direct path: PATHEXT siralamasi nedeniyle Code.exe'ye
+            # dusulmesini onler. .cmd dosyasi shell=False ile dogrudan calismaz,
+            # bu yuzden Windows'ta cmd /c kullaniyoruz.
             if IS_WIN:
                 flags = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, "CREATE_NO_WINDOW") else 0
-                subprocess.Popen(f'code "{path}"', shell=True, creationflags=flags)
+                subprocess.Popen(["cmd", "/c", code_cmd, path], creationflags=flags)
             else:
-                subprocess.Popen(["code", path])
+                subprocess.Popen([code_cmd, path])
             log.info(f"[EDITOR] VS Code ile acildi: {path}")
+            log.info(f"[EDITOR] (cli: {code_cmd})")
             log.info("[EDITOR] Markdown preview: Ctrl+K V (yan panel) veya Ctrl+Shift+V (yeni tab)")
             return
         except Exception as e:
@@ -1081,10 +1144,12 @@ def start_lecture_recording():
     log.info("[LECTURE] Toplanti kaydi basladi (RAM-only, diske ses yazilmiyor)")
     log.info(f"[LECTURE] Canli MD: {lecture_live_md_path}")
 
-    # Live transcribe thread'i baslat
-    threading.Thread(
+    # Live transcribe thread'i baslat (handle saklanir, stop'ta join icin)
+    global lecture_live_thread
+    lecture_live_thread = threading.Thread(
         target=lambda: _live_transcribe_loop(lecture_live_md_path), daemon=True
-    ).start()
+    )
+    lecture_live_thread.start()
 
     # Editor'da canli dosyayi ac (VS Code > sistem default > clipboard fallback)
     _open_in_editor(lecture_live_md_path)
@@ -1094,7 +1159,7 @@ def start_lecture_recording():
 
 def stop_lecture_recording():
     """Tray menusunden cagrilir: RAM buffer'i transcribe et, sonra bellegi temizle."""
-    global lecture_active, lecture_live_md_path
+    global lecture_active, lecture_live_md_path, lecture_live_thread
     with lecture_lock:
         if not lecture_active:
             return False
@@ -1102,11 +1167,27 @@ def stop_lecture_recording():
         duration = time.time() - lecture_start_time
         lecture_active = False  # bu live_loop'un sonunu tetikler
         lecture_live_md_path = None
+        live_thread = lecture_live_thread
+        lecture_live_thread = None
+
+    # Live thread'in kendi final flush'ini tamamlamasini bekle. Aksi halde
+    # transcribe_lock uzerinde sirada beklerken _bg'nin "Final transkript hazir"
+    # yazisindan SONRA append yapardi (eski bug). Max 15sn bekleme yeterli.
+    if live_thread is not None:
+        live_thread.join(timeout=15.0)
+        if live_thread.is_alive():
+            log.warning("[LECTURE] Live thread 15sn icinde bitmedi, devam ediliyor.")
 
     # Audio chunks'i bir snapshot'a al ve buffer'i hemen temizle (RAM hassasligi)
     with lecture_audio_chunks_lock:
         chunks = list(lecture_audio_chunks)
         lecture_audio_chunks.clear()
+
+    # Tani: gercekten ses geldi mi?
+    chunk_count = len(chunks)
+    total_samples = sum(len(c) for c in chunks) if chunks else 0
+    audio_seconds = total_samples / SAMPLE_RATE if total_samples else 0
+    log.info(f"[LECTURE] Buffer durumu: {chunk_count} chunk, {total_samples} sample (~{audio_seconds:.1f}sn ses)")
 
     log.info(f"[LECTURE] Kayit durduruldu ({_format_seconds(duration)}). Final transcribe RAM uzerinden basliyor...")
     sound_sent()
@@ -1148,13 +1229,47 @@ def stop_lecture_recording():
                         f.write(f"\n---\n\n_**Final transkript hazir:** `{md_path}` (paragraf yapili, beam=5 ile)._\n")
                 except Exception:
                     pass
-            sound_sent()
+            # Not: ikinci sound_sent() KALDIRILDI — stop_lecture_recording basinda
+            # bir kez calindi yeterli. Final tamamlanma log'da gorunur.
         except Exception as e:
             log.error(f"[LECTURE] Final transcribe hatasi: {e}", exc_info=True)
             sound_error()
 
     threading.Thread(target=_bg, args=(chunks, live_md, duration), daemon=True).start()
     return True
+
+
+def _prompt_change_wake_word():
+    """Tray menusunden cagrilir: tkinter input dialog ile yeni wake word al + uygula."""
+    try:
+        import tkinter as tk
+        from tkinter import simpledialog
+        root = tk.Tk()
+        root.withdraw()
+        try:
+            root.attributes("-topmost", True)
+        except Exception:
+            pass
+        new_word = simpledialog.askstring(
+            "Anahtar Kelime Değiştir",
+            f"Mevcut: \"{wake_word_string}\"\n\n"
+            "Yeni anahtar kelime girin (boş bırakırsanız değişmez).\n"
+            "Not: Whisper'ın sizin telaffuzunuzu nasıl yazdığına bağlı; "
+            "tek heceli ya da yaygın olmayan kelimeler daha iyi yakalanır.\n"
+            "Default 'zugzwang' geri yüklemek için 'zugzwang' yazın.",
+            parent=root,
+        )
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        if not new_word or not new_word.strip():
+            log.info("[WAKE] Degisiklik iptal edildi (bos giris).")
+            return
+        if set_wake_word(new_word):
+            log.info(f"[WAKE] Anahtar kelime guncellendi: '{wake_word_string}'")
+    except Exception as e:
+        log.error(f"[WAKE] Dialog hatasi: {e}", exc_info=True)
 
 
 def _pick_file_and_transcribe():
@@ -1197,25 +1312,69 @@ def _pick_file_and_transcribe():
 
 # --- REGEX ---
 
-# Whisper varyasyonlari: Zugzwang, Zuckzwang, ZUXWANG, Zvank, Zook Zvank, vb.
-_WAKE_RE = re.compile(
-    r"\bzu[cgkx]+s?z?w?[ao]n?[gk]\b"  # Zugzwang, Zuckzwang, Zuxwang, Zukwank
-    r"|\bzux\s*wang\b"                  # ZUXWANG
-    r"|\bzugs?\s*wang\b"                # ZUGS WANG, ZUG WANG
-    r"|\bzuck\s*zwang\b"                # ZUCK ZWANG
-    r"|\bzuks?\s*wang\b"                # ZUK WANG
-    r"|\bzugz?\s*wang\b"                # ZUGZ WANG
-    r"|\bz[uü]k\s*z?v[ao]n[gk]\b"      # Zük Zvank, Zuk Vank
-    r"|\bzo+k\s*z?v[ao]n[gk]\b"         # Zook Zvank
-    r"|\bzvank\b"                        # Zvank (tam kelime, sadece bu form)
+# Default 'Diktasyon' regex'i: Whisper'in Turkce + Ingilizce kayma varyasyonlari
+# (diktasyon, diktason, diktatsyon, diktasion, dictation, diction, diktoson, ...)
+_DEFAULT_WAKE_RE = re.compile(
+    r"\bdikta[st]+(?:yon|ion|on|sion)\b"   # diktasyon, diktason, diktatsyon, diktasion
+    r"|\bdiktason\b"                         # diktason (yumusak)
+    r"|\bdiktosyon\b|\bdiktoson\b"          # diktosyon, diktoson (rare)
+    r"|\bdic?tat?ion\b"                      # dictation, diction, dictaion
     , re.IGNORECASE
 )
+# Yedek: eski Zugzwang regex (kullanici geri donmek isterse 'zugzwang' yazabilir)
+_ZUGZWANG_RE = re.compile(
+    r"\bzu[cgkx]+s?z?w?[ao]n?[gk]\b"
+    r"|\bzux\s*wang\b|\bzugs?\s*wang\b|\bzuck\s*zwang\b"
+    r"|\bzuks?\s*wang\b|\bzugz?\s*wang\b"
+    r"|\bz[uü]k\s*z?v[ao]n[gk]\b|\bzo+k\s*z?v[ao]n[gk]\b|\bzvank\b"
+    , re.IGNORECASE
+)
+
+# Aktif wake word regex'i (runtime'da set_wake_word ile degisir)
+_WAKE_RE = _DEFAULT_WAKE_RE
+
+
+def set_wake_word(new_word):
+    """Tray menusunden cagrilir: yeni wake word'u aktif et, regex'i guncelle.
+
+    Default 'zugzwang' icin genis Whisper varyasyon pattern korunur.
+    Diger kelimeler icin basit kelime sinirli case-insensitive eslesme uretilir
+    (Whisper varyasyonlarini yakalayamayabilir; gelistirici kullanicilar el ile
+    regex pattern de girebilir, parantez/escape karakterleri olduğu gibi calisir).
+    """
+    global wake_word_string, _WAKE_RE
+    new_word = (new_word or "").strip()
+    if not new_word:
+        log.warning("[WAKE] Bos wake word girildi, degisiklik atlandi.")
+        return False
+    wake_word_string = new_word.lower()
+    if wake_word_string == WAKE_WORD_DEFAULT:
+        _WAKE_RE = _DEFAULT_WAKE_RE
+        log.info(f"[WAKE] Default '{WAKE_WORD_DEFAULT}' regex'i (genis Whisper varyasyonlari) aktif.")
+    elif wake_word_string == "zugzwang":
+        # Eski default — yedek regex aktif
+        _WAKE_RE = _ZUGZWANG_RE
+        log.info("[WAKE] Eski Zugzwang regex'i (yedek pattern) aktif.")
+    else:
+        try:
+            # Eger kullanici regex meta karakterleri kullanmadiysa basit eslesme;
+            # advanced kullanicilar tam regex de girebilir (escape ihtiyaci yoksa)
+            pattern = rf"\b{re.escape(wake_word_string)}\b"
+            _WAKE_RE = re.compile(pattern, re.IGNORECASE)
+            log.info(f"[WAKE] Yeni wake word: '{wake_word_string}' (basit kelime sinirli pattern)")
+        except re.error as e:
+            log.error(f"[WAKE] Regex compile hatasi: {e}, default'a donuluyor.")
+            wake_word_string = WAKE_WORD_DEFAULT
+            _WAKE_RE = _DEFAULT_WAKE_RE
+            return False
+    return True
+
 
 def has_wake_word(text):
     return bool(_WAKE_RE.search(text))
 
 def extract_message(text):
-    """Ilk 'zugzwang' oncesindeki mesaji cikar."""
+    """Ilk wake word oncesindeki mesaji cikar."""
     matches = list(_WAKE_RE.finditer(text))
     if matches:
         m = matches[0]  # ilk wake word'den onceki mesaj
@@ -1694,7 +1853,7 @@ def main():
     print("  Voice Dictation Tool - Whisper STT")
     print("=" * 55)
     print(f"  Platform     : {os_name}")
-    print(f"  Toggle word  : \"{WAKE_WORD}\" (baslat + durdur)")
+    print(f"  Toggle word  : \"{wake_word_string}\" (baslat + durdur)")
     print(f"  Sniper buton : {record_label} (toggle)")
     print(f"  Cikis        : {quit_combo}")
     print(f"  Model        : {MODEL_SIZE} ({DEVICE})")

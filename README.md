@@ -1,23 +1,25 @@
 # VoiceDictation
 
 > 🇹🇷 **Bu proje Türkçe konuşma tanıma için özelleştirilmiştir.**
-> Whisper modeli `language="tr"` ile çalışır, `INITIAL_PROMPT` Türkçe vocabulary boost'u, halüsinasyon filtreleri (Altyazı M.K., Donama, vb.) Türkçe Whisper çıktılarına göre yazılmıştır. Wake word "Zugzwang"'ın regex pattern'ları Whisper'ın **Türkçe** modda ürettiği varyasyonları yakalar (Zukzwank, Zük Zvank, Zugswang...).
+> Whisper modeli `language="tr"` ile çalışır, `INITIAL_PROMPT` Türkçe vocabulary boost'u, halüsinasyon filtreleri (Altyazı M.K., Donama, vb.) Türkçe Whisper çıktılarına göre yazılmıştır. Wake word "Diktasyon"'un regex pattern'ları Whisper'ın **Türkçe** modda ürettiği varyasyonları yakalar (diktasyon, diktason, dictation, diktatsyon...).
 > Başka bir dilde kullanmak için kod adaptasyonu gerekir; arayüz, log mesajları, yorumlar Türkçedir.
 
-Lokal Whisper modeli ile calisan cross-platform sesli yazim araci. Konusmani metne cevirip aktif pencereye yapistirip gonderir.
+Lokal Whisper modeli ile calisan cross-platform sesli yazim araci. Konusmani metne cevirip aktif pencereye yapistirip gonderir; ayrica uzun toplanti/ders kayitlari icin RAM-only canli transkripsiyon ve mevcut ses dosyalarini Markdown'a dokme imkani sunar.
 
 ## Ozellikler
 
 - **Lokal STT** — Faster-Whisper (CTranslate2) ile internet gerektirmeden sesli yazim
-- **Wake Word** — "Zugzwang" diyerek kaydi baslatip durdurabilirsin
-- **Hotkey** — F13 (Windows, sniper butonu) / Ctrl+Option+R (macOS) ile toggle
+- **Wake Word** — "Diktasyon" diyerek kaydi baslatip durdurabilirsin (degistirilebilir)
+- **Hotkey** — F13 (Windows, sniper butonu) / Caps Lock double-tap (macOS) ile toggle
 - **Otomatik yapistirma** — Metin clipboard'a kopyalanir, aktif pencereye yapistirip Enter gonderir
-- **GPU destegi** — Windows'ta CUDA (RTX serisi), macOS'ta CPU fallback
+- **GPU destegi** — Windows'ta CUDA (RTX serisi), macOS'ta MLX (Apple Silicon GPU)
+- **Toplanti/Ders modu** — Uzun kayitlar icin RAM-only canli transkripsiyon, VS Code'da gercek zamanli izleme
+- **Dosyadan transkript** — Mevcut AAC/MP3/WAV/M4A dosyalarini yuksek kaliteyle Markdown'a cevirir
 
 ## Gereksinimler
 
 - Python 3.10+
-- Windows: CUDA Toolkit + cuBLAS (GPU kullanimi icin)
+- Windows: CUDA Toolkit + cuBLAS (GPU kullanimi icin, opsiyonel)
 - macOS: portaudio (`brew install portaudio`)
 
 ## Kurulum
@@ -25,7 +27,7 @@ Lokal Whisper modeli ile calisan cross-platform sesli yazim araci. Konusmani met
 ### Windows
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/yigitkumral/VoiceDictation.git
 cd VoiceDictation
 setup.bat
 ```
@@ -39,12 +41,26 @@ CUDA destegi bulunamazsa uygulama otomatik olarak CPU moduna duser.
 ### macOS
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/yigitkumral/VoiceDictation.git
 cd VoiceDictation
 brew install portaudio
 chmod +x setup.sh start.sh
 ./setup.sh
 ```
+
+## Hizli Baslangic — Yeni Kullanici Yol Haritasi
+
+Sifirdan baslayan birinin izlemesi gereken adimlar:
+
+1. **Kur** — Yukaridaki adimlarla `setup.bat` (Windows) veya `./setup.sh` (macOS) calistir; venv + bagimliliklar otomatik kurulur
+2. **Baslat** — `start.bat` (Windows) / `./start.sh` (macOS); uygulama arka planda calisir, sistem tepsisinde / menu bar'da bir ikon belirir
+3. **Ilk dictation denemen** — Hotkey'e bas (F13 / Caps Lock double-tap), bir cumle konus, tekrar bas → metin aktif pencereye yapistirilir + Enter
+4. **Wake word'u dene** (opsiyonel) — Tray sag tik → ⚙ Ayarlar → "Anahtar Kelime Dinleme" → **Acik**. Artik "Diktasyon" diyerek de toggle edebilirsin
+5. **Bir toplantiyi kaydet** — Tray sag tik → 🎤 Toplanti → "Toplanti Kaydi Baslat"; ikon **mor**a doner, editor'de `LIVE.md` acilir, canli akan transkripti gorursun. "Durdur" deyince yuksek kaliteli final MD uretilir
+6. **Mevcut bir ses dosyasini cevir** — Tray menusunden "Ses dosyasini dok..." veya CLI: `venv\Scripts\python dictation.py --transcribe "kayit.aac"`
+7. **Auto-start kur** (opsiyonel) — Bilgisayar her acildiginda otomatik baslamasini istiyorsan asagidaki "Auto-Start Kurulumu" bolumune bak
+
+> **Ipucu:** Tray ikon renkleri durumu gosterir — 🔵 mavi: dinleme, 🔴 kirmizi: dictation kaydi, 🟣 mor: lecture (toplanti) kaydi.
 
 ## Kullanim
 
@@ -62,45 +78,157 @@ venv\Scripts\python dictation.py
 venv/bin/python dictation.py
 ```
 
-### Kontroller
+### Kontroller (Hizli Diktasyon)
 
 | Islem | Windows | macOS |
 |-------|---------|-------|
-| Kaydi baslat/durdur | F13 (sniper butonu) | Ctrl+Option+R |
-| Kaydi baslat/durdur | "Zugzwang" de | "Zugzwang" de |
+| Kaydi baslat/durdur | F13 (sniper butonu) | Caps Lock double-tap |
+| Kaydi baslat/durdur | "Diktasyon" de | "Diktasyon" de |
+| Long-press reset (kayit iptal) | F13 1.25sn basili tut | Caps Lock 1.25sn basili tut |
 | Cikis | Ctrl+Alt+Q | Cmd+Alt+Q |
 
-### Nasil Calisir
+### Nasil Calisir (Hizli Diktasyon)
 
 1. **Dinleme modu** — Uygulama arka planda wake word veya hotkey bekler
-2. **Kayit** — F13'e bas veya "Zugzwang" de, konusmaya basla
-3. **Gonderme** — F13'e tekrar bas veya "Zugzwang" de
+2. **Kayit** — F13'e bas veya "Diktasyon" de, konusmaya basla
+3. **Gonderme** — F13'e tekrar bas veya "Diktasyon" de
 4. Metin aktif pencereye yapistirip Enter ile gonderilir
 
 ### Tek Nefes Modu
 
-"Zugzwang [mesajin] Zugzwang" seklinde tek nefeste soylersen, mesaj dogrudan gonderilir — kayit moduna gecmeye gerek kalmaz.
+"Diktasyon [mesajin] Diktasyon" seklinde tek nefeste soylersen, mesaj dogrudan gonderilir — kayit moduna gecmeye gerek kalmaz.
+
+### Tray Menusu
+
+Sistem tepsisi ikonuna sag tikla:
+
+```
+Durum: <state>
+─────────────
+🎤 Toplanti  ▶  Toplanti Kaydi Baslat / Durdur
+                Ses dosyasini dok...
+⚙ Ayarlar    ▶  Anahtar Kelime Dinleme: Acik/Kapali
+                Anahtar Kelime: "diktasyon" (degistir...)
+─────────────
+↺ Sifirla       (cift-tik tray ikonu da resetler)
+─────────────
+Cikis
+```
+
+### Toplanti / Ders Modu (Uzun Kayitlar)
+
+Hizli diktasyondan farkli olarak, **uzun kayitlar** icin tasarlanmistir (toplanti, ders, podcast):
+
+1. Tray sag tik → 🎤 Toplanti → **Toplanti Kaydi Baslat**
+2. Tray ikonu mor renge doner; VS Code otomatik acilir, canli MD dosyasi yuklenir
+3. VS Code'da **`Ctrl+K V`** ile yan panele Markdown preview ac → konusurken paragraflar canli akar
+4. Bitirmek icin: tray → 🎤 Toplanti → **Toplanti Kaydini Durdur**
+
+**Onemli ilke: Ses dosyasi DISKE YAZILMAZ.** Tum ses bellekte tutulur, kayit bitince transcribe edilip RAM temizlenir. Diskte sadece transkript Markdown dosyalari kalir.
+
+**Iki seviye transkript:**
+- **Canli (`<tarih>_LIVE.md`):** VAD-bazli cumle akisi (1.5sn sessizlik = paragraf sonu), turbo + beam=1, hizli
+- **Final (`<tarih>.md`):** Kayit bitince tum ses, beam=5 ile yuksek kalite, paragraf yapili
+
+**Cikti yapisi:**
+```
+~/Desktop/VoiceDictation_Lectures/
+├── 2026-04-26_18-25-11_LIVE.md    (canli akan)
+└── 2026-04-26_18-25-11.md          (final, beam=5)
+```
+
+### Dosyadan Transkript
+
+Elindeki bir ses dosyasini (AAC, MP3, WAV, M4A, FLAC, OGG, MP4 vb.) yuksek kaliteyle Markdown'a cevirir.
+
+**GUI:** Tray sag tik → 🎤 Toplanti → **Ses dosyasini dok...** → dosya secici
+
+**CLI (headless, daemon gereksiz):**
+```bash
+venv/Scripts/python dictation.py --transcribe "FILE.aac"
+```
+
+Cikti: ses dosyasi yaninda `.md` + `~/Desktop/VoiceDictation_Lectures/<isim>.md` (iki kopya).
+
+> Performans: 1 saatlik AAC → ~3-5 dakika islem (CUDA + turbo, ~20x realtime)
+
+### Anahtar Kelime Degistirme
+
+Default wake word "diktasyon" (Whisper'in genis varyasyon regex'i ile). Degistirmek icin:
+
+1. Tray → ⚙ Ayarlar → **Anahtar Kelime: "..." (degistir...)**
+2. Yeni kelime gir, kaydet
+3. Yeni kelime hemen aktif olur (basit kelime sinirli case-insensitive eslesme)
+
+**Not:** Default 'diktasyon'a donmek icin dialog'a `diktasyon` yaz. Eski 'zugzwang' yedek pattern'i hala mevcut, `zugzwang` yazarsan o aktif olur.
+
+> Su an wake word degisikligi RAM'de tutulur, daemon restart'ta default'a doner. Disk persist `config.json` ile gelecek.
 
 ## Yapilandirma
 
-Ayarlar `dictation.py` icinde sabittir:
+### dictation.py Sabitleri
+
+Ayarlar dosya icinde:
 
 | Ayar | Varsayilan | Aciklama |
 |------|-----------|----------|
-| `MODEL_SIZE` | `"turbo"` | Whisper model boyutu |
-| `DEVICE` | Otomatik | `cuda` (CUDA varsa) veya `cpu` (fallback) |
+| `MODEL_SIZE` | `"turbo"` | Whisper model boyutu (large-v3-turbo) |
+| `DEVICE` | Otomatik | `cuda` (CUDA varsa), `mlx` (macOS), `cpu` fallback |
 | `SILENCE_THRESHOLD` | `0.008` | Ses algilama esigi |
 | `NO_SPEECH_TIMEOUT` | `30.0` | Konusma olmadan zaman asimi (sn) |
-| `WAKE_WORD` | `"zugzwang"` | Tetikleme kelimesi |
+| `WAKE_WORD_DEFAULT` | `"diktasyon"` | Default tetikleme kelimesi |
+| `LIVE_SILENCE_DURATION` | `1.5` | Lecture mode'da cumle sonu sessizlik (sn) |
+| `LIVE_MIN_CHUNK_SECONDS` | `3.0` | Minimum chunk transcribe suresi |
+| `LIVE_MAX_CHUNK_SECONDS` | `25.0` | Maksimum chunk (zorla bolme) |
+
+### Environment Variable
+
+| Degisken | Aciklama |
+|----------|----------|
+| `VOICEDICTATION_EDITOR` | Lecture acilirken kullanilacak editor: `notepad++`, `obsidian`, `subl`, ... veya `none` (sadece clipboard'a kopyala) |
+
+Ornek (PowerShell, kalici):
+```powershell
+[System.Environment]::SetEnvironmentVariable("VOICEDICTATION_EDITOR", "notepad++", "User")
+```
+
+Default sira: ENV var → VS Code (PATH'te varsa) → sistem default → clipboard fallback.
+
+## Auto-Start Kurulumu (Bilgisayar Acilisinda Otomatik Baslat)
+
+Uygulamanin her boot/login'de otomatik calismasini istiyorsan:
+
+### Windows
+
+1. Repo kokunde `start.bat` ve `start.vbs` dosyalari hazir gelir
+2. `Win + R` → `shell:startup` → acilan klasore `start.vbs` icin **kisayol** koy
+3. Tamam — bir sonraki acilista uygulama konsolsuz olarak baslar
+
+**Guncelleme:** `git pull` veya kod duzenlemesi sonrasi hicbir sey yapma; bir sonraki acilista yeni kod devreye girer (kisayol repo'dan calisir).
+
+### macOS
+
+1. `~/Library/LaunchAgents/com.voicedictation.app.plist` olustur (proje icindeki sablon kullanilabilir)
+2. `launchctl load ~/Library/LaunchAgents/com.voicedictation.app.plist`
+3. Tamam — bir sonraki login'de otomatik baslar
+
+## Loglar
+
+- `logs/dictation.log` — DEBUG seviyesinden itibaren, gunluk rotate
+- Konsol ciktisi INFO seviyesinden itibaren
+- Sorun gidermek icin once bu dosyaya bak
 
 ## Teknoloji Stack
 
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — CTranslate2 tabanli Whisper
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) — CTranslate2 tabanli Whisper (Windows + Linux)
+- [mlx-whisper](https://github.com/ml-explore/mlx-examples/tree/main/whisper) — Apple Silicon GPU icin Whisper (macOS)
 - [sounddevice](https://python-sounddevice.readthedocs.io/) — Mikrofon erisimi
 - [pynput](https://pynput.readthedocs.io/) — Global hotkey + klavye simulasyonu
 - [pyperclip](https://github.com/asweigart/pyperclip) — Clipboard
+- [pystray](https://pystray.readthedocs.io/) + Pillow — Windows sistem tepsisi GUI
+- [rumps](https://rumps.readthedocs.io/) — macOS menu bar GUI
 - numpy — Audio buffer islemleri
 
 ## Lisans
 
-[MIT License](LICENSE) — serbest kullanim. Ticari/akademik/kisisel her amac icin kullanabilir, degistirebilir, dagitabilirsin. Tek sart: telif notunu ekleri yerinde tut.
+[MIT License](LICENSE) — serbest kullanim. Ticari/akademik/kisisel her amac icin kullanabilir, degistirebilir, dagitabilirsin. Tek kosul: telif notunu yerinde tut.
