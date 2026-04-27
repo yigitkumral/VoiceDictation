@@ -735,7 +735,7 @@ def _clean_transcription(text):
             counts = Counter(words)
             if counts.most_common(1)[0][1] / len(words) > 0.6:
                 return ""
-        return cleaned
+        return _apply_word_corrections(cleaned)
 
     # 3) Uzun metin: tekrar kontrolu (esik yuksek tutulur, gercek icerik korunur)
     from collections import Counter
@@ -755,7 +755,7 @@ def _clean_transcription(text):
     cleaned = re.sub(r"^[\s.,;:!?]+|[\s.,;:!?]+$", "", cleaned)
     if not cleaned or len(cleaned.split()) < 3:
         return ""
-    return cleaned
+    return _apply_word_corrections(cleaned)
 
 
 def quick_transcribe(audio_data):
@@ -872,6 +872,9 @@ def _transcribe_audio_path(audio, beam_size=5):
         text = " ".join(s["text"] for s in segments).strip()
     elapsed = time.time() - t0
     log.info(f"[TRANSCRIBE] Tamamlandi ({elapsed:.0f}sn islem, {len(segments)} segment).")
+    text = _apply_word_corrections(text)
+    for s in segments:
+        s["text"] = _apply_word_corrections(s["text"])
     return text, segments
 
 
@@ -1387,6 +1390,28 @@ _DEFAULT_WAKE_RE = re.compile(
 )
 # Aktif wake word regex'i (runtime'da set_wake_word ile degisir)
 _WAKE_RE = _DEFAULT_WAKE_RE
+
+
+# --- WHISPER KELIME DUZELTMELERI ---
+# Whisper bazi (ozellikle Almanca/yabanci) kelimeleri turlu sekilde yazar.
+# Asagidaki tablo transkript ciktisinda otomatik duzeltme uygular.
+# Format: (regex_pattern, replacement) — pattern'lar IGNORECASE, kelime sinirli.
+
+_WORD_CORRECTIONS = [
+    # Zugzwang (Almanca satranc terimi): zooksvang, zooksvank, zugsvang, zuckswang,
+    # zucksvang, zugswang, zoogzwang, zukzwang, zooks vank vb. -> Zugzwang
+    # Whisper hem -ng hem -nk hem -ngk yazabilir, ortada bosluk birakabilir.
+    (re.compile(r"\bz[ou]+[gcktsz]+\s*[vw]an[gk]+\b", re.IGNORECASE), "Zugzwang"),
+]
+
+
+def _apply_word_corrections(text):
+    """Whisper'in yanlis transkribe ettigi bilinen kelimeleri duzeltir."""
+    if not text:
+        return text
+    for pattern, replacement in _WORD_CORRECTIONS:
+        text = pattern.sub(replacement, text)
+    return text
 
 
 def set_wake_word(new_word):
