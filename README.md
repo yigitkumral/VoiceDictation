@@ -1,5 +1,12 @@
 # VoiceDictation
 
+> **Katki / Branch Politikasi**
+>
+> `master`'a push'u sadece repo sahibi (`yigitkumral`) yapar. Diger
+> collaborator'lar feature branch acip Pull Request yoluyla katki saglar:
+> `git checkout -b feature/<konu>` -> push -> `gh pr create`. Repo sahibi
+> review edip merge eder.
+
 > 🇹🇷 **Bu proje Türkçe konuşma tanıma için özelleştirilmiştir.**
 > Whisper modeli `language="tr"` ile çalışır, `INITIAL_PROMPT` Türkçe vocabulary boost'u, halüsinasyon filtreleri (Altyazı M.K., Donama, vb.) Türkçe Whisper çıktılarına göre yazılmıştır. Wake word "Diktasyon"'un regex pattern'ları Whisper'ın **Türkçe** modda ürettiği varyasyonları yakalar (diktasyon, diktason, dictation, diktatsyon...).
 > Başka bir dilde kullanmak için kod adaptasyonu gerekir; arayüz, log mesajları, yorumlar Türkçedir.

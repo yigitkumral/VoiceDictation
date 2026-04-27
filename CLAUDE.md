@@ -2,6 +2,17 @@
 
 ---
 
+## 0) Git Branch Politikasi
+
+`master`'a push'u sadece repo sahibi `yigitkumral` (Yigit) yapar. Diger
+collaborator'lar (su an: `Mertanj`) feature branch acip PR yoluyla katki saglar.
+
+Yigit kendi makinesinde calisirken master'a direkt commit + push edebilir.
+Baska bir collaborator olarak calistigini dusunuyorsan: `git checkout -b feature/<konu>`,
+push'la, `gh pr create` ile PR ac.
+
+---
+
 ## 1) Proje Ozeti
 
 VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim aracidir. Konusmani metne cevirip aktif pencereye yapistirip gonderir.
