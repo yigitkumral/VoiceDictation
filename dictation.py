@@ -148,6 +148,7 @@ NO_SPEECH_TIMEOUT = 30.0
 LIVE_SILENCE_DURATION = 0.8    # 0.8sn sessizlik = cumle sonu, transcribe et (dogal konusma araligi)
 LIVE_MIN_CHUNK_SECONDS = 3.0   # bu kadar olmadan transcribe etme (cok kisa chunk gurultu)
 LIVE_MAX_CHUNK_SECONDS = 12.0  # bu kadar olduysa zorla bol (surekli konusan icin akiskan canli yazim)
+LECTURE_LIVE_BEAM_SIZE = 3     # lecture canli transcribe beam search (1=hizli/dusuk kalite, 5=yavas/yuksek)
 # Lecture VAD esigi: cumle sonu sessizligini ayirt etmek icin SILENCE_THRESHOLD'dan yuksek tutulur.
 # Mac dahili mikrofonu baseline 0.005-0.015 gurultu uretir; 0.025 konusma vs. fon gurultusu ayrimi yapar.
 LECTURE_LIVE_VAD_THRESHOLD = 0.025
@@ -758,7 +759,9 @@ def _clean_transcription(text):
     return _apply_word_corrections(cleaned)
 
 
-def quick_transcribe(audio_data):
+def quick_transcribe(audio_data, beam_size=1):
+    """Hizli transcribe (turbo, kucuk beam). Lecture LIVE icin beam_size=3,
+    diktasyon/wake/stop word kontrolu icin beam_size=1 (varsayilan)."""
     # Sessiz audio'yu transcribe etme (halusinasyon onleme)
     if not _has_speech(audio_data):
         return ""
@@ -768,12 +771,13 @@ def quick_transcribe(audio_data):
             result = mlx_whisper.transcribe(
                 audio_data, path_or_hf_repo=MLX_MODEL_REPO,
                 language="tr", initial_prompt=INITIAL_PROMPT,
+                beam_size=beam_size,
             )
             text = result.get("text", "").strip()
         else:
             segments, _ = model.transcribe(
                 audio_data, language="tr", initial_prompt=INITIAL_PROMPT,
-                beam_size=1, vad_filter=True,
+                beam_size=beam_size, vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=300),
             )
             text = " ".join(seg.text.strip() for seg in segments)
@@ -842,17 +846,21 @@ def _transcribe_audio_path(audio, beam_size=5):
     log.info(f"[TRANSCRIBE] Calisiyor: {label}")
     t0 = time.time()
     if IS_MAC and USE_MLX:
-        result = mlx_whisper.transcribe(
-            audio, path_or_hf_repo=MLX_LECTURE_MODEL_REPO,
-            language="tr", initial_prompt=INITIAL_PROMPT,
-        )
-        text = result.get("text", "").strip()
-        segments = [
-            {"start": float(s.get("start", 0.0)),
-             "end": float(s.get("end", 0.0)),
-             "text": s.get("text", "").strip()}
-            for s in result.get("segments", [])
-        ]
+        # transcribe_lock zorunlu: MLX Metal command buffer'lari thread-safe degil.
+        # Lecture LIVE chunk transcribe ile eszamanli calismalardan dolayi
+        # MTLReleaseAssertionFailure -> SIGABRT crash oluyordu.
+        with transcribe_lock:
+            result = mlx_whisper.transcribe(
+                audio, path_or_hf_repo=MLX_LECTURE_MODEL_REPO,
+                language="tr", initial_prompt=INITIAL_PROMPT,
+            )
+            text = result.get("text", "").strip()
+            segments = [
+                {"start": float(s.get("start", 0.0)),
+                 "end": float(s.get("end", 0.0)),
+                 "text": s.get("text", "").strip()}
+                for s in result.get("segments", [])
+            ]
     else:
         if model is None:
             raise RuntimeError("Model henuz yuklenmedi (load_model cagir).")
@@ -1120,7 +1128,7 @@ def _live_transcribe_loop(md_path):
 
         try:
             audio = np.concatenate(frames, axis=0).flatten()
-            text = quick_transcribe(audio)
+            text = quick_transcribe(audio, beam_size=LECTURE_LIVE_BEAM_SIZE)
             if not text:
                 log.debug(f"[LIVE] Bos chunk (offset={offset_sec:.0f}sn, sure={chunk_seconds:.0f}sn)")
                 continue
@@ -1143,7 +1151,7 @@ def _live_transcribe_loop(md_path):
             offset_sec = max(0.0, offset_now)
             try:
                 audio = np.concatenate(frames, axis=0).flatten()
-                text = quick_transcribe(audio)
+                text = quick_transcribe(audio, beam_size=LECTURE_LIVE_BEAM_SIZE)
                 if text:
                     log.info(f"[LIVE] (final flush) [{int(offset_sec//60):02d}:{int(offset_sec%60):02d}] {text[:80]}")
                     _append_live_paragraph(md_path, offset_sec, text)
@@ -1270,6 +1278,26 @@ def stop_lecture_recording():
                         f.write(f"\n---\n\n_**Final transkript hazir:** `{md_path}` (paragraf yapili, beam=5 ile)._\n")
                 except Exception:
                     pass
+
+            # Kullanicidan dosya ismi sor, varsa MD'leri rename et (timestamp ismi yerine)
+            if IS_MAC:
+                default_base = os.path.splitext(os.path.basename(md_path))[0]
+                new_base = _prompt_lecture_filename_macos(default_base)
+                if new_base:
+                    # Geçersiz karakterleri temizle
+                    safe = re.sub(r'[\\/:*?"<>|]', '_', new_base.strip()).strip()
+                    if safe and safe != default_base:
+                        new_final = os.path.join(base, safe + ".md")
+                        new_live = os.path.join(base, safe + "_LIVE.md")
+                        try:
+                            if os.path.isfile(md_path):
+                                os.rename(md_path, new_final)
+                                log.info(f"[LECTURE] FINAL rename: {os.path.basename(md_path)} -> {os.path.basename(new_final)}")
+                            if live_md_local and os.path.isfile(live_md_local):
+                                os.rename(live_md_local, new_live)
+                                log.info(f"[LECTURE] LIVE rename: {os.path.basename(live_md_local)} -> {os.path.basename(new_live)}")
+                        except Exception as e:
+                            log.error(f"[LECTURE] Rename hatasi: {e}")
             # Not: ikinci sound_sent() KALDIRILDI — stop_lecture_recording basinda
             # bir kez calindi yeterli. Final tamamlanma log'da gorunur.
         except Exception as e:
@@ -1311,6 +1339,31 @@ def _prompt_change_wake_word():
             log.info(f"[WAKE] Anahtar kelime guncellendi: '{wake_word_string}'")
     except Exception as e:
         log.error(f"[WAKE] Dialog hatasi: {e}", exc_info=True)
+
+
+def _prompt_lecture_filename_macos(default_name):
+    """macOS native text input dialog. Bos veya iptal => None.
+    Kullanici toplanti kaydina isim verir, MD dosyalari rename edilir."""
+    import subprocess
+    safe_default = default_name.replace('"', '').replace('\\', '')
+    script = (
+        f'set theResult to display dialog '
+        f'"Toplanti kaydina isim ver (Iptal: timestamp ismi kalir):" '
+        f'default answer "{safe_default}" '
+        f'with title "Toplanti Kaydi - Dosya Adi" '
+        f'buttons {{"Iptal", "Kaydet"}} default button "Kaydet"\n'
+        f'text returned of theResult'
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, timeout=600
+        )
+        if result.returncode != 0:
+            return None  # user canceled
+        return result.stdout.strip() or None
+    except Exception as e:
+        log.error(f"[LECTURE] Isim dialog hatasi: {e}")
+        return None
 
 
 def _pick_audio_file_macos():
