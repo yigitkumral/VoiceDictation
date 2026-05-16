@@ -759,9 +759,10 @@ def _clean_transcription(text):
     return _apply_word_corrections(cleaned)
 
 
-def quick_transcribe(audio_data, beam_size=1):
-    """Hizli transcribe (turbo, kucuk beam). Lecture LIVE icin beam_size=3,
-    diktasyon/wake/stop word kontrolu icin beam_size=1 (varsayilan)."""
+def quick_transcribe(audio_data, beam_size=3):
+    """Hizli transcribe (turbo). Dictation ve LIVE icin beam=3 default
+    (kalite belirgin iyi, RTX'te hiz farki hissedilmiyor). LIVE call site'lari
+    LECTURE_LIVE_BEAM_SIZE sabitini explicit gecirir."""
     # Sessiz audio'yu transcribe etme (halusinasyon onleme)
     if not _has_speech(audio_data):
         return ""
@@ -1067,7 +1068,7 @@ def _init_live_md(md_path, source_label):
     with open(md_path, "w", encoding="utf-8") as f:
         f.write("# Toplanti / Ders — CANLI Transkript\n\n")
         f.write(f"- **Baslangic:** {timestamp}\n")
-        f.write(f"- **Mod:** Canli (turbo, beam=1, cumle sonlarinda)\n")
+        f.write(f"- **Mod:** Canli (turbo, beam=3, cumle sonlarinda)\n")
         f.write(f"- **Ses kaynagi:** {source_label}\n")
         f.write("- _Final transkript kayit bitince ayri dosyada yazilacak (paragraf yapisi + segment timestamp)._\n\n")
         f.write("---\n\n")

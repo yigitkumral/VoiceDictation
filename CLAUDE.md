@@ -37,7 +37,7 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 
 #### Dictation Mode (varsayilan)
 
-- F13 / Caps Lock x2 veya "Diktasyon" ile baslar/durur, anlik transcribe (turbo, beam=1)
+- F13 / Caps Lock x2 veya "Diktasyon" ile baslar/durur, anlik transcribe (turbo, beam=3)
 - Ses tamamen RAM'de — transcribe sonrasi silinir
 - Cikti: clipboard'a kopyalanir + aktif pencereye otomatik paste + Enter
 
@@ -48,7 +48,7 @@ Tray menusunden **"🎙 Toplanti Kaydi Baslat"** ile baslatilir; lecture aktifke
 **Onemli ilke: Ses dosyasi DISKE YAZILMAZ — RAM-only.** Tum ses bellekte tutulur, kayit bitince transcribe edilir ve buffer temizlenir. Diskte sadece Markdown transkriptleri kalir.
 
 **Iki seviye transkript:**
-- **Canli (LIVE.md):** VAD-bazli cumle akisi — 0.8sn sessizlik = paragraf sonu, max 12sn force-flush, transcribe (turbo, beam=1), MD'ye append; lecture baslarken VS Code'da otomatik acilir, dosya degisimini canli izleyebilirsin
+- **Canli (LIVE.md):** VAD-bazli cumle akisi — 0.8sn sessizlik = paragraf sonu, max 12sn force-flush, transcribe (turbo, beam=3), MD'ye append; lecture baslarken VS Code'da otomatik acilir, dosya degisimini canli izleyebilirsin
 - **Final (.md):** kayit bitince tum ses tek seferde, beam=5 ile yuksek kalite, ayri dosya
 - **Footer:** her transkript sonuna `Transkript tamamlandi. Sure: ... • Model: ...` satiri eklenir
 
@@ -56,10 +56,12 @@ Tray menusunden **"🎙 Toplanti Kaydi Baslat"** ile baslatilir; lecture aktifke
 - `SILENCE_THRESHOLD = 0.008` — dictation kayit no-speech timeout icin
 - `LECTURE_LIVE_VAD_THRESHOLD = 0.025` — lecture cumle sonu sessizlik tespiti (mac dahili mic baseline 0.005-0.015 oldugundan ayri tutuldu)
 
+**Beam ayarlari (16 May 2026):** dictation ve LIVE icin `beam=3` (eskiden `beam=1` idi, ne zaman dustugu net degil; kalite belirgin bozuktu). Final transcribe `beam=5`'te kaldi. Pratikte hiz farki hissedilmiyor (RTX GPU'da decoder yuku encoder yanında ihmal edilebilir), kalite belirgin iyilesti.
+
 **Cikti:**
 ```
 ~/Desktop/VoiceDictation_Lectures/
-├── 2026-04-26_15-51-09_LIVE.md   (canli akan, beam=1)
+├── 2026-04-26_15-51-09_LIVE.md   (canli akan, beam=3)
 └── 2026-04-26_15-51-09.md         (final, beam=5)
 ```
 
