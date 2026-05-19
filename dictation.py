@@ -760,28 +760,32 @@ def _clean_transcription(text):
 
 
 def quick_transcribe(audio_data, beam_size=3):
-    """Hizli transcribe (turbo). Dictation ve LIVE icin beam=3 default
-    (kalite belirgin iyi, RTX'te hiz farki hissedilmiyor). LIVE call site'lari
-    LECTURE_LIVE_BEAM_SIZE sabitini explicit gecirir."""
+    """Hizli transcribe (turbo). beam_size sadece faster-whisper'da kullanilir;
+    mlx-whisper beam search'i henuz desteklemiyor (NotImplementedError) -> MLX
+    path greedy decoding kullanir."""
     # Sessiz audio'yu transcribe etme (halusinasyon onleme)
     if not _has_speech(audio_data):
         return ""
 
-    with transcribe_lock:
-        if IS_MAC and USE_MLX:
-            result = mlx_whisper.transcribe(
-                audio_data, path_or_hf_repo=MLX_MODEL_REPO,
-                language="tr", initial_prompt=INITIAL_PROMPT,
-                beam_size=beam_size,
-            )
-            text = result.get("text", "").strip()
-        else:
-            segments, _ = model.transcribe(
-                audio_data, language="tr", initial_prompt=INITIAL_PROMPT,
-                beam_size=beam_size, vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=300),
-            )
-            text = " ".join(seg.text.strip() for seg in segments)
+    try:
+        with transcribe_lock:
+            if IS_MAC and USE_MLX:
+                # MLX: beam_size gecme — mlx-whisper henuz desteklemiyor
+                result = mlx_whisper.transcribe(
+                    audio_data, path_or_hf_repo=MLX_MODEL_REPO,
+                    language="tr", initial_prompt=INITIAL_PROMPT,
+                )
+                text = result.get("text", "").strip()
+            else:
+                segments, _ = model.transcribe(
+                    audio_data, language="tr", initial_prompt=INITIAL_PROMPT,
+                    beam_size=beam_size, vad_filter=True,
+                    vad_parameters=dict(min_silence_duration_ms=300),
+                )
+                text = " ".join(seg.text.strip() for seg in segments)
+    except Exception as e:
+        log.error(f"[HATA] quick_transcribe basarisiz: {type(e).__name__}: {e}", exc_info=True)
+        return ""
 
     cleaned = _clean_transcription(text)
     if not cleaned:
