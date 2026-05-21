@@ -93,6 +93,36 @@ def _remove_daemon_pid():
         pass
 
 
+def _load_env_file():
+    """.env dosyasini yukle (basit KEY=VALUE parser, harici dep yok)."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.isfile(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        pass
+
+
+_load_env_file()
+
+
+def _get_hf_token():
+    """HuggingFace token'i al (env veya .env)."""
+    return (os.environ.get("HUGGINGFACE_TOKEN")
+            or os.environ.get("HF_TOKEN")
+            or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
+
+
 log = logging.getLogger("dictation")
 log.setLevel(logging.DEBUG)
 
@@ -421,6 +451,9 @@ def _start_menubar_gui():
             self._file_item = rumps.MenuItem(
                 "📁 Ses dosyasını dök...", callback=self.on_pick_file
             )
+            self._meet_item = rumps.MenuItem(
+                "🎙 Meets Dictation (konuşmacı ayır)...", callback=self.on_meet_dictation
+            )
             # Ayarlar submenu items
             self._wake_item = rumps.MenuItem(
                 "🗣️ Anahtar Kelime Dinleme: Açık", callback=self.on_toggle_wake
@@ -433,6 +466,7 @@ def _start_menubar_gui():
             toplanti_submenu = rumps.MenuItem("🎤 Toplantı")
             toplanti_submenu.add(self._lecture_item)
             toplanti_submenu.add(self._file_item)
+            toplanti_submenu.add(self._meet_item)
 
             ayarlar_submenu = rumps.MenuItem("⚙ Ayarlar")
             ayarlar_submenu.add(self._wake_item)
@@ -504,6 +538,9 @@ def _start_menubar_gui():
         def on_pick_file(self, _):
             threading.Thread(target=_pick_file_and_transcribe, daemon=True).start()
 
+        def on_meet_dictation(self, _):
+            threading.Thread(target=_pick_file_and_meet_dictate, daemon=True).start()
+
         def on_reset(self, _):
             _do_reset()
 
@@ -561,6 +598,9 @@ def _start_tray_gui():
     def on_pick_file(icon, item):
         threading.Thread(target=_pick_file_and_transcribe, daemon=True).start()
 
+    def on_meet_dictation(icon, item):
+        threading.Thread(target=_pick_file_and_meet_dictate, daemon=True).start()
+
     def on_change_wake_word(icon, item):
         threading.Thread(target=_prompt_change_wake_word, daemon=True).start()
 
@@ -576,6 +616,7 @@ def _start_tray_gui():
             on_lecture_toggle,
         ),
         pystray.MenuItem("📁 Ses dosyasını dök...", on_pick_file),
+        pystray.MenuItem("🎙 Meets Dictation (konuşmacı ayır)...", on_meet_dictation),
     )
 
     # Submenu: Ayarlar
@@ -880,9 +921,9 @@ def _load_audio_via_afconvert(path, target_sr=SAMPLE_RATE):
             pass
 
 
-def _transcribe_audio_path(audio, beam_size=5):
+def _transcribe_audio_path(audio, beam_size=5, word_timestamps=False):
     """Dosya yolu VEYA numpy array'inden transkript al (faster-whisper / MLX).
-    (text, segments) doner.
+    (text, segments) doner. word_timestamps=True ise her segmentte 'words' alani da olur.
 
     macOS'ta dosya yolu gelirse afconvert ile pre-load edilir (ffmpeg gerekmez)."""
     if isinstance(audio, str):
@@ -903,14 +944,24 @@ def _transcribe_audio_path(audio, beam_size=5):
             result = mlx_whisper.transcribe(
                 audio, path_or_hf_repo=MLX_LECTURE_MODEL_REPO,
                 language="tr", initial_prompt=INITIAL_PROMPT,
+                word_timestamps=word_timestamps,
             )
             text = result.get("text", "").strip()
-            segments = [
-                {"start": float(s.get("start", 0.0)),
-                 "end": float(s.get("end", 0.0)),
-                 "text": s.get("text", "").strip()}
-                for s in result.get("segments", [])
-            ]
+            segments = []
+            for s in result.get("segments", []):
+                seg = {
+                    "start": float(s.get("start", 0.0)),
+                    "end": float(s.get("end", 0.0)),
+                    "text": s.get("text", "").strip(),
+                }
+                if word_timestamps and s.get("words"):
+                    seg["words"] = [
+                        {"start": float(w.get("start", 0.0)),
+                         "end": float(w.get("end", 0.0)),
+                         "word": w.get("word", "")}
+                        for w in s["words"]
+                    ]
+                segments.append(seg)
     else:
         if model is None:
             raise RuntimeError("Model henuz yuklenmedi (load_model cagir).")
@@ -919,14 +970,23 @@ def _transcribe_audio_path(audio, beam_size=5):
                 audio, language="tr", initial_prompt=INITIAL_PROMPT,
                 beam_size=beam_size, vad_filter=True,
                 vad_parameters=dict(min_silence_duration_ms=500),
+                word_timestamps=word_timestamps,
             )
             segments = []
             for s in segs:
-                segments.append({
+                seg = {
                     "start": float(s.start),
                     "end": float(s.end),
                     "text": s.text.strip(),
-                })
+                }
+                if word_timestamps and s.words:
+                    seg["words"] = [
+                        {"start": float(w.start),
+                         "end": float(w.end),
+                         "word": w.word}
+                        for w in s.words
+                    ]
+                segments.append(seg)
         text = " ".join(s["text"] for s in segments).strip()
     elapsed = time.time() - t0
     log.info(f"[TRANSCRIBE] Tamamlandi ({elapsed:.0f}sn islem, {len(segments)} segment).")
@@ -984,6 +1044,300 @@ def _write_lecture_markdown(md_path, segments, audio_duration, source_path, head
             f.write("_(Konusma algilanamadi.)_\n\n")
         f.write("---\n\n")
         f.write(f"_**Transkript tamamlandi.** Sure: {_format_seconds(audio_duration)} • Model: {LECTURE_MODEL_SIZE} ({DEVICE})_\n")
+
+
+_voice_encoder = None
+
+
+def _load_voice_encoder():
+    """speechbrain ECAPA-TDNN konusmaci embedding modelini lazy-load et.
+    Ilk seferde HF'den public model indirir (~24 MB, token GEREKMEZ, lisans yok).
+    Sonraki tum cagrilar lokal cache'den, internet de gerekmez.
+    Ses verisi asla disariya gitmez."""
+    global _voice_encoder
+    if _voice_encoder is not None:
+        return _voice_encoder
+
+    try:
+        from speechbrain.inference.speaker import EncoderClassifier
+        from speechbrain.utils.fetching import LocalStrategy
+    except ImportError:
+        try:
+            from speechbrain.pretrained import EncoderClassifier  # eski API
+            LocalStrategy = None
+        except ImportError:
+            raise RuntimeError(
+                "speechbrain kurulu degil. Kurmak icin:\n"
+                "  venv\\Scripts\\pip.exe install speechbrain scikit-learn"
+            )
+
+    # PyTorch CUDA olarak kurulmamis ise CPU'ya dus (uyari ile)
+    try:
+        import torch as _torch
+        device = "cuda" if (DEVICE == "cuda" and _torch.cuda.is_available()) else "cpu"
+        if DEVICE == "cuda" and not _torch.cuda.is_available():
+            log.warning("[DIARIZE] PyTorch CUDA yok (CPU-only kurulmus), embedding CPU'da calisacak")
+    except ImportError:
+        device = "cpu"
+
+    log.info("[DIARIZE] ECAPA-TDNN konusmaci modeli yukleniyor (lokal)...")
+    t0 = time.time()
+    save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "models", "spkrec-ecapa-voxceleb")
+
+    # Windows'ta symlink admin/Developer Mode istiyor; COPY ile bypass
+    kwargs = {
+        "source": "speechbrain/spkrec-ecapa-voxceleb",
+        "savedir": save_dir,
+        "run_opts": {"device": device},
+    }
+    if LocalStrategy is not None:
+        kwargs["local_strategy"] = LocalStrategy.COPY
+
+    encoder = EncoderClassifier.from_hparams(**kwargs)
+    log.info(f"[DIARIZE] Konusmaci modeli hazir ({time.time()-t0:.1f}sn, {device})")
+    _voice_encoder = encoder
+    return encoder
+
+
+def _diarize_audio_sliding_window(audio, num_speakers,
+                                   window_sec=1.2, stride_sec=0.5,
+                                   silence_rms=0.005, batch_size=32,
+                                   progress_callback=None):
+    """Audio'yu sabit pencerelerle (Whisper'dan bagimsiz) diarize et.
+
+    audio: float32 mono 16kHz numpy array
+    num_speakers: int (kullanicidan)
+    window_sec: her pencere uzunlugu (>= 1.5 onerilir)
+    stride_sec: pencere ilerleme adimi (overlap = window - stride)
+    silence_rms: sessizlik esigi (alti es kesilir)
+    batch_size: embedding batch boyutu (CPU'da hizlandirir)
+
+    Donus: [(start_sec, end_sec, SPEAKER_XX), ...] kronolojik turn listesi.
+    Bu pyannote'un mantigi — speaker overlap'ini ve hizli turn'leri yakalar,
+    Whisper segment sinirlarinda kismayan."""
+    if num_speakers < 2:
+        return [(0.0, len(audio) / SAMPLE_RATE, "SPEAKER_00")]
+
+    encoder = _load_voice_encoder()
+    import torch as _torch
+    import numpy as _np
+    from sklearn.cluster import AgglomerativeClustering
+
+    win = int(window_sec * SAMPLE_RATE)
+    stride = int(stride_sec * SAMPLE_RATE)
+    total_dur = len(audio) / SAMPLE_RATE
+
+    log.info(f"[DIARIZE] Sliding-window: {total_dur:.0f}sn audio, "
+             f"window={window_sec}s, stride={stride_sec}s")
+    t0 = time.time()
+
+    # Pencereleri topla (sessiz olanlari atla)
+    chunks = []
+    window_times = []
+    for s in range(0, len(audio) - win + 1, stride):
+        e = s + win
+        chunk = audio[s:e]
+        rms = float(_np.sqrt(_np.mean(chunk * chunk)))
+        if rms < silence_rms:
+            continue
+        chunks.append(chunk)
+        window_times.append((s / SAMPLE_RATE, e / SAMPLE_RATE))
+
+    if not chunks:
+        log.warning("[DIARIZE] Hicbir konusma penceresi bulunamadi (audio tamamen sessiz?)")
+        return [(0.0, total_dur, "SPEAKER_00")]
+
+    log.info(f"[DIARIZE] {len(chunks)} pencere embed ediliyor (batch={batch_size})...")
+    embeddings = []
+    for bi in range(0, len(chunks), batch_size):
+        batch = chunks[bi:bi + batch_size]
+        batch_tensor = _torch.from_numpy(_np.stack(batch))
+        try:
+            with _torch.no_grad():
+                emb = encoder.encode_batch(batch_tensor)
+                # speechbrain encode_batch -> [B, 1, 192]; squeeze middle dim
+                emb_np = emb.squeeze(1).cpu().numpy()
+            for e in emb_np:
+                embeddings.append(e)
+        except Exception as ex:
+            log.warning(f"[DIARIZE] Batch {bi} embed atlandi: {ex}")
+            for _ in batch:
+                embeddings.append(None)
+        if progress_callback and bi % (batch_size * 4) == 0:
+            done = min(bi + batch_size, len(chunks))
+            progress_callback(done, len(chunks))
+
+    # None'lari ve onlara denk gelen window_times'i temizle
+    valid = [(e, t) for e, t in zip(embeddings, window_times) if e is not None]
+    if not valid:
+        log.error("[DIARIZE] Tum embedding'ler basarisiz oldu")
+        return [(0.0, total_dur, "SPEAKER_00")]
+
+    embs_arr = _np.vstack([v[0] for v in valid]).astype(_np.float32)
+    times = [v[1] for v in valid]
+
+    # Mean subtraction (channel/akustik etkisini azalt — pyannote da bunu yapar):
+    # tum embedding'lerin ortalamasini cikar; geride 'konusmaciya ozel' yon kalir.
+    # Bu olmadan ayni odadaki konusmacilar ortak channel'e yiglir.
+    mean_emb = embs_arr.mean(axis=0, keepdims=True)
+    embs_arr = embs_arr - mean_emb
+
+    # L2 normalize (cosine icin)
+    norms = _np.linalg.norm(embs_arr, axis=1, keepdims=True)
+    embs_arr = embs_arr / _np.clip(norms, 1e-12, None)
+
+    actual_k = min(num_speakers, len(embs_arr))
+    log.info(f"[DIARIZE] AgglomerativeClustering (cosine, average, k={actual_k})")
+    cluster_labels = AgglomerativeClustering(
+        n_clusters=actual_k, metric="cosine", linkage="average",
+    ).fit_predict(embs_arr)
+    log.info(f"[DIARIZE] Cluster bitti ({time.time()-t0:.1f}sn)")
+
+    # Ardisik ayni-konusmaci pencereleri 'turn'lere birlestir
+    turns = []
+    cur_label = None
+    cur_start = None
+    cur_end = None
+    for (ws, we), lbl in zip(times, cluster_labels):
+        lbl_name = f"SPEAKER_{int(lbl):02d}"
+        if lbl_name != cur_label:
+            if cur_label is not None:
+                turns.append((cur_start, cur_end, cur_label))
+            cur_label = lbl_name
+            cur_start = ws
+            cur_end = we
+        else:
+            cur_end = we
+    if cur_label is not None:
+        turns.append((cur_start, cur_end, cur_label))
+
+    # Ayni konusmacinin yakin turn'lerini (kisa sessizlikle ayrilmis) birlestir
+    merged = []
+    for t in turns:
+        if merged and t[2] == merged[-1][2] and t[0] - merged[-1][1] < 0.5:
+            merged[-1] = (merged[-1][0], t[1], t[2])
+        else:
+            merged.append(t)
+
+    # Cok kisa izole turn'leri komsuya as
+    smoothed = []
+    for i, t in enumerate(merged):
+        dur = t[1] - t[0]
+        if dur < 0.7 and 0 < i < len(merged) - 1 and merged[i-1][2] == merged[i+1][2]:
+            # Komsular ayni speaker -> bu izole turn yanlislik
+            continue
+        smoothed.append(t)
+
+    detected = sorted(set(t[2] for t in smoothed))
+    log.info(f"[DIARIZE] {len(smoothed)} turn olustu, konusmacilar: {detected}")
+    return smoothed
+
+
+def _split_segments_by_diarization(whisper_segments, diarization_turns):
+    """Whisper segmentlerini speaker turn sinirlarinda parçala.
+
+    word_timestamps=True ile transcribe edilmisse her kelime tek tek atanir;
+    yoksa segment seviyesinde majority-overlap kullanir.
+
+    Donus: yeni segment listesi (her biri tek konusmaci, speaker_raw alanli)."""
+
+    def speaker_at(time_point):
+        for t_start, t_end, lbl in diarization_turns:
+            if t_start <= time_point < t_end:
+                return lbl
+        # Hicbir turn'e dusmuyor -> en yakin turn'un speaker'i
+        if not diarization_turns:
+            return "SPEAKER_00"
+        nearest = min(
+            diarization_turns,
+            key=lambda t: min(abs(t[0] - time_point), abs(t[1] - time_point)),
+        )
+        return nearest[2]
+
+    new_segments = []
+    for seg in whisper_segments:
+        words = seg.get("words", [])
+
+        if not words:
+            # Fallback: overlap'i en cok olan speaker'i ata
+            seg_overlap = {}
+            for t_start, t_end, lbl in diarization_turns:
+                ov = max(0.0, min(seg["end"], t_end) - max(seg["start"], t_start))
+                if ov > 0:
+                    seg_overlap[lbl] = seg_overlap.get(lbl, 0.0) + ov
+            sp = (max(seg_overlap.items(), key=lambda x: x[1])[0]
+                  if seg_overlap else speaker_at((seg["start"] + seg["end"]) / 2))
+            new_segments.append({
+                "start": seg["start"], "end": seg["end"],
+                "text": seg["text"], "speaker_raw": sp,
+            })
+            continue
+
+        # Word-level: her kelimeyi speaker turn'e ata, ayni speaker'a sahip ardisik
+        # kelimeleri bir sub-segment'te grupla
+        cur_speaker = None
+        cur_words = []
+        cur_start = None
+
+        def flush_sub():
+            if not cur_words or cur_speaker is None or cur_start is None:
+                return
+            text = " ".join(w["word"].strip() for w in cur_words).strip()
+            if not text:
+                return
+            new_segments.append({
+                "start": cur_start,
+                "end": cur_words[-1]["end"],
+                "text": text,
+                "speaker_raw": cur_speaker,
+            })
+
+        for w in words:
+            wt = (w["start"] + w["end"]) / 2
+            w_sp = speaker_at(wt)
+            if cur_speaker is None:
+                cur_speaker = w_sp
+                cur_start = w["start"]
+                cur_words = [w]
+            elif w_sp != cur_speaker:
+                flush_sub()
+                cur_speaker = w_sp
+                cur_start = w["start"]
+                cur_words = [w]
+            else:
+                cur_words.append(w)
+        flush_sub()
+
+    return new_segments
+
+
+def _smooth_speaker_labels(segments, min_isolated_dur=2.0):
+    """Cok kisa, etrafi ayni konusmaciyla cevrili 'izole' segmentleri komsuya as.
+
+    Ornek: [Yigit, Hakan(0.5sn), Yigit] -> [Yigit, Yigit, Yigit]
+    Cluster gurultusu sonucu olusan tek-segment yanlislamalari duzeltir."""
+    if len(segments) < 3:
+        return
+    fixed = 0
+    for i in range(1, len(segments) - 1):
+        cur = segments[i].get("speaker_raw")
+        prev = segments[i - 1].get("speaker_raw")
+        nxt = segments[i + 1].get("speaker_raw")
+        dur = segments[i]["end"] - segments[i]["start"]
+        if cur != prev and cur != nxt and prev == nxt and dur < min_isolated_dur:
+            segments[i]["speaker_raw"] = prev
+            fixed += 1
+    if fixed:
+        log.info(f"[DIARIZE] Smoothing: {fixed} izole segment komsuya tasindi.")
+
+
+def _apply_speaker_names(segments, speaker_names):
+    """speaker_raw -> insan ismi eşlemesi uygula."""
+    for s in segments:
+        raw = s.get("speaker_raw", "SPEAKER_00")
+        s["speaker"] = speaker_names.get(raw, raw)
+    return segments
 
 
 def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
@@ -1478,6 +1832,693 @@ def _pick_file_and_transcribe():
     except Exception as e:
         log.error(f"[FILE] Picker hatasi: {e}", exc_info=True)
         sound_error()
+
+
+# ---------- MEET DICTATION (file + diarization + names) ----------
+
+def _show_meet_error(message):
+    """Hata mesajini messagebox ile goster (Win + Mac). Sessiz hata olmasin."""
+    try:
+        if IS_MAC:
+            safe = message.replace('"', '\\"').replace("\n", "\\n")
+            subprocess.run(
+                ["osascript", "-e",
+                 f'display dialog "{safe}" with title "Meet Dictation - Hata" '
+                 f'with icon stop buttons {{"Tamam"}} default button "Tamam"'],
+                capture_output=True, text=True, timeout=60,
+            )
+        else:
+            import tkinter as tk
+            from tkinter import messagebox
+            root = tk.Tk()
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+            except Exception:
+                pass
+            messagebox.showerror("Meet Dictation - Hata", message, parent=root)
+            try:
+                root.destroy()
+            except Exception:
+                pass
+    except Exception as e:
+        log.error(f"[MEET] Hata mesaji gosterilemedi: {e}")
+
+
+def _ask_speaker_count_win():
+    """Windows: tkinter ile konusmaci sayisi sor. None=iptal."""
+    import tkinter as tk
+    from tkinter import simpledialog
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+    except Exception:
+        pass
+    try:
+        count = simpledialog.askinteger(
+            "Meet Dictation - Konusmaci Sayisi",
+            "Bu kayitta kac konusmaci var?\n"
+            "(Dogru sayi vermek diarization kalitesini artirir)",
+            minvalue=1, maxvalue=20, initialvalue=2, parent=root,
+        )
+    finally:
+        try:
+            root.destroy()
+        except Exception:
+            pass
+    return count
+
+
+def _ask_speaker_count_macos():
+    """macOS: AppleScript ile konusmaci sayisi sor. None=iptal."""
+    script = (
+        'set theCount to text returned of (display dialog '
+        '"Bu kayitta kac konusmaci var? (Dogru sayi diarization kalitesini artirir)" '
+        'default answer "2" with title "Meet Dictation - Konusmaci Sayisi")\n'
+        'return theCount'
+    )
+    try:
+        result = subprocess.run(
+            ["osascript", "-e", script], capture_output=True, text=True, timeout=300
+        )
+        if result.returncode != 0:
+            return None
+        val = result.stdout.strip()
+        return int(val) if val.isdigit() else None
+    except Exception as e:
+        log.error(f"[MEET] Konusmaci sayisi sorusu hatasi: {e}")
+        return None
+
+
+class _MeetProgressDialog:
+    """Meet Dictation pipeline calistirilirken acik kalan progress penceresi.
+    Pipeline ayri thread'de calisir, bu pencere main thread'de mainloop ile aktif.
+    Thread-safe set_text() / finish() ile pipeline thread'i UI'i guvenli gunceller."""
+
+    def __init__(self, title="Meet Dictation - Isleniyor"):
+        import tkinter as tk
+        from tkinter import ttk
+
+        self.root = tk.Tk()
+        self.root.title(title)
+        try:
+            self.root.attributes("-topmost", True)
+        except Exception:
+            pass
+        # Kapatma butonu devre dısı: pipeline iptal edilemez (Whisper interrupt yok)
+        self.root.protocol("WM_DELETE_WINDOW", lambda: None)
+
+        tk.Label(
+            self.root, text="🎙  Meet Dictation Pipeline",
+            font=("Arial", 12, "bold"),
+        ).pack(pady=(20, 8), padx=30)
+
+        self._step_label = tk.Label(
+            self.root, text="Hazirlaniyor...",
+            font=("Arial", 10), wraplength=440, justify="center",
+        )
+        self._step_label.pack(pady=6, padx=20)
+
+        self._detail_label = tk.Label(
+            self.root, text="",
+            font=("Arial", 9), fg="#666", wraplength=440, justify="center",
+        )
+        self._detail_label.pack(pady=(0, 8), padx=20)
+
+        self._bar = ttk.Progressbar(self.root, mode="indeterminate", length=420)
+        self._bar.pack(pady=(4, 18), padx=20)
+        self._bar.start(12)
+
+        self.root.update_idletasks()
+        w = max(self.root.winfo_reqwidth(), 480)
+        h = max(self.root.winfo_reqheight(), 200)
+        sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+        self.root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+        self.root.lift()
+
+    def set_text(self, step, detail=""):
+        """Thread-safe: pipeline thread'inden cagrilabilir."""
+        try:
+            self.root.after(0, lambda s=step, d=detail: (
+                self._step_label.config(text=s),
+                self._detail_label.config(text=d),
+            ))
+        except Exception:
+            pass
+
+    def finish(self):
+        """Pencereyi kapat (thread-safe)."""
+        try:
+            self.root.after(0, self._do_finish)
+        except Exception:
+            pass
+
+    def _do_finish(self):
+        try:
+            self._bar.stop()
+            self.root.destroy()
+        except Exception:
+            pass
+
+    def run(self):
+        """mainloop — finish() cagrilana kadar blok eder."""
+        try:
+            self.root.mainloop()
+        except Exception as e:
+            log.error(f"[MEET] Progress mainloop hatasi: {e}")
+
+
+def _pick_speaker_samples(speaker_labels, segments, audio, max_chunk_sec=10):
+    """Her konusmaci icin temsili ornek sec: en uzun 1 segment + kisa metin snippet.
+    Donus: {label: (snippet_text, audio_chunk, duration_sec)}"""
+    samples = {}
+    if not segments or audio is None:
+        return samples
+    for label in speaker_labels:
+        segs = [s for s in segments if s.get("speaker_raw") == label]
+        if not segs:
+            continue
+        # En uzun (en bilgilendirici) segment
+        best = max(segs, key=lambda s: s["end"] - s["start"])
+        snippet = best["text"].strip()
+        if len(snippet) > 180:
+            snippet = snippet[:177] + "..."
+        start = int(best["start"] * SAMPLE_RATE)
+        end = int(best["end"] * SAMPLE_RATE)
+        max_samples = int(max_chunk_sec * SAMPLE_RATE)
+        if end - start > max_samples:
+            end = start + max_samples
+        chunk = audio[start:end]
+        samples[label] = (snippet, chunk, (end - start) / SAMPLE_RATE)
+    return samples
+
+
+def _ask_speaker_names_win(speaker_labels, segments=None, audio=None):
+    """Windows: tkinter dialog. Her konusmaci icin Dinle butonu + isim girisi
+    + alttaki scroll'lu canli on-izleme (isim yazinca tum transkriptte degisir).
+    None=iptal, dict=isimler."""
+    import tkinter as tk
+    from tkinter import scrolledtext
+
+    sorted_labels = sorted(speaker_labels)
+    samples = _pick_speaker_samples(sorted_labels, segments, audio)
+    entries = {}
+    result = {}
+    submitted = [False]
+
+    # Her konusmaciya farkli renk (preview'da gorsel ayrim)
+    palette = ["#1a73e8", "#d93025", "#188038", "#f9ab00", "#9334e6", "#e8710a"]
+    colors = {lbl: palette[i % len(palette)] for i, lbl in enumerate(sorted_labels)}
+
+    def stop_playback():
+        try:
+            sd.stop()
+        except Exception:
+            pass
+
+    def make_play_handler(chunk):
+        def handler():
+            stop_playback()
+            try:
+                sd.play(chunk, SAMPLE_RATE)
+            except Exception as e:
+                log.error(f"[MEET] Ses oynatma hatasi: {e}")
+        return handler
+
+    root = tk.Tk()
+    root.title("Meet Dictation - Konusmaci Isimleri")
+    root.minsize(760, 640)
+    try:
+        root.attributes("-topmost", True)
+    except Exception:
+        pass
+
+    tk.Label(
+        root,
+        text=(f"{len(sorted_labels)} konusmaci tespit edildi.\n"
+              f"Dinle veya alttaki on-izlemeyi oku, ismini gir — preview anlik degisir.\n"
+              f"Ipucu: preview'da herhangi bir satira tikla -> o paragrafi dinle."),
+        font=("Arial", 10, "bold"), justify="left",
+    ).pack(pady=(12, 6), padx=16, anchor="w")
+
+    # --- Per-speaker name entry rows ---
+    name_frame = tk.Frame(root)
+    name_frame.pack(padx=12, pady=4, fill="x")
+
+    for label in sorted_labels:
+        block = tk.LabelFrame(
+            name_frame, text=f"  {label}  ", padx=10, pady=8,
+            font=("Arial", 9, "bold"), fg=colors[label],
+        )
+        block.pack(fill="x", pady=4)
+
+        row = tk.Frame(block)
+        row.pack(fill="x")
+
+        if label in samples:
+            _snippet, chunk, dur = samples[label]
+            tk.Button(
+                row, text=f"▶ Dinle ({dur:.0f}sn)",
+                command=make_play_handler(chunk), width=14,
+            ).pack(side="left")
+
+        tk.Label(row, text="  Bu kim?", anchor="w").pack(side="left", padx=(6, 4))
+        entry = tk.Entry(row)
+        entry.insert(0, label)
+        entry.pack(side="left", fill="x", expand=True, ipady=2)
+        entries[label] = entry
+
+    # --- Live preview area (scrollable, full transcript) ---
+    preview_frame = tk.LabelFrame(
+        root, text="  Onizleme (isim yazinca canli guncellenir)  ",
+        font=("Arial", 9, "bold"), padx=4, pady=4,
+    )
+    preview_frame.pack(padx=12, pady=8, fill="both", expand=True)
+
+    text_widget = scrolledtext.ScrolledText(
+        preview_frame, wrap="word",
+        font=("Segoe UI", 9), height=18, padx=8, pady=6,
+    )
+    text_widget.pack(fill="both", expand=True)
+
+    text_widget.tag_configure("ts", foreground="#888", font=("Segoe UI", 8))
+    for lbl, color in colors.items():
+        text_widget.tag_configure(f"sp_{lbl}", foreground=color, font=("Segoe UI", 9, "bold"))
+
+    # Paragraf tag'leri: her redraw'da yeniden olusur, click handler tutar
+    paragraph_chunks = {}      # tag_name -> audio numpy slice
+    created_para_tags = []     # eski tag'leri silmek icin
+
+    def make_paragraph_click_handler(chunk):
+        def handler(_event):
+            stop_playback()
+            try:
+                sd.play(chunk, SAMPLE_RATE)
+            except Exception as e:
+                log.error(f"[MEET] Paragraf oynatma hatasi: {e}")
+        return handler
+
+    def on_para_enter(_e):
+        text_widget.config(cursor="hand2")
+
+    def on_para_leave(_e):
+        text_widget.config(cursor="")
+
+    def redraw_preview(*_args):
+        # Eski paragraf tag'lerini ve bindinglerini sil
+        for t in created_para_tags:
+            try:
+                text_widget.tag_delete(t)
+            except Exception:
+                pass
+        created_para_tags.clear()
+        paragraph_chunks.clear()
+
+        if not segments:
+            text_widget.config(state="normal")
+            text_widget.delete("1.0", "end")
+            text_widget.insert("end", "(Segment yok)")
+            text_widget.config(state="disabled")
+            return
+
+        text_widget.config(state="normal")
+        try:
+            scroll_pos = text_widget.yview()
+        except Exception:
+            scroll_pos = (0.0, 1.0)
+        text_widget.delete("1.0", "end")
+
+        current_raw = None
+        para_start = None
+        para_segs = []
+        para_idx = [0]
+
+        def flush():
+            nonlocal current_raw, para_start, para_segs
+            if not para_segs or current_raw is None:
+                return
+            m = int(para_start // 60); s = int(para_start % 60)
+            entry = entries.get(current_raw)
+            name = entry.get().strip() if entry else current_raw
+            if not name:
+                name = current_raw
+            tag_sp = f"sp_{current_raw}" if f"sp_{current_raw}" in text_widget.tag_names() else None
+
+            line_start = text_widget.index("end-1c")
+            text_widget.insert("end", f"[{m:02d}:{s:02d}] ", "ts")
+            if tag_sp:
+                text_widget.insert("end", name, tag_sp)
+            else:
+                text_widget.insert("end", name)
+            text_widget.insert("end", f": {' '.join(seg['text'] for seg in para_segs).strip()}\n\n")
+            line_end = text_widget.index("end-2c")  # son \n\n haric
+
+            # Bu paragraf icin tiklanabilir tag
+            if audio is not None:
+                tag_name = f"para_{para_idx[0]}"
+                para_idx[0] += 1
+                start_s = int(para_segs[0]["start"] * SAMPLE_RATE)
+                end_s = int(para_segs[-1]["end"] * SAMPLE_RATE)
+                end_s = min(end_s, len(audio))
+                if end_s > start_s:
+                    chunk = audio[start_s:end_s]
+                    paragraph_chunks[tag_name] = chunk
+                    text_widget.tag_add(tag_name, line_start, line_end)
+                    text_widget.tag_bind(tag_name, "<Button-1>",
+                                          make_paragraph_click_handler(chunk))
+                    text_widget.tag_bind(tag_name, "<Enter>", on_para_enter)
+                    text_widget.tag_bind(tag_name, "<Leave>", on_para_leave)
+                    created_para_tags.append(tag_name)
+            para_segs = []
+
+        for seg in segments:
+            raw = seg.get("speaker_raw", "?")
+            if raw != current_raw:
+                flush()
+                current_raw = raw
+                para_start = seg["start"]
+                para_segs = []
+            para_segs.append(seg)
+        flush()
+
+        try:
+            text_widget.yview_moveto(scroll_pos[0])
+        except Exception:
+            pass
+        text_widget.config(state="disabled")
+
+    # Live update on every keystroke
+    for entry in entries.values():
+        entry.bind("<KeyRelease>", redraw_preview)
+
+    redraw_preview()
+
+    if sorted_labels:
+        first_entry = entries[sorted_labels[0]]
+        first_entry.select_range(0, "end")
+        first_entry.icursor("end")
+        first_entry.focus_force()
+
+    def on_ok():
+        stop_playback()
+        for label, e in entries.items():
+            v = e.get().strip()
+            result[label] = v if v else label
+        submitted[0] = True
+        root.destroy()
+
+    def on_cancel():
+        stop_playback()
+        root.destroy()
+
+    btns = tk.Frame(root)
+    btns.pack(pady=10)
+    tk.Button(btns, text="Tamam", command=on_ok, width=12, default="active").pack(side="left", padx=6)
+    tk.Button(btns, text="Iptal", command=on_cancel, width=12).pack(side="left", padx=6)
+    root.protocol("WM_DELETE_WINDOW", on_cancel)
+
+    root.bind("<Escape>", lambda e: on_cancel())
+    root.update_idletasks()
+    w = max(root.winfo_reqwidth(), 760)
+    h = max(root.winfo_reqheight(), 640)
+    sw, sh = root.winfo_screenwidth(), root.winfo_screenheight()
+    root.geometry(f"{w}x{h}+{(sw - w) // 2}+{(sh - h) // 2}")
+    root.lift()
+    root.mainloop()
+
+    return result if submitted[0] else None
+
+
+def _ask_speaker_names_macos(speaker_labels, segments=None, audio=None):
+    """macOS: her label icin sirayla AppleScript dialog. Varsa snippet'i prompta ekler.
+    None=iptal, dict=isimler. Audio playback macOS'ta su an entegre degil."""
+    sorted_labels = sorted(speaker_labels)
+    samples = _pick_speaker_samples(sorted_labels, segments, audio)
+    names = {}
+    for label in sorted_labels:
+        snippet_line = ""
+        if label in samples:
+            snippet, _chunk, _dur = samples[label]
+            safe = snippet.replace('"', '\\"').replace("\n", " ")
+            snippet_line = f"\\n\\nOrnek: \\\"{safe}\\\""
+        script = (
+            f'set theName to text returned of (display dialog '
+            f'"{label} kim? (Or: Yigit, Hakan Hoca){snippet_line}" '
+            f'default answer "{label}" with title "Meet Dictation - Isim")\n'
+            f'return theName'
+        )
+        try:
+            r = subprocess.run(
+                ["osascript", "-e", script], capture_output=True, text=True, timeout=300
+            )
+            if r.returncode != 0:
+                return None
+            val = r.stdout.strip()
+            names[label] = val if val else label
+        except Exception as e:
+            log.error(f"[MEET] Isim sorusu hatasi: {e}")
+            return None
+    return names
+
+
+def _ask_speaker_count():
+    return _ask_speaker_count_macos() if IS_MAC else _ask_speaker_count_win()
+
+
+def _ask_speaker_names(speaker_labels, segments=None, audio=None):
+    if IS_MAC:
+        return _ask_speaker_names_macos(speaker_labels, segments, audio)
+    return _ask_speaker_names_win(speaker_labels, segments, audio)
+
+
+def _write_meet_dictation_markdown(md_path, segments, audio_duration, source_path, speaker_names):
+    """Speaker-labelli Meet dictation MD. Ardisik ayni konusmaci segmentleri paragraf yapilir."""
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    names_list = sorted(set(speaker_names.values()))
+    with open(md_path, "w", encoding="utf-8") as f:
+        f.write("# Meet Dictation\n\n")
+        f.write(f"- **Tarih:** {timestamp}\n")
+        f.write(f"- **Ses suresi:** {_format_seconds(audio_duration)}\n")
+        f.write(f"- **Model:** {LECTURE_MODEL_SIZE} ({DEVICE}) + speechbrain diarization (lokal)\n")
+        f.write(f"- **Konusmacilar:** {', '.join(names_list)}\n")
+        f.write(f"- **Kaynak:** `{source_path}`\n\n")
+        f.write("---\n\n")
+
+        current_speaker = None
+        current_paragraph = []
+        current_start = None
+
+        def flush():
+            if current_paragraph and current_speaker is not None and current_start is not None:
+                m = int(current_start // 60); s = int(current_start % 60)
+                paragraph_text = " ".join(current_paragraph).strip()
+                f.write(f"**[{m:02d}:{s:02d}] {current_speaker}:** {paragraph_text}\n\n")
+
+        for seg in segments:
+            speaker = seg.get("speaker", "?")
+            if speaker != current_speaker:
+                flush()
+                current_speaker = speaker
+                current_paragraph = []
+                current_start = seg["start"]
+            current_paragraph.append(seg["text"])
+        flush()
+
+        f.write("---\n\n")
+        f.write(f"_**Transkript tamamlandi.** Sure: {_format_seconds(audio_duration)} • "
+                f"Model: {LECTURE_MODEL_SIZE} ({DEVICE}) + speechbrain (lokal)_\n")
+
+
+def _pick_file_and_meet_dictate():
+    """Tray'den cagrilir: dosya sec -> diarize -> isimler -> transcribe -> MD (speaker-labelli)."""
+    try:
+        # 1) Dosya sec
+        if IS_MAC:
+            path = _pick_audio_file_macos()
+        else:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+            except Exception:
+                pass
+            path = filedialog.askopenfilename(
+                title="Meet kaydi sec (diarization + transcribe)",
+                filetypes=[
+                    ("Tum dosyalar", "*.*"),
+                    ("Tum medya", "*.mp4 *.mov *.mkv *.avi *.webm *.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus"),
+                ],
+            )
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+        if not path:
+            log.info("[MEET] Secim iptal edildi.")
+            return
+
+        log.info(f"[MEET] Dosya secildi: {path}")
+        sound_recording()
+
+        # 2) Konusmaci sayisi sor (UI ilk; agir is sonra)
+        num_speakers = _ask_speaker_count()
+        if num_speakers is None:
+            log.info("[MEET] Iptal (konusmaci sayisi).")
+            return
+
+        # 3-5) Heavy pipeline (decode + transcribe + cluster) ayri thread'de;
+        #     UI'da progress window mainloop calisir, thread bittiginde kapanir.
+        pipeline_state = {
+            "audio": None, "segments": None, "error": None,
+        }
+        progress = _MeetProgressDialog()
+
+        def _pipeline_worker():
+            try:
+                from faster_whisper.audio import decode_audio
+                progress.set_text("📥 Ses dosyasi decode ediliyor...",
+                                  f"{os.path.basename(path)}")
+                log.info("[MEET] Audio decode ediliyor...")
+                audio = decode_audio(path, sampling_rate=SAMPLE_RATE)
+                pipeline_state["audio"] = audio
+                audio_dur = len(audio) / SAMPLE_RATE
+                log.info(f"[MEET] Audio: {audio_dur:.0f}sn")
+
+                if audio_dur < 5.0:
+                    pipeline_state["error"] = ("too_short", audio_dur, path)
+                    return
+
+                # Tahmini sureler: turbo+CUDA Whisper ~audio_dur/30 (word_timestamps +20%)
+                est_whisper = max(5, int(audio_dur / 25))
+                progress.set_text(
+                    f"📝 Whisper transcribe (turbo, beam=5, word-level)...",
+                    f"{int(audio_dur)}sn ses • Tahmini {est_whisper}sn",
+                )
+                t0 = time.time()
+                _text, segments = _transcribe_audio_path(
+                    audio, beam_size=5, word_timestamps=True,
+                )
+                log.info(f"[MEET] Whisper bitti ({time.time()-t0:.0f}sn, {len(segments)} segment)")
+
+                if not segments:
+                    pipeline_state["error"] = ("empty_segments",)
+                    return
+
+                # Sliding-window diarization — Whisper'dan bagimsiz konusmaci zaman cizelgesi
+                est_diar = max(5, int(audio_dur * 0.3))  # CPU embed ~ ses*0.3
+                progress.set_text(
+                    f"🎯 Sliding-window diarization (k={num_speakers})...",
+                    f"Audio boyunca 1.5sn pencere ile konusmaci cizelgesi cikariliyor • Tahmini {est_diar}sn",
+                )
+                t0 = time.time()
+                try:
+                    def _diar_progress(done, total):
+                        progress.set_text(
+                            f"🎯 Sliding-window diarization (k={num_speakers})...",
+                            f"Embed: {done}/{total} pencere",
+                        )
+                    diarization_turns = _diarize_audio_sliding_window(
+                        audio, num_speakers, progress_callback=_diar_progress,
+                    )
+                except RuntimeError as e:
+                    pipeline_state["error"] = ("setup", str(e))
+                    return
+                log.info(f"[MEET] Diarization bitti ({time.time()-t0:.0f}sn, {len(diarization_turns)} turn)")
+
+                # Whisper segmentlerini speaker turn sinirlarinda parcala
+                progress.set_text(
+                    "✂ Segmentler konusmaci sinirlarinda parcalaniyor...",
+                    f"{len(segments)} Whisper segmenti / {len(diarization_turns)} speaker turn",
+                )
+                segments = _split_segments_by_diarization(segments, diarization_turns)
+                _smooth_speaker_labels(segments, min_isolated_dur=1.5)
+                pipeline_state["segments"] = segments
+                log.info(f"[MEET] Split sonrasi: {len(segments)} segment")
+
+                progress.set_text("✓ Tamamlandi. Isim dialog'u aciliyor...", "")
+            except Exception as e:
+                log.error(f"[MEET] Pipeline worker hatasi: {e}", exc_info=True)
+                pipeline_state["error"] = ("exception", str(e))
+            finally:
+                progress.finish()
+
+        worker = threading.Thread(target=_pipeline_worker, daemon=True)
+        worker.start()
+        progress.run()         # bloklayici — finish() cagrilana kadar
+        worker.join(timeout=5) # thread'in tamamen bitmesini bekle
+
+        # Hata kontrolu
+        err = pipeline_state["error"]
+        if err:
+            kind = err[0]
+            sound_error()
+            if kind == "too_short":
+                _, audio_dur, path_x = err
+                _show_meet_error(
+                    f"Bu dosya cok kisa/bos ({audio_dur:.1f}sn).\n\n"
+                    f"Yanlis dosya secmis olabilir misin? Meet kayitlarinda bazen "
+                    f"0 byte placeholder dosyalar olur; asil kayit '(1)' suffix'li olandir.\n\n"
+                    f"Dosya: {os.path.basename(path_x)}"
+                )
+            elif kind == "empty_segments":
+                _show_meet_error("Whisper transkripti bos. Audio dosyasinda konusma olmayabilir.")
+            elif kind == "setup":
+                _show_meet_error(err[1])
+            else:
+                _show_meet_error(f"Beklenmeyen hata:\n\n{err[1]}\n\nDetay: logs/dictation.log")
+            return
+
+        audio = pipeline_state["audio"]
+        segments = pipeline_state["segments"]
+
+        detected_labels = sorted(set(s.get("speaker_raw", "SPEAKER_00") for s in segments))
+        log.info(f"[MEET] {len(detected_labels)} konusmaci cluster edildi: {detected_labels}")
+
+        # 6) Isimleri sor (dialog'da her konusmaci icin snippet + Dinle butonu gosterilir)
+        speaker_names = _ask_speaker_names(detected_labels, segments=segments, audio=audio)
+        if speaker_names is None:
+            log.info("[MEET] Iptal (isim girisi).")
+            return
+
+        # 7) İsimleri segmentlere uygula
+        segments_with_speakers = _apply_speaker_names(segments, speaker_names)
+
+        # 8) Markdown yaz (kaynak yaninda + Desktop kopyasi)
+        base_name = os.path.splitext(os.path.basename(path))[0]
+        primary_md = os.path.splitext(path)[0] + "_meet.md"
+        try:
+            _write_meet_dictation_markdown(
+                primary_md, segments_with_speakers, audio_dur, path, speaker_names
+            )
+            log.info(f"[MEET] Yazildi: {primary_md}")
+        except Exception as e:
+            log.error(f"[MEET] Yazma hatasi (kaynak yaninda): {e}")
+            primary_md = None
+
+        try:
+            base = _get_lectures_dir()
+            desktop_md = os.path.join(base, base_name + "_meet.md")
+            _write_meet_dictation_markdown(
+                desktop_md, segments_with_speakers, audio_dur, path, speaker_names
+            )
+            log.info(f"[MEET] Masaustu kopyasi: {desktop_md}")
+            if primary_md is None:
+                primary_md = desktop_md
+        except Exception as e:
+            log.error(f"[MEET] Masaustu kopya hatasi: {e}")
+
+        sound_sent()
+        if primary_md:
+            _open_in_editor(primary_md)
+
+    except Exception as e:
+        log.error(f"[MEET] Hata: {e}", exc_info=True)
+        sound_error()
+        _show_meet_error(f"Beklenmeyen hata:\n\n{e}\n\nDetay icin: logs/dictation.log")
 
 
 # --- REGEX ---
