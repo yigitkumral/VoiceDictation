@@ -10,6 +10,14 @@ dictation.log
 .dictation.log
 .dictation.pid
 
+# Secrets (HuggingFace token, etc.)
+.env
+.env.local
+
+# Speechbrain / ML model cache (lokal indirilen modeller)
+models/
+pretrained_models/
+
 # IDE
 .vscode/
 .idea/
