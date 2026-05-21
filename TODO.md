@@ -78,6 +78,27 @@
   - mlx_whisper'in dahili load_audio'su ffmpeg gerektiriyordu; afconvert ile pre-load edip numpy verilirse atlanir
 - [x] Cikti: ses dosyasi yaninda `.md` + Desktop/VoiceDictation_Lectures kopyasi
 - [x] 80dk AAC -> ~4dk islem (CUDA + turbo, ~20x realtime)
+- [x] **iPhone Voice Memos akisi netlestirildi (22 May 2026)**: `.m4a` (AAC) ve `.qta` (ALAC veya AAC, QuickTime container) her iki platformda dogrudan calisiyor; Windows'ta PyAV ile decode (ffmpeg PATH'i gerekmez). CLAUDE.md'de adim-adim akis dokumante edildi.
+
+## Meet Dictation / Konusmaci Ayirma (Diarization)
+
+- [x] speechbrain ECAPA-TDNN entegrasyonu (commit `3e11f3d`)
+- [x] Tray menusunden "Meet kaydi sec..." dosya secici
+- [x] Pipeline: dekod → VAD → Whisper transcribe (word-level) → embedding → clustering → isim atama → MD
+- [ ] **BOZULMA: Diarization duzgun calismiyor (22 May 2026 — kullanici raporu).**
+  - **Belirtiler (kullanicidan, 3'u birden):** konusmacilar yanlis kumeleniyor, isimler yanlis atamiyor, tum transkript tek konusmaciya yapisiyor.
+  - **Platform:** Windows. **Kayit tipi:** Google Meet (mp4).
+  - **En olasi kok-sebepler (siralanmis):**
+    1. Meet kaydi tek-kanal mix — herkesin sesi ayni track'te; ECAPA-TDNN embedding'leri yeterince ayrismiyor (ozellikle benzer ses tonlu kisilerde). Speaker turn boundary'leri Whisper word-timestamp'lerinden cikartiliyor; konusmaci degisimleri hatali yerlerde tespit ediliyor olabilir.
+    2. Clustering threshold/parametre uyumsuz (su an muhtemelen sabit AgglomerativeClustering threshold) → kucuk farklari ayni kume, tum sesi tek kume yapiyor.
+    3. Embedding penceresi cok kisa (1-2sn) veya cok uzun: kisa pencerelerde gurultu/sessizlik embedding'i bozar; uzun pencerelerde turn'ler atlanir.
+    4. Isim eslestirme: aktif kume merkezleri yerine yanlis temsilci embedding'lerle eslestiriliyor olabilir.
+  - **Plan:**
+    1. Once kucuk bir test dosyasiyla (2-3 dk Meet kaydi, bilinen 2-3 konusmaci) raw embedding output'unu logla — kume sayisi, mesafe matrisi, threshold karari.
+    2. Tek-konusmaciya yapismanin sebebi: cluster sayisi 1'e dusuyor mu (low threshold) yoksa hepsi ayni kumeye mi atilizyor (yanlis affinity)? Logdan ayirt et.
+    3. Threshold/affinity tuning (cosine + dynamic threshold).
+    4. Gerekirse pyannote-style turn boundary detection (Whisper word boundary'leri yerine VAD + voice activity diff).
+  - **Referans dosya:** kullanicinin Drive'inda `Meet Recordings/trz-rjon-krk (2026-05-01 13 56 GMT) (1)` — test icin elde.
 
 ## Editor Entegrasyonu
 
@@ -98,6 +119,12 @@
 - [x] Wake word backoff (gereksiz transcribe'i azalt)
 - [x] Listen buffer sinir (~30sn): arka plan ses birikmesi onlendi
 - [x] Listen buffer carry-over azaltma (kayit baslarken son 1sn yeterli)
+- [x] **Sessizlik halusinasyonu fix (22 May 2026)** — vaka: `Hakan Hoca Risk Yonetimi 20 Mayis.md` (70dk "Altyazi M.K." tekrar). Uc fix uygulandi:
+  - `_vad_prefilter`: MLX yoluna Silero VAD on-filtre + `SpeechTimestampsMap` ile timestamp remap (faster-whisper.vad helper'lari, ekstra dep yok)
+  - `condition_on_previous_text=False` her iki MLX cagrisinda (quick_transcribe + _transcribe_audio_path) — zincirleme tekrar imkansiz
+  - `_strip_known_artifacts`: lecture/file post-process icin GUVENLI artifact temizleyici (`_clean_transcription`'in tekrar tespitini yapmaz, gercek "evet evet" cevaplarini korur)
+  - Windows venv'de syntax + VAD prefilter testi OK (iPhone 11dk kaydinda %22 sessizlik kirpildi, 0.9sn ek islem)
+- [ ] **TO DO: Mac'te gercek bir lecture kaydiyla yukaridaki fix'i uctan uca dogrula** (mikrofon uzakta + uzun sessizlikli senaryo). Beklenti: artifact spam yerine bos veya minimal segmentler.
 - [ ] Thread safety regresyon testi yaz (state machine gecisleri)
 - [ ] Yeni Whisper varyasyonlari geldikce wake word regex'i genislet
 

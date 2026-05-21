@@ -845,6 +845,53 @@ def _clean_transcription(text):
     return _apply_word_corrections(cleaned)
 
 
+def _strip_known_artifacts(text):
+    """Lecture/file path icin GUVENLI artifact temizleyici.
+    `_clean_transcription`'in aksine tekrar tespiti YAPMAZ (gercek "evet evet" cevaplarini koru).
+    Sadece bilinen YouTube dataset kaliplarini siler (Altyazi M.K., izlediginiz icin...).
+    """
+    if not text:
+        return ""
+    cleaned = _ENGLISH_HALLUC_RE.sub("", text).strip()
+    cleaned = _ARTIFACT_RE.sub("", cleaned).strip()
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = re.sub(r"^[\s.,;:!?]+|[\s.,;:!?]+$", "", cleaned)
+    return cleaned
+
+
+def _vad_prefilter(audio, sampling_rate=SAMPLE_RATE, min_silence_ms=500):
+    """MLX yolu icin Silero VAD on-filtresi.
+
+    mlx-whisper'in dahili VAD'i yok — sessiz bolgeler dataset artifact'leriyle ("Altyazi M.K.",
+    "Izlediginiz icin tesekkur...") dolar. faster-whisper'in vad_filter=True ile yaptigini
+    manuel yapariz: konusma chunk'larini bul, audio'dan sessizligi kirp, MLX'e gonder, sonra
+    segment timestamp'lerini orijinal zamana geri map'le.
+
+    Donus: (filtered_audio, ts_map). Hicbir konusma yoksa (None, None).
+    """
+    try:
+        from faster_whisper.vad import get_speech_timestamps, SpeechTimestampsMap, VadOptions
+    except ImportError:
+        log.warning("[VAD] faster_whisper.vad bulunamadi, on-filtre atlaniyor")
+        return audio, None
+
+    vad_opts = VadOptions(min_silence_duration_ms=min_silence_ms)
+    chunks = get_speech_timestamps(audio, vad_opts, sampling_rate=sampling_rate)
+    if not chunks:
+        return None, None
+
+    filtered = np.concatenate([audio[c["start"]:c["end"]] for c in chunks])
+    ts_map = SpeechTimestampsMap(chunks, sampling_rate=sampling_rate)
+
+    original_dur = len(audio) / sampling_rate
+    filtered_dur = len(filtered) / sampling_rate
+    log.info(
+        f"[VAD] On-filtre: {original_dur:.0f}sn -> {filtered_dur:.0f}sn "
+        f"({original_dur - filtered_dur:.0f}sn sessizlik kirpildi, {len(chunks)} konusma blogu)"
+    )
+    return filtered, ts_map
+
+
 def quick_transcribe(audio_data, beam_size=3):
     """Hizli transcribe (turbo). beam_size sadece faster-whisper'da kullanilir;
     mlx-whisper beam search'i henuz desteklemiyor (NotImplementedError) -> MLX
@@ -856,10 +903,13 @@ def quick_transcribe(audio_data, beam_size=3):
     try:
         with transcribe_lock:
             if IS_MAC and USE_MLX:
-                # MLX: beam_size gecme — mlx-whisper henuz desteklemiyor
+                # MLX: beam_size gecme — mlx-whisper henuz desteklemiyor.
+                # condition_on_previous_text=False: dictation kisa kayitlarda bile halusinasyon
+                # zincirini onler (model kendi onceki ciktisini prompt'a sokarak tekrar etmesin).
                 result = mlx_whisper.transcribe(
                     audio_data, path_or_hf_repo=MLX_MODEL_REPO,
                     language="tr", initial_prompt=INITIAL_PROMPT,
+                    condition_on_previous_text=False,
                 )
                 text = result.get("text", "").strip()
             else:
@@ -937,27 +987,48 @@ def _transcribe_audio_path(audio, beam_size=5, word_timestamps=False):
     log.info(f"[TRANSCRIBE] Calisiyor: {label}")
     t0 = time.time()
     if IS_MAC and USE_MLX:
+        # On-VAD: mlx-whisper'in dahili VAD'i olmadigi icin sessiz bolgeler "Altyazi M.K." /
+        # "Izlediginiz icin tesekkur..." dataset artifact'leri ile dolar (bkz. Hakan Hoca
+        # 20 Mayis vakasi). Sessizligi VAD ile kirp, sonra segment timestamp'lerini
+        # SpeechTimestampsMap ile orijinal zamana geri map'le.
+        filtered_audio, ts_map = _vad_prefilter(audio, sampling_rate=SAMPLE_RATE)
+        if filtered_audio is None:
+            log.info("[TRANSCRIBE] VAD: hicbir konusma bulunamadi, transcribe atlaniyor.")
+            return "", []
+
         # transcribe_lock zorunlu: MLX Metal command buffer'lari thread-safe degil.
         # Lecture LIVE chunk transcribe ile eszamanli calismalardan dolayi
         # MTLReleaseAssertionFailure -> SIGABRT crash oluyordu.
+        # condition_on_previous_text=False: bir kez halusinasyon ciksa bile model kendi
+        # ciktisini prompt'a sokarak tekrar etmesin (Hakan Hoca'da 70dk "Altyazi M.K."
+        # zincirinin acik sebebi).
         with transcribe_lock:
             result = mlx_whisper.transcribe(
-                audio, path_or_hf_repo=MLX_LECTURE_MODEL_REPO,
+                filtered_audio, path_or_hf_repo=MLX_LECTURE_MODEL_REPO,
                 language="tr", initial_prompt=INITIAL_PROMPT,
                 word_timestamps=word_timestamps,
+                condition_on_previous_text=False,
             )
             text = result.get("text", "").strip()
             segments = []
             for s in result.get("segments", []):
+                start = float(s.get("start", 0.0))
+                end = float(s.get("end", 0.0))
+                # Sessizlik kirpilmissa: filtered-time -> orijinal-time
+                if ts_map is not None:
+                    start = ts_map.get_original_time(start)
+                    end = ts_map.get_original_time(end, is_end=True)
                 seg = {
-                    "start": float(s.get("start", 0.0)),
-                    "end": float(s.get("end", 0.0)),
+                    "start": start,
+                    "end": end,
                     "text": s.get("text", "").strip(),
                 }
                 if word_timestamps and s.get("words"):
                     seg["words"] = [
-                        {"start": float(w.get("start", 0.0)),
-                         "end": float(w.get("end", 0.0)),
+                        {"start": (ts_map.get_original_time(float(w.get("start", 0.0)))
+                                   if ts_map is not None else float(w.get("start", 0.0))),
+                         "end": (ts_map.get_original_time(float(w.get("end", 0.0)), is_end=True)
+                                 if ts_map is not None else float(w.get("end", 0.0))),
                          "word": w.get("word", "")}
                         for w in s["words"]
                     ]
@@ -990,9 +1061,25 @@ def _transcribe_audio_path(audio, beam_size=5, word_timestamps=False):
         text = " ".join(s["text"] for s in segments).strip()
     elapsed = time.time() - t0
     log.info(f"[TRANSCRIBE] Tamamlandi ({elapsed:.0f}sn islem, {len(segments)} segment).")
-    text = _apply_word_corrections(text)
+
+    # Bilinen YouTube dataset artifact'lerini segment-segment temizle.
+    # `_strip_known_artifacts` gercek tekrarlari ("evet evet evet" cevap) korur, sadece
+    # "Altyazi M.K." / "Izlediginiz icin tesekkur..." / Ingilizce baslangic dolgularini siler.
+    cleaned_segments = []
+    dropped = 0
     for s in segments:
-        s["text"] = _apply_word_corrections(s["text"])
+        clean = _strip_known_artifacts(s["text"])
+        if not clean:
+            dropped += 1
+            continue
+        s["text"] = _apply_word_corrections(clean)
+        cleaned_segments.append(s)
+    segments = cleaned_segments
+    if dropped:
+        log.info(f"[TRANSCRIBE] {dropped} segment artifact filtresinde elendi.")
+
+    text = " ".join(s["text"] for s in segments).strip()
+    text = _apply_word_corrections(text)
     return text, segments
 
 

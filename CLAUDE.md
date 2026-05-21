@@ -67,7 +67,9 @@ Tray menusunden **"🎙 Toplanti Kaydi Baslat"** ile baslatilir; lecture aktifke
 
 #### Dosyadan Transkript
 
-Mevcut bir ses dosyasini (AAC, MP3, WAV, M4A, FLAC, OGG, MP4, **macOS'ta `.qta` Voice Memos lossless dahil**) yuksek kaliteyle MD'ye cevirir.
+Mevcut bir ses dosyasini yuksek kaliteyle (beam=5) MD'ye cevirir.
+
+**Desteklenen formatlar (her iki platform):** AAC, MP3, WAV, M4A, FLAC, OGG, OPUS, WMA, AIFF, CAF, MP4, MOV, MKV, AVI, WEBM, **ve `.qta`** (iPhone Voice Memos QuickTime container — `ftyp qt  `, icerigi sikistirma ayarina gore AAC veya ALAC).
 
 - **GUI:** Tray menusu → "📁 Ses dosyasini dok..." → dosya secici
   - Windows: tkinter file dialog
@@ -78,7 +80,23 @@ Mevcut bir ses dosyasini (AAC, MP3, WAV, M4A, FLAC, OGG, MP4, **macOS'ta `.qta` 
   venv/bin/python dictation.py --transcribe "FILE.qta"        # macOS
   ```
 
-**macOS audio decoder:** mlx_whisper'in dahili `load_audio` ffmpeg subprocess gerektiriyor; ffmpeg yerine **`afconvert` (macOS native)** ile dosya 16kHz mono PCM'e on yuklenir, numpy olarak verilir. ffmpeg dependency'si gerekmiyor.
+**Audio decoder (platform farki):**
+- **Windows / faster-whisper:** PyAV (libav) ile container okur — sistem ffmpeg PATH'i gerekmez. AAC/ALAC/MP3/Opus/vs. icerik tipinden bagimsiz dekod eder. Uzanti onemli degil; `.qta` (QuickTime+AAC) dahil tum mobil formatlar **dogrudan calisir** (test edildi: iPhone Voice Memo `Yeni Kayit 24.qta` → 48 kHz stereo AAC → 11.2 dk → 60 sn audio'da 24 segment, Turkce transkript dogru).
+- **macOS / mlx-whisper:** mlx_whisper'in dahili `load_audio`'su ffmpeg subprocess gerektiriyor; ffmpeg yerine **`afconvert` (macOS native)** ile dosya 16 kHz mono PCM'e on yuklenir, numpy olarak verilir. ffmpeg dependency'si gerekmiyor.
+
+#### iPhone / Mobil Ses Kayitlari Akisi (Voice Memos, WhatsApp, vs.)
+
+iPhone'da Voice Memos uygulamasi ses kayitlarini iki ayri ayar/uzantida uretir:
+- **Compressed (varsayilan):** AAC, 48 kHz, ~64 kbps/ch. Dosya uzantisi `.m4a`. Sticter MP4 container.
+- **Lossless (Settings → Voice Memos → Audio Quality → Lossless):** ALAC, 48 kHz. Dosya uzantisi `.qta` (QuickTime Audio). `ftyp qt  ` magic.
+
+iCloud Drive → Google Drive senkronu sonrasi her iki uzanti da PC'ye dusebilir. **Ekstra islem gerekmez:**
+
+1. Dosyayi G-Drive/iCloud'dan local diske kopyala (Drive klasoru disindan calistirmaya gerek yok ama Turkce karakterli path'ler PowerShell ↔ argparse arasinda nadiren sorun cikariyor — emin olmak icin ASCII path).
+2. Daemon kapaliyken (tray'den Cikis): `venv\Scripts\python.exe dictation.py --transcribe "C:\path\to\kayit.qta"` (veya `.m4a`).
+3. Tray menusundeki "📁 Ses dosyasini dok..." de ayni isi yapar; iki kapi ayni akisi cagiriyor (`transcribe_file_to_markdown` → `_transcribe_audio_path` → beam=5).
+
+> **Daemon calisiyorken `--transcribe` reddedilir** (PID lockfile + ayni GPU'da iki Whisper instance cakisir). Once tray'den Cikis, sonra CLI; bittikten sonra dictation'i geri baslat.
 
 Cikti: ses dosyasi yaninda `.md` + `~/Desktop/VoiceDictation_Lectures/<isim>.md` (iki kopya).
 
@@ -96,6 +114,22 @@ Cikti: ses dosyasi yaninda `.md` + `~/Desktop/VoiceDictation_Lectures/<isim>.md`
 ─────────────────────────
  Cikis
 ```
+
+### Sessizlik Halusinasyonu Fix'i (22 Mayis 2026)
+
+**Eski problem:** Uzun toplanti/ders kayitlarinda — ozellikle macOS dahili mikrofon + uzaktan konusan konusmaci kombinasyonunda — final pass transkripti "İzlediğiniz için teşekkür ederim", "Altyazı M.K.", "Evet. Evet. Evet.", "İtalyan Folk." gibi YouTube altyazi dataset artifaktlariyla doluyordu. Whisper modeli sessiz veya dusuk sinyalli segmentlerde egitim verisinden bu dolgu cumlelerini halusine eder; bir kez basladiginda kendi ciktisini bir sonraki segment'in prompt'una sokarak zincirleme tekrar eder.
+
+**Vaka:** `Hakan Hoca Risk Yonetimi 20 Mayis.md` — 1sa 35dk lecture, **turbo (mlx)** final pass. Ilk 25dk karisik dolgu (İtalyan Folk, Evet, izlediginiz...), 25-95dk araliginda **70 dakika boyunca "Altyazı M.K." tek satir tekrar**.
+
+**Uygulanan uc fix ([dictation.py](dictation.py)):**
+
+1. **MLX yoluna Silero VAD on-filtresi** ([_vad_prefilter](dictation.py)). `faster-whisper.vad`'in `get_speech_timestamps + SpeechTimestampsMap` helper'lariyla konusma chunk'larini bul, audio'dan sessizligi kirp, MLX'e gonder, sonra segment timestamp'lerini orijinal zamana geri map'le. (iPhone testinde 11dk audio'da %22 sessizlik kirpildi, 0.9sn ek islem.)
+2. **`condition_on_previous_text=False`** hem `quick_transcribe` hem de `_transcribe_audio_path` MLX cagrilarinda. Halusinasyon ciksa bile model kendi ciktisini prompt'a sokarak tekrar etmesin — zincirleme tekrar (70dk "Altyazi M.K.") imkansiz hale gelir.
+3. **Segment-segment artifact temizleme** (`_strip_known_artifacts`). Final pass sonrasi her segment'i bilinen YouTube kaliplari (`_ARTIFACT_RE` + `_ENGLISH_HALLUC_RE`) ile filtreden gecir, bos kalan segmentleri at. **Onemli:** `_clean_transcription`'in aksine tekrar tespiti YAPMAZ — gercek "evet evet evet" cevaplari korunur, sadece dataset artifakti silinir.
+
+**TO DO — Mac'te gercek lecture testi:** Yeni fix'ler Windows tarafinda (syntax + VAD helper) dogrulandi. Mac'te gercek bir lecture kaydiyla (mikrofon uzakta, uzun sessizlikli) uctan uca test gerekli — beklenti: spam tekrarli artifact yerine bos veya minimal "(sessizlik)" segmentler. Bu testten sonra fix dogrulanir.
+
+**Ek tavsiye:** Kullanim tarafinda iPhone Voice Memo ile paralel kayit hala ideal cozum (mac dahili mic'ten cok daha temiz sinyal). Ardindan `--transcribe`/tray ile cevir.
 
 ### Baslatma
 
@@ -246,4 +280,4 @@ Kullanici ile **Turkce** iletisim kur.
 
 ---
 
-*Son Guncelleme: 26 Nisan 2026 (Lecture mode + RAM-only canli transkripsiyon + dosyadan cevirme)*
+*Son Guncelleme: 22 Mayis 2026 (iPhone Voice Memos akisi netlestirildi + MLX lecture halusinasyon fix'i uygulandi: VAD on-filtre + condition_on_previous_text=False + segment artifact temizligi)*
