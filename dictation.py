@@ -47,6 +47,51 @@ from logging.handlers import TimedRotatingFileHandler
 _LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
 os.makedirs(_LOG_DIR, exist_ok=True)
 _LOG_FILE = os.path.join(_LOG_DIR, "dictation.log")
+_PID_FILE = os.path.join(_LOG_DIR, "dictation.pid")
+
+
+def _pid_alive(pid):
+    """Cross-platform: verilen PID'in canli olup olmadigini kontrol et."""
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _read_daemon_pid():
+    """PID dosyasini oku, canli ise PID'i don, degilse None."""
+    if not os.path.isfile(_PID_FILE):
+        return None
+    try:
+        with open(_PID_FILE, "r", encoding="utf-8") as f:
+            pid = int(f.read().strip())
+    except (ValueError, OSError):
+        return None
+    return pid if _pid_alive(pid) else None
+
+
+def _write_daemon_pid():
+    """Daemon baslarken PID'i yaz."""
+    try:
+        with open(_PID_FILE, "w", encoding="utf-8") as f:
+            f.write(str(os.getpid()))
+    except OSError:
+        pass
+
+
+def _remove_daemon_pid():
+    """Daemon kapanirken PID dosyasini sil (sadece bizim PID ise)."""
+    try:
+        if not os.path.isfile(_PID_FILE):
+            return
+        with open(_PID_FILE, "r", encoding="utf-8") as f:
+            pid = int(f.read().strip())
+        if pid == os.getpid():
+            os.remove(_PID_FILE)
+    except (OSError, ValueError):
+        pass
+
 
 log = logging.getLogger("dictation")
 log.setLevel(logging.DEBUG)
@@ -1985,6 +2030,16 @@ def _run_headless_transcribe(file_path):
     print("=" * 55)
     log.info(f"[HEADLESS] Transcribe basliyor: {file_path}")
 
+    # Ayni anda calisan daemon varsa GPU/CUDA context cakismasi olur:
+    # daemon'un transcribe'lari sessizce bos donmeye baslar.
+    daemon_pid = _read_daemon_pid()
+    if daemon_pid is not None:
+        msg = (f"Daemon zaten calisiyor (PID {daemon_pid}). Ayni anda iki Whisper instance "
+               f"GPU'da cakisir ve daemon bozulur. Once tray'den 'Cikis' ile daemon'u durdur.")
+        print(f"\n[HATA] {msg}")
+        log.error(f"[HEADLESS] {msg}")
+        return 2
+
     if not os.path.isfile(file_path):
         print(f"\n[HATA] Dosya bulunamadi: {file_path}")
         log.error(f"[HEADLESS] Dosya bulunamadi: {file_path}")
@@ -2028,6 +2083,17 @@ def main():
     print(f"  Log dosyasi  : {_LOG_FILE}")
     print("=" * 55)
     log.info(f"Baslatildi: {os_name}, model={MODEL_SIZE}, device={DEVICE}")
+
+    # Ayni anda ikinci daemon baslarsa GPU'da cakisma olur. Stale PID dosyasi yoksay.
+    existing_pid = _read_daemon_pid()
+    if existing_pid is not None and existing_pid != os.getpid():
+        log.error(f"Baska bir daemon zaten calisiyor (PID {existing_pid}). Cikiliyor.")
+        print(f"\n[HATA] Baska bir daemon zaten calisiyor (PID {existing_pid}).")
+        sys.exit(3)
+
+    _write_daemon_pid()
+    import atexit
+    atexit.register(_remove_daemon_pid)
 
     load_model()
 
