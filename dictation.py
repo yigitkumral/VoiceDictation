@@ -213,6 +213,19 @@ DEVICE, COMPUTE_TYPE = _detect_device()
 SAMPLE_RATE = 16000
 CHANNELS = 1
 
+# --- CIKTI DIZINLERI (23 Mayis 2026 yeni duzen) ---
+# Birincil: G Drive'da Records altinda iki klasor.
+#   VoiceDictation/: MD transkriptler (LIVE + final + --transcribe ciktilari)
+#   RawRecords/:     islenen ses dosyalari (lecture WAV dump + dis dosyalardan tasinanlar)
+# Drive yok / erisilemiyorsa: Desktop/VoiceDictation altinda ayni alt yapi (fallback).
+# Hicbir dosya silinmez: lecture sesi WAV'a dumplenir, --transcribe ile gelen dosya TASINIR.
+DRIVE_RECORDS_BASE = r"G:\Drive'ım\Records"
+DRIVE_VOICEDICTATION_DIR = os.path.join(DRIVE_RECORDS_BASE, "VoiceDictation")
+DRIVE_RAWRECORDS_DIR = os.path.join(DRIVE_RECORDS_BASE, "RawRecords")
+FALLBACK_BASE = os.path.join(os.path.expanduser("~"), "Desktop", "VoiceDictation")
+FALLBACK_VOICEDICTATION_DIR = os.path.join(FALLBACK_BASE, "VoiceDictation")
+FALLBACK_RAWRECORDS_DIR = os.path.join(FALLBACK_BASE, "RawRecords")
+
 # Sessizlik algilama
 SILENCE_THRESHOLD = 0.008
 STOP_CHECK_SILENCE = 0.35
@@ -227,6 +240,14 @@ LECTURE_LIVE_BEAM_SIZE = 3     # lecture canli transcribe beam search (1=hizli/d
 # Lecture VAD esigi: cumle sonu sessizligini ayirt etmek icin SILENCE_THRESHOLD'dan yuksek tutulur.
 # Mac dahili mikrofonu baseline 0.005-0.015 gurultu uretir; 0.025 konusma vs. fon gurultusu ayrimi yapar.
 LECTURE_LIVE_VAD_THRESHOLD = 0.025
+
+# Lecture final-pass temizlik (B2/B3 esikleri — 22 Mayis fix devami)
+# Default False: gercek "evet evet evet" cevaplari korunur (CLAUDE.md kurali).
+# --aggressive flag veya runtime override ile True yapilabilir.
+LECTURE_AGGRESSIVE_CLEANUP = False
+LECTURE_CONF_NO_SPEECH = 0.6        # nsp BU DEGER USTU + lp altta -> halusinasyon kabul edilir
+LECTURE_CONF_LOGPROB = -1.0         # avg_logprob BU DEGER ALTI + nsp ustte -> halusinasyon
+LECTURE_CONF_COMPRESSION = 2.4      # compression_ratio BU DEGER USTU -> ngram tekrar isareti (Whisper default)
 
 INITIAL_PROMPT = (
     # NOT: Wake word ("Diktasyon") buraya KOYULMAZ — prompt'a eklenirse Whisper
@@ -892,6 +913,100 @@ def _vad_prefilter(audio, sampling_rate=SAMPLE_RATE, min_silence_ms=500):
     return filtered, ts_map
 
 
+# Filler vocalization regex (B4): "Eee" / "Ee" / "Hım" / "Mım" / "Aa" / "Ah" tek-kelime segmentleri.
+# 3+ kez ardarda tekrar ediyorsa tekillestirilecek. Module-level: her cagrida re.compile maliyeti olmasin.
+_FILLER_RE = re.compile(r'^(?:E+e*|Ee+|Hı+m?|Mı+m?|Aa+|Ah+)$', re.IGNORECASE)
+
+
+def _drop_low_confidence_segments(
+    segments,
+    no_speech_threshold=LECTURE_CONF_NO_SPEECH,
+    logprob_threshold=LECTURE_CONF_LOGPROB,
+    compression_threshold=LECTURE_CONF_COMPRESSION,
+):
+    """Whisper segment metadata'sina bakarak dusuk-guven veya tekrar-isareti segmentleri at (B3).
+
+    AND mantigi: HEM no_speech_prob yuksek HEM avg_logprob dusukse halusinasyon kabul edilir
+    (her ikisi de yetmezse segment kalir — iyi segmenti yanlislikla atmamak icin).
+    compression_ratio esigi bagimsiz: ngram tekrari isareti (Whisper standart sinyali, default 2.4).
+
+    Donus: (filtered_segments, dropped_count)."""
+    filtered, dropped = [], 0
+    for s in segments:
+        nsp = float(s.get("no_speech_prob", 0.0))
+        lp = float(s.get("avg_logprob", 0.0))
+        cr = float(s.get("compression_ratio", 1.0))
+        low_speech = nsp > no_speech_threshold and lp < logprob_threshold
+        repeat_signal = cr > compression_threshold
+        if low_speech or repeat_signal:
+            dropped += 1
+            log.debug(
+                f"[CONF] Drop t={s.get('start', 0):.1f}-{s.get('end', 0):.1f}: "
+                f"nsp={nsp:.2f} lp={lp:.2f} cr={cr:.2f} text='{s.get('text', '')[:40]}'"
+            )
+            continue
+        filtered.append(s)
+    return filtered, dropped
+
+
+def _dedupe_repeated_segments(text, aggressive=False, max_consecutive=3):
+    """Ardarda tekrar eden cumleleri tekillestir (B2/B4).
+
+    - Filler vocalization (Eee/Hım/Aa/...) max_consecutive+ ardarda -> 1 ornek (her zaman).
+    - aggressive=True: 1-2 kelimelik herhangi bir cumle 5+ kere ardarda -> 1 ornek.
+      Default False -> gercek "evet evet evet" cevap korunur (CLAUDE.md kurali).
+
+    Cumle bolme: . ! ? sonrasi BUYUK harfle baslayan kelime gerekir
+    (Turkce kisaltma 'Md.', 'Dr.', '1.5sn' gibi sahte cumle bolmesini onler)."""
+    if not text:
+        return text
+    sentences = re.split(r'(?<=[.!?])\s+(?=[A-ZÇĞİÖŞÜ])', text)
+    out, i = [], 0
+    while i < len(sentences):
+        s = sentences[i].strip()
+        run = 1
+        while i + run < len(sentences) and sentences[i + run].strip().lower() == s.lower():
+            run += 1
+        core = s.rstrip('.!? ').strip()
+        is_filler = bool(_FILLER_RE.match(core))
+        is_short_spam = aggressive and len(core.split()) <= 2 and run >= 5
+        if is_filler and run >= max_consecutive:
+            out.append(s)
+            i += run
+            log.info(f"[DEDUPE] Filler '{core[:30]}' {run}x -> 1x")
+        elif is_short_spam:
+            out.append(s)
+            i += run
+            log.warning(f"[DEDUPE] Agresif: '{core[:30]}' {run}x -> 1x (LECTURE_AGGRESSIVE_CLEANUP=True)")
+        else:
+            out.append(s)
+            i += 1
+    return " ".join(out)
+
+
+def _finalize_segments(segments, *, aggressive=False):
+    """Final pass cikti segmentlerini son hale getir:
+       low-confidence drop (B3) -> artifact strip -> word correction -> dedupe (B2/B4).
+       Donus: (clean_segments, joined_text)."""
+    segments, dropped_conf = _drop_low_confidence_segments(segments)
+    if dropped_conf:
+        log.info(f"[FINALIZE] {dropped_conf} dusuk-guven segment elendi (B3).")
+    clean, dropped_art = [], 0
+    for s in segments:
+        t = _strip_known_artifacts(s["text"])
+        if not t:
+            dropped_art += 1
+            continue
+        s["text"] = _apply_word_corrections(t)
+        clean.append(s)
+    if dropped_art:
+        log.info(f"[FINALIZE] {dropped_art} segment artifact filtresinde elendi.")
+    text = " ".join(s["text"] for s in clean).strip()
+    text = _apply_word_corrections(text)
+    text = _dedupe_repeated_segments(text, aggressive=aggressive)
+    return clean, text
+
+
 def quick_transcribe(audio_data, beam_size=3):
     """Hizli transcribe (turbo). beam_size sadece faster-whisper'da kullanilir;
     mlx-whisper beam search'i henuz desteklemiyor (NotImplementedError) -> MLX
@@ -913,10 +1028,13 @@ def quick_transcribe(audio_data, beam_size=3):
                 )
                 text = result.get("text", "").strip()
             else:
+                # condition_on_previous_text=False (B1): faster-whisper default'u True; bu Tauron LIVE'da
+                # "onun icin x11" zincirleme tekrarinin acik sebebiydi. MLX'te zaten False, parite saglandi.
                 segments, _ = model.transcribe(
                     audio_data, language="tr", initial_prompt=INITIAL_PROMPT,
                     beam_size=beam_size, vad_filter=True,
                     vad_parameters=dict(min_silence_duration_ms=300),
+                    condition_on_previous_text=False,
                 )
                 text = " ".join(seg.text.strip() for seg in segments)
     except Exception as e:
@@ -924,6 +1042,13 @@ def quick_transcribe(audio_data, beam_size=3):
         return ""
 
     cleaned = _clean_transcription(text)
+    if cleaned:
+        # B1: Lecture LIVE pass'inde "M.K." / "Izlediginiz icin tesekkur..." YouTube artifaktlarini sil.
+        # Dictation kisa kayitlari icin de iyi davranis (false positive yok).
+        cleaned = _strip_known_artifacts(cleaned)
+    if cleaned:
+        # B4: 3+ ardarda 'Eee/Hım' filler tekrarini tekillestir. aggressive=False -> gercek cevap korunur.
+        cleaned = _dedupe_repeated_segments(cleaned, aggressive=False)
     if not cleaned:
         log.debug(f"[FILTRE] Halusinasyon filtrelendi ({len(text.split())} kelime): {text[:80]}...")
         return ""
@@ -939,12 +1064,47 @@ def _get_desktop_path():
     return os.path.join(os.path.expanduser("~"), "Desktop")
 
 
+def _ensure_writable_dir(primary, fallback, label):
+    """Primary dir'i kullanilabilir mi dene (mkdir + W_OK); olmazsa fallback'e duş.
+    Drive (G:\\) gibi network mount'lar bagli degilse veya senkron sorun varsa fallback devreye girer."""
+    try:
+        os.makedirs(primary, exist_ok=True)
+        if os.access(primary, os.W_OK):
+            return primary
+        raise PermissionError(f"{primary} yazilabilir degil")
+    except OSError as e:
+        log.warning(f"[FALLBACK] {label}: Drive kullanilamiyor ({type(e).__name__}: {e}); Desktop'a duser -> {fallback}")
+        os.makedirs(fallback, exist_ok=True)
+        return fallback
+
+
+def _get_voicedictation_dir():
+    """Transkript MD'lerinin yazildigi klasor. Once Drive, olmazsa Desktop/VoiceDictation/VoiceDictation."""
+    return _ensure_writable_dir(DRIVE_VOICEDICTATION_DIR, FALLBACK_VOICEDICTATION_DIR, "VoiceDictation")
+
+
+def _get_rawrecords_dir():
+    """Islenen ses dosyalarinin tasindigi/yazildigi klasor. Once Drive, olmazsa Desktop/VoiceDictation/RawRecords."""
+    return _ensure_writable_dir(DRIVE_RAWRECORDS_DIR, FALLBACK_RAWRECORDS_DIR, "RawRecords")
+
+
 def _get_lectures_dir():
-    """Masaustunde 'VoiceDictation_Lectures' klasorunu garantile.
-    NOT: ses dosyasi diske yazilmiyor (RAM-only); sadece transkript MD'leri burada."""
-    base = os.path.join(_get_desktop_path(), "VoiceDictation_Lectures")
-    os.makedirs(base, exist_ok=True)
-    return base
+    """[DEPRECATED 23 Mayis 2026] Eski isim; yeni VoiceDictation/RawRecords duzenine shim.
+    Tum eski cagirilarin tek noktadan yonlenmesi icin korunuyor."""
+    return _get_voicedictation_dir()
+
+
+def _save_wav(audio_data, path, sample_rate=SAMPLE_RATE):
+    """Float32 numpy array'i (sounddevice cikti formati, -1..+1) 16-bit PCM mono WAV olarak yaz."""
+    import wave
+    arr = np.asarray(audio_data).flatten()
+    pcm = (np.clip(arr, -1.0, 1.0) * 32767.0).astype(np.int16)
+    with wave.open(path, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm.tobytes())
+    return path
 
 
 def _load_audio_via_afconvert(path, target_sr=SAMPLE_RATE):
@@ -1022,6 +1182,10 @@ def _transcribe_audio_path(audio, beam_size=5, word_timestamps=False):
                     "start": start,
                     "end": end,
                     "text": s.get("text", "").strip(),
+                    # B3: Whisper segment metadata'si — _drop_low_confidence_segments bunlari okur.
+                    "avg_logprob": float(s.get("avg_logprob", 0.0)),
+                    "no_speech_prob": float(s.get("no_speech_prob", 0.0)),
+                    "compression_ratio": float(s.get("compression_ratio", 1.0)),
                 }
                 if word_timestamps and s.get("words"):
                     seg["words"] = [
@@ -1049,6 +1213,10 @@ def _transcribe_audio_path(audio, beam_size=5, word_timestamps=False):
                     "start": float(s.start),
                     "end": float(s.end),
                     "text": s.text.strip(),
+                    # B3: faster-whisper Segment metadata'si — _drop_low_confidence_segments okur.
+                    "avg_logprob": float(s.avg_logprob),
+                    "no_speech_prob": float(s.no_speech_prob),
+                    "compression_ratio": float(s.compression_ratio),
                 }
                 if word_timestamps and s.words:
                     seg["words"] = [
@@ -1062,24 +1230,10 @@ def _transcribe_audio_path(audio, beam_size=5, word_timestamps=False):
     elapsed = time.time() - t0
     log.info(f"[TRANSCRIBE] Tamamlandi ({elapsed:.0f}sn islem, {len(segments)} segment).")
 
-    # Bilinen YouTube dataset artifact'lerini segment-segment temizle.
-    # `_strip_known_artifacts` gercek tekrarlari ("evet evet evet" cevap) korur, sadece
-    # "Altyazi M.K." / "Izlediginiz icin tesekkur..." / Ingilizce baslangic dolgularini siler.
-    cleaned_segments = []
-    dropped = 0
-    for s in segments:
-        clean = _strip_known_artifacts(s["text"])
-        if not clean:
-            dropped += 1
-            continue
-        s["text"] = _apply_word_corrections(clean)
-        cleaned_segments.append(s)
-    segments = cleaned_segments
-    if dropped:
-        log.info(f"[TRANSCRIBE] {dropped} segment artifact filtresinde elendi.")
-
-    text = " ".join(s["text"] for s in segments).strip()
-    text = _apply_word_corrections(text)
+    # Final pass son temizlik (22 Mayis fix devami):
+    #   B3 dusuk-guven segment dropout -> bilinen artifact strip -> word correction -> B2/B4 dedupe
+    # aggressive=True ise 1-2 kelimelik 5+ tekrarlar da kirpilir (CLAUDE.md kurali geregi default kapali).
+    segments, text = _finalize_segments(segments, aggressive=LECTURE_AGGRESSIVE_CLEANUP)
     return text, segments
 
 
@@ -1428,10 +1582,11 @@ def _apply_speaker_names(segments, speaker_names):
 
 
 def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
-    """Dis ses dosyasini transkripte et, Markdown olarak yanına ve Desktop'a yaz.
+    """Dis ses dosyasini transkripte et: MD'yi VoiceDictation/'a yaz, sesi RawRecords/'a TASI.
 
-    output_dir verilmezse: ses dosyasi ile ayni klasore + Desktop/VoiceDictation_Lectures'e iki kopya.
-    Donus: olusan ana .md yolu (basarisizsa None).
+    23 Mayis 2026 duzeni: tek MD ciktisi (VoiceDictation altinda), ses dosyasi RawRecords'a
+    tasinir (silinmez). output_dir verilirse MD oraya yazilir (ses tasimasi yine RawRecords).
+    Donus: olusan .md yolu (basarisizsa None).
     """
     if not os.path.isfile(audio_path):
         log.error(f"[FILE] Dosya bulunamadi: {audio_path}")
@@ -1450,26 +1605,36 @@ def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
     title = header_title or "Ses Dosyasi Transkripti"
     base_name = os.path.splitext(os.path.basename(audio_path))[0]
 
-    primary_md = os.path.splitext(audio_path)[0] + ".md"
-    try:
-        _write_lecture_markdown(primary_md, segments, audio_dur, audio_path, header_title=title)
-        log.info(f"[FILE] Yazildi: {primary_md}")
-    except Exception as e:
-        log.error(f"[FILE] Yazma hatasi (kaynak yaninda): {e}")
-        primary_md = None
+    # 1) Sesi RawRecords'a tasi (zaten icinde degilse). MD'de "Kaynak" yeni yolu gosterir.
+    raw_dir = _get_rawrecords_dir()
+    src_norm = os.path.normcase(os.path.abspath(audio_path))
+    raw_norm = os.path.normcase(os.path.abspath(raw_dir))
+    if src_norm.startswith(raw_norm + os.sep):
+        final_audio_path = audio_path  # zaten RawRecords altinda
+    else:
+        dst = os.path.join(raw_dir, os.path.basename(audio_path))
+        if os.path.exists(dst):
+            stem, ext = os.path.splitext(os.path.basename(audio_path))
+            dst = os.path.join(raw_dir, f"{stem}_{time.strftime('%Y%m%d_%H%M%S')}{ext}")
+        try:
+            import shutil
+            shutil.move(audio_path, dst)
+            log.info(f"[FILE] Ses tasindi: {audio_path} -> {dst}")
+            final_audio_path = dst
+        except Exception as e:
+            log.error(f"[FILE] Ses tasinamadi ({type(e).__name__}: {e}); orijinal yerinde kaldi.")
+            final_audio_path = audio_path
 
-    # Masaustu kopyasi (her zaman)
+    # 2) MD'yi VoiceDictation/'a yaz (tek kopya).
+    target_dir = output_dir or _get_voicedictation_dir()
+    md_path = os.path.join(target_dir, base_name + ".md")
     try:
-        base = _get_lectures_dir()
-        desktop_md = os.path.join(base, base_name + ".md")
-        _write_lecture_markdown(desktop_md, segments, audio_dur, audio_path, header_title=title)
-        log.info(f"[FILE] Masaustu kopyasi: {desktop_md}")
-        if primary_md is None:
-            primary_md = desktop_md
+        _write_lecture_markdown(md_path, segments, audio_dur, final_audio_path, header_title=title)
+        log.info(f"[FILE] MD yazildi: {md_path}")
+        return md_path
     except Exception as e:
-        log.error(f"[FILE] Masaustu kopya hatasi: {e}")
-
-    return primary_md
+        log.error(f"[FILE] MD yazma hatasi: {e}")
+        return None
 
 
 def _copy_path_to_clipboard(path):
@@ -1651,9 +1816,18 @@ def _live_transcribe_loop(md_path):
     log.info("[LIVE] Loop bitti.")
 
 
+def _get_live_temp_dir():
+    """LIVE.md icin gecici dizin (Drive'a yazilmaz, kayit bitince silinir).
+    Windows: %LOCALAPPDATA%\\Temp\\voicedictation_live, Mac: /tmp/voicedictation_live."""
+    import tempfile
+    path = os.path.join(tempfile.gettempdir(), "voicedictation_live")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
 def start_lecture_recording():
-    """Tray menusunden cagrilir: RAM-only kayit baslat, live MD olustur, VS Code'da ac.
-    DISKE SES YAZILMIYOR — tum ses bellekte tutulur, kayit bitince transcribe edilip silinir."""
+    """Tray menusunden cagrilir: lecture kaydi baslat. LIVE.md gecici dizine acilir
+    (Drive'a yazilmaz, kayit bitince silinir). Final pass WAV+MD Drive'a yazilir."""
     global lecture_active, lecture_start_time, lecture_live_md_path
     global lecture_live_speech_detected, lecture_live_last_speech_time
     with lecture_lock:
@@ -1661,11 +1835,10 @@ def start_lecture_recording():
             log.warning("[LECTURE] Zaten kayitta.")
             return False
         try:
-            base_dir = _get_lectures_dir()
             ts = time.strftime("%Y-%m-%d_%H-%M-%S")
-            # Live MD
-            lecture_live_md_path = os.path.join(base_dir, f"{ts}_LIVE.md")
-            _init_live_md(lecture_live_md_path, "RAM-only — diske ses dosyasi YAZILMIYOR")
+            # LIVE.md gecici dizine — kullanici canli izleyebilir ama Drive'a yazilmaz
+            lecture_live_md_path = os.path.join(_get_live_temp_dir(), f"{ts}_LIVE.md")
+            _init_live_md(lecture_live_md_path, "(canli izleme — bu LIVE dosyasi kayit bitince SILINIR)")
             # Buffer / VAD reset
             with lecture_audio_chunks_lock:
                 lecture_audio_chunks.clear()
@@ -1681,119 +1854,107 @@ def start_lecture_recording():
             return False
 
     sound_recording()
-    log.info("[LECTURE] Toplanti kaydi basladi (RAM-only, diske ses yazilmiyor)")
-    log.info(f"[LECTURE] Canli MD: {lecture_live_md_path}")
+    log.info("[LECTURE] Toplanti kaydi basladi (canli LIVE gecici, kayit bitince WAV+MD Drive'a yazilir)")
+    log.info(f"[LECTURE] Canli (gecici) MD: {lecture_live_md_path}")
 
-    # Live transcribe thread'i baslat (handle saklanir, stop'ta join icin)
+    # Live transcribe thread'i baslat
     global lecture_live_thread
     lecture_live_thread = threading.Thread(
         target=lambda: _live_transcribe_loop(lecture_live_md_path), daemon=True
     )
     lecture_live_thread.start()
 
-    # Editor'da canli dosyayi ac (VS Code > sistem default > clipboard fallback)
+    # Editor'da canli dosyayi ac (kullanici LIVE'i takip eder)
     _open_in_editor(lecture_live_md_path)
 
     return True
 
 
 def stop_lecture_recording():
-    """Tray menusunden cagrilir: RAM buffer'i transcribe et, sonra bellegi temizle."""
+    """Tray menusunden cagrilir: kayit ismi sor, WAV diske dok, final pass transcribe et,
+    sonra gecici LIVE.md'yi sil."""
     global lecture_active, lecture_live_md_path, lecture_live_thread
     with lecture_lock:
         if not lecture_active:
             return False
         live_md = lecture_live_md_path
         duration = time.time() - lecture_start_time
-        lecture_active = False  # bu live_loop'un sonunu tetikler
+        lecture_active = False  # live_loop'un sonunu tetikler
         lecture_live_md_path = None
         live_thread = lecture_live_thread
         lecture_live_thread = None
 
-    # Live thread'in kendi final flush'ini tamamlamasini bekle. Aksi halde
-    # transcribe_lock uzerinde sirada beklerken _bg'nin "Final transkript hazir"
-    # yazisindan SONRA append yapardi (eski bug). Max 15sn bekleme yeterli.
+    # Live thread'in kendi final flush'ini tamamlamasini bekle (max 15sn).
     if live_thread is not None:
         live_thread.join(timeout=15.0)
         if live_thread.is_alive():
             log.warning("[LECTURE] Live thread 15sn icinde bitmedi, devam ediliyor.")
 
-    # Audio chunks'i bir snapshot'a al ve buffer'i hemen temizle (RAM hassasligi)
+    # Audio chunks snapshot, buffer'i hemen bosalt (RAM hassasligi)
     with lecture_audio_chunks_lock:
         chunks = list(lecture_audio_chunks)
         lecture_audio_chunks.clear()
 
-    # Tani: gercekten ses geldi mi?
     chunk_count = len(chunks)
     total_samples = sum(len(c) for c in chunks) if chunks else 0
     audio_seconds = total_samples / SAMPLE_RATE if total_samples else 0
     log.info(f"[LECTURE] Buffer durumu: {chunk_count} chunk, {total_samples} sample (~{audio_seconds:.1f}sn ses)")
-
-    log.info(f"[LECTURE] Kayit durduruldu ({_format_seconds(duration)}). Final transcribe RAM uzerinden basliyor...")
+    log.info(f"[LECTURE] Kayit durduruldu ({_format_seconds(duration)}). Isim sorulur, sonra WAV+transcribe...")
     sound_sent()
 
     def _bg(chunks_local, live_md_local, duration_local):
+        wav_path = None
         try:
             if not chunks_local:
                 log.warning("[LECTURE] Audio buffer bos, final pass atlandi.")
                 return
+
+            # Kullanicidan dosya ismi al (cancel/bos -> timestamp default)
+            timestamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+            custom_name = _prompt_lecture_filename(timestamp)
+            final_base = custom_name or timestamp
+            log.info(f"[LECTURE] Kayit ismi: {final_base}"
+                     f"{' (kullanici verdi)' if custom_name else ' (timestamp default)'}")
+
             audio_data = np.concatenate(chunks_local, axis=0).flatten()
-            # RAM kullanimi: chunks_local'i hemen birak
             chunks_local = None
 
+            # WAV dump -> RawRecords/<isim>.wav (kalici, silinmez)
+            try:
+                wav_path = os.path.join(_get_rawrecords_dir(), final_base + ".wav")
+                _save_wav(audio_data, wav_path)
+                log.info(f"[LECTURE] Ham ses kaydedildi: {wav_path} ({len(audio_data)/SAMPLE_RATE:.0f}sn)")
+            except Exception as e:
+                log.error(f"[LECTURE] WAV kaydedilemedi ({type(e).__name__}: {e}); transcribe yine devam ediyor.")
+                wav_path = None
+
             text, segments = _transcribe_audio_path(audio_data, beam_size=5)
-            # Transcribe sonrasi audio_data'yi da birak
             audio_data = None
 
             if not segments and not text:
                 log.warning("[LECTURE] Final transkript bos.")
                 sound_error()
                 return
+
             audio_dur = max((s["end"] for s in segments), default=duration_local)
-            base = _get_lectures_dir()
-            md_name = (
-                os.path.basename(live_md_local).replace("_LIVE.md", ".md")
-                if live_md_local else
-                f"{time.strftime('%Y-%m-%d_%H-%M-%S')}.md"
-            )
-            md_path = os.path.join(base, md_name)
+            md_path = os.path.join(_get_voicedictation_dir(), final_base + ".md")
             _write_lecture_markdown(
                 md_path, segments, audio_dur,
-                "(RAM-only — diske ses dosyasi yazilmadi)",
+                wav_path or "(WAV diske yazilamadi — sadece transkript var)",
                 header_title="Toplanti / Ders Transkripti",
             )
             log.info(f"[LECTURE] Final transcript yazildi: {md_path}")
-            if live_md_local and os.path.isfile(live_md_local):
-                try:
-                    with open(live_md_local, "a", encoding="utf-8") as f:
-                        f.write(f"\n---\n\n_**Final transkript hazir:** `{md_path}` (paragraf yapili, beam=5 ile)._\n")
-                except Exception:
-                    pass
-
-            # Kullanicidan dosya ismi sor, varsa MD'leri rename et (timestamp ismi yerine)
-            if IS_MAC:
-                default_base = os.path.splitext(os.path.basename(md_path))[0]
-                new_base = _prompt_lecture_filename_macos(default_base)
-                if new_base:
-                    # Geçersiz karakterleri temizle
-                    safe = re.sub(r'[\\/:*?"<>|]', '_', new_base.strip()).strip()
-                    if safe and safe != default_base:
-                        new_final = os.path.join(base, safe + ".md")
-                        new_live = os.path.join(base, safe + "_LIVE.md")
-                        try:
-                            if os.path.isfile(md_path):
-                                os.rename(md_path, new_final)
-                                log.info(f"[LECTURE] FINAL rename: {os.path.basename(md_path)} -> {os.path.basename(new_final)}")
-                            if live_md_local and os.path.isfile(live_md_local):
-                                os.rename(live_md_local, new_live)
-                                log.info(f"[LECTURE] LIVE rename: {os.path.basename(live_md_local)} -> {os.path.basename(new_live)}")
-                        except Exception as e:
-                            log.error(f"[LECTURE] Rename hatasi: {e}")
-            # Not: ikinci sound_sent() KALDIRILDI — stop_lecture_recording basinda
-            # bir kez calindi yeterli. Final tamamlanma log'da gorunur.
         except Exception as e:
             log.error(f"[LECTURE] Final transcribe hatasi: {e}", exc_info=True)
             sound_error()
+        finally:
+            # Gecici LIVE.md'yi sil (kullanici icin gorsel feedback'ti, Drive'a yazilmiyor)
+            if live_md_local and os.path.isfile(live_md_local):
+                try:
+                    os.remove(live_md_local)
+                    log.info(f"[LECTURE] Gecici LIVE.md silindi: {live_md_local}")
+                except Exception as e:
+                    log.warning(f"[LECTURE] LIVE.md silinemedi ({type(e).__name__}: {e}): {live_md_local}")
 
     threading.Thread(target=_bg, args=(chunks, live_md, duration), daemon=True).start()
     return True
@@ -1830,6 +1991,37 @@ def _prompt_change_wake_word():
             log.info(f"[WAKE] Anahtar kelime guncellendi: '{wake_word_string}'")
     except Exception as e:
         log.error(f"[WAKE] Dialog hatasi: {e}", exc_info=True)
+
+
+def _prompt_lecture_filename(default_name):
+    """Cross-platform: lecture sonrasi kullanicidan dosya ismi al.
+    Donus: temizlenmis isim (windows/mac gecersiz karakterler atilmis) veya None
+    (iptal/bos -> caller timestamp default'a duser)."""
+    raw = None
+    if IS_MAC:
+        raw = _prompt_lecture_filename_macos(default_name)
+    else:
+        # Windows: tkinter simpledialog (gizli root, modal askstring)
+        try:
+            import tkinter as tk
+            from tkinter import simpledialog
+            root = tk.Tk()
+            root.withdraw()
+            root.attributes("-topmost", True)
+            raw = simpledialog.askstring(
+                "Toplanti Kaydi - Dosya Adi",
+                "Kayit ismi (Iptal/bos -> timestamp ismi kullanilir):",
+                initialvalue=default_name,
+                parent=root,
+            )
+            root.destroy()
+        except Exception as e:
+            log.error(f"[LECTURE] Windows isim dialog hatasi: {e}")
+            return None
+    if not raw or not raw.strip():
+        return None
+    safe = re.sub(r'[\\/:*?"<>|]', '_', raw.strip()).strip()
+    return safe or None
 
 
 def _prompt_lecture_filename_macos(default_name):
@@ -2700,9 +2892,9 @@ def audio_callback(indata, frames, time_info, status):
     _last_audio_callback = time.time()
     level = np.abs(indata).mean()
 
-    # Lecture mode: RAM-only — diske ses YAZMIYORUZ. Iki paralel buffer:
-    #   1) full-duration chunks → final pass icin
-    #   2) live buffer → cumle bazli VAD flush
+    # Lecture mode: iki paralel buffer
+    #   1) full-duration chunks → final pass + RawRecords/<isim>.wav diske
+    #   2) live buffer → cumle bazli VAD flush, gecici LIVE.md (kayit bitince silinir)
     if lecture_active:
         global lecture_live_speech_detected, lecture_live_last_speech_time
         chunk = indata.copy()
@@ -3148,13 +3340,21 @@ def on_release(key):
 
 # --- MAIN ---
 
-def _run_headless_transcribe(file_path):
-    """--transcribe FILE: GUI/audio stream baslatmadan tek seferlik transcribe."""
+def _run_headless_transcribe(file_path, aggressive=False):
+    """--transcribe FILE: GUI/audio stream baslatmadan tek seferlik transcribe.
+    aggressive=True (B2): 1-2 kelimelik segment 5+ ardarda tekrar -> halusinasyon kabul edilip kirpilir.
+    Default False — gercek 'evet evet evet' cevap senaryosu korunur."""
+    if aggressive:
+        global LECTURE_AGGRESSIVE_CLEANUP
+        LECTURE_AGGRESSIVE_CLEANUP = True
+        log.info("[FLAG] LECTURE_AGGRESSIVE_CLEANUP=True (--aggressive)")
     print("=" * 55)
     print("  Voice Dictation - Tek Seferlik Transkript")
     print("=" * 55)
     print(f"  Kaynak : {file_path}")
     print(f"  Model  : {LECTURE_MODEL_SIZE} ({DEVICE})")
+    if aggressive:
+        print(f"  Mod    : AGRESIF TEMIZLIK (5+ kisa tekrar -> kirp)")
     print("=" * 55)
     log.info(f"[HEADLESS] Transcribe basliyor: {file_path}")
 
@@ -3191,10 +3391,13 @@ def main():
                                      description="Voice Dictation - Whisper STT")
     parser.add_argument("--transcribe", metavar="FILE", default=None,
                         help="Headless: ses dosyasini transkripte et ve cik")
+    parser.add_argument("--aggressive", action="store_true",
+                        help="B2: 5+ ardarda kisa segment tekrari halusinasyon kabul edilip kirpilir "
+                             "(gercek 'evet evet evet' cevaplari da kirpilabilir; default kapali).")
     args, _unknown = parser.parse_known_args()
 
     if args.transcribe:
-        sys.exit(_run_headless_transcribe(args.transcribe))
+        sys.exit(_run_headless_transcribe(args.transcribe, aggressive=args.aggressive))
 
     os_name = "macOS" if IS_MAC else "Windows"
     record_label = "F13 (sniper butonu)" if IS_WIN else "Caps Lock x2 (double-tap)"

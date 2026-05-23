@@ -11,6 +11,25 @@ Yigit kendi makinesinde calisirken master'a direkt commit + push edebilir.
 Baska bir collaborator olarak calistigini dusunuyorsan: `git checkout -b feature/<konu>`,
 push'la, `gh pr create` ile PR ac.
 
+**Commit kurali:** Commit yapmadan **once mutlaka kullanicidan onay al** (kullanicinin global CLAUDE.md kurali).
+
+---
+
+## 0.5) **AGENT'A:** Mac'te Ilk Session Aciliyorsa
+
+Yigit Mac'te yeni bir Claude Code session actiginda **ilk konusmada** bu kontrol listesini hatirlat:
+
+> "Mac'te yeni session. Son Mac dogrulamasi **26 Nisan 2026** (CHANGELOG'da `macOS test paketi`). O tarihten sonra 22-23 Mayis arasi 4 buyuk degisiklik var ve Mac'te dogrulanmadi:
+> 1. **Halusinasyon paket 2** (B1-B4 fix) — 23 May
+> 2. **Yeni klasor duzeni** (G Drive Records altinda VoiceDictation + RawRecords) — 23 May
+> 3. **Lecture WAV dump** (RAM-only ilkesi kaldirildi, WAV RawRecords'a kalici) — 23 May
+> 4. **LIVE pass gecici dosyaya** (Drive'a yazilmaz, kayit bitince silinir; gorsel feedback amacli) — 23 May
+> 5. **Stop'ta isim dialog** (Windows tkinter + Mac osascript) — 23 May
+>
+> Sirasiyla test edip Mac-spesifik durumlari dogrulamamiz lazim. TODO.md'de 'Mac'te ilk session' bolumunde tam checklist var."
+
+Bu hatirlatmayi atlamamak kritik — Yigit kendi sormayi unutabilir, agent proaktif onermeli.
+
 ---
 
 ## 1) Proje Ozeti
@@ -21,7 +40,7 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 
 - **Tek dosya:** `dictation.py` — tum uygulama burasi
 - **State Machine (Dictation mode):** LISTENING -> RECORDING -> PROCESSING -> COOLDOWN (mutex ile korunan thread-safe gecisler)
-- **Mode (ortogonal eksen):** DICTATION (varsayilan, anlik) ↔ LECTURE (toplanti/ders, RAM-only)
+- **Mode (ortogonal eksen):** DICTATION (varsayilan, anlik) ↔ LECTURE (toplanti/ders, ses RawRecords'a WAV olarak diske dokulur)
 - **Audio Pipeline:** sounddevice (mikrofon) -> numpy (buffer) -> faster-whisper (STT) -> pyperclip (clipboard) -> pynput (paste+enter)
 - **Wake Word:** "Diktasyon" toggle (baslatir + durdurur), genis regex pattern ile Whisper varyasyonlarini yakalar (diktason, dictation, diktatsyon, ...)
 - **Hotkey:** F13 (Windows, Logitech G502 sniper button) / Caps Lock x2 (macOS double-tap)
@@ -45,25 +64,34 @@ VoiceDictation, lokal Whisper modeli ile calisan cross-platform sesli yazim arac
 
 Tray menusunden **"🎙 Toplanti Kaydi Baslat"** ile baslatilir; lecture aktifken F13 dictation hotkey **ignore edilir**, tray ikonu **mor**a doner.
 
-**Onemli ilke: Ses dosyasi DISKE YAZILMAZ — RAM-only.** Tum ses bellekte tutulur, kayit bitince transcribe edilir ve buffer temizlenir. Diskte sadece Markdown transkriptleri kalir.
-
-**Iki seviye transkript:**
-- **Canli (LIVE.md):** VAD-bazli cumle akisi — 0.8sn sessizlik = paragraf sonu, max 12sn force-flush, transcribe (turbo, beam=3), MD'ye append; lecture baslarken VS Code'da otomatik acilir, dosya degisimini canli izleyebilirsin
-- **Final (.md):** kayit bitince tum ses tek seferde, beam=5 ile yuksek kalite, ayri dosya
-- **Footer:** her transkript sonuna `Transkript tamamlandi. Sure: ... • Model: ...` satiri eklenir
+**Akis (23 May 2026 itibariyla):**
+1. Kayit baslar — ses sounddevice'tan RAM'e chunk chunk eklenir.
+2. **LIVE pass paralel calisir**: cumle-bazli VAD flush ile `tempfile.gettempdir()/voicedictation_live/<ts>_LIVE.md` icine yazilir (Drive'a degil!). Kullanici VS Code'da bu dosyayi otomatik acar, anlik konusmasini izler.
+3. Kullanici "⏹ Durdur" der.
+4. **Dosya ismi dialog'u** acilir (Windows: tkinter `simpledialog`, macOS: osascript). Default timestamp; kullanici istedigi ismi yazabilir (Cancel/bos -> timestamp kalir).
+5. RAM buffer **`RawRecords/<isim>.wav`** olarak diske dokulur (16-bit PCM mono 16kHz, stdlib `wave` modulu).
+6. Final transcribe (beam=5, MLX'te `_vad_prefilter` + `condition_on_previous_text=False`).
+7. `_finalize_segments`: dusuk-guven dropout (B3) + artifact strip + word correction + filler dedupe (B4).
+8. Markdown **`VoiceDictation/<isim>.md`** yazilir, "Kaynak" alani WAV yolunu gosterir.
+9. **Gecici LIVE.md silinir** — gorsel feedback amacliydi, arsivlenmez (WAV zaten ses orijinaline geri donus).
 
 **VAD esikleri:**
 - `SILENCE_THRESHOLD = 0.008` — dictation kayit no-speech timeout icin
-- `LECTURE_LIVE_VAD_THRESHOLD = 0.025` — lecture cumle sonu sessizlik tespiti (mac dahili mic baseline 0.005-0.015 oldugundan ayri tutuldu)
 
-**Beam ayarlari (16 May 2026):** dictation ve LIVE icin `beam=3` (eskiden `beam=1` idi, ne zaman dustugu net degil; kalite belirgin bozuktu). Final transcribe `beam=5`'te kaldi. Pratikte hiz farki hissedilmiyor (RTX GPU'da decoder yuku encoder yanında ihmal edilebilir), kalite belirgin iyilesti.
+**Beam ayarlari:** dictation `beam=3`, lecture final `beam=5`. RTX GPU'da hiz farki ihmal edilebilir, kalite belirgin iyi.
 
-**Cikti:**
+**Cikti (yeni klasor duzeni, 23 May 2026):**
 ```
-~/Desktop/VoiceDictation_Lectures/
-├── 2026-04-26_15-51-09_LIVE.md   (canli akan, beam=3)
-└── 2026-04-26_15-51-09.md         (final, beam=5)
+G:\Drive'ım\Records\
+├── VoiceDictation\        # MD transkriptler
+│   └── <isim>.md
+└── RawRecords\            # Islenen ses dosyalari (silinmez, korunur)
+    └── <isim>.wav         # Lecture WAV dump
 ```
+
+**Drive fallback:** G:\ erisilemezse otomatik `~/Desktop/VoiceDictation/{VoiceDictation,RawRecords}/` kullanilir, log'da `[FALLBACK] Drive yok, Desktop'a duser` uyarisi.
+
+**Halusinasyon paket 2 (B1-B4, 23 May 2026):** Bkz. [CHANGELOG.md](CHANGELOG.md). Default davranis: `LECTURE_AGGRESSIVE_CLEANUP=False` -> gercek "evet evet evet" cevaplari korunur; `--aggressive` flag ile opt-in agresif tekrar dedupe.
 
 #### Dosyadan Transkript
 
@@ -98,7 +126,10 @@ iCloud Drive → Google Drive senkronu sonrasi her iki uzanti da PC'ye dusebilir
 
 > **Daemon calisiyorken `--transcribe` reddedilir** (PID lockfile + ayni GPU'da iki Whisper instance cakisir). Once tray'den Cikis, sonra CLI; bittikten sonra dictation'i geri baslat.
 
-Cikti: ses dosyasi yaninda `.md` + `~/Desktop/VoiceDictation_Lectures/<isim>.md` (iki kopya).
+**Cikti (yeni davranis 23 May 2026):**
+- MD: `VoiceDictation/<isim>.md` (Drive yoksa Desktop fallback)
+- Ses: `shutil.move` ile **`RawRecords/<isim>.<ext>`** olarak tasinir (silinmez, orijinal konumdan kaldirilir). Isim cakisirsa timestamp suffix eklenir.
+- `--aggressive` flag opsiyonel: B2 agresif tekrar dedupe (default kapali, gercek "evet evet evet" cevaplari korunur).
 
 ### Tray Menusu
 
@@ -115,21 +146,21 @@ Cikti: ses dosyasi yaninda `.md` + `~/Desktop/VoiceDictation_Lectures/<isim>.md`
  Cikis
 ```
 
-### Sessizlik Halusinasyonu Fix'i (22 Mayis 2026)
+### Halusinasyon Fix Paketleri
 
-**Eski problem:** Uzun toplanti/ders kayitlarinda — ozellikle macOS dahili mikrofon + uzaktan konusan konusmaci kombinasyonunda — final pass transkripti "İzlediğiniz için teşekkür ederim", "Altyazı M.K.", "Evet. Evet. Evet.", "İtalyan Folk." gibi YouTube altyazi dataset artifaktlariyla doluyordu. Whisper modeli sessiz veya dusuk sinyalli segmentlerde egitim verisinden bu dolgu cumlelerini halusine eder; bir kez basladiginda kendi ciktisini bir sonraki segment'in prompt'una sokarak zincirleme tekrar eder.
+**Paket 1 (22 May 2026, commit `b83e384`):** MLX yoluna Silero VAD on-filtresi + `condition_on_previous_text=False` + `_strip_known_artifacts` segment temizligi. Vaka: `Hakan Hoca Risk Yonetimi 20 Mayis.md` — 70dk "Altyazi M.K." zincirleme tekrar.
 
-**Vaka:** `Hakan Hoca Risk Yonetimi 20 Mayis.md` — 1sa 35dk lecture, **turbo (mlx)** final pass. Ilk 25dk karisik dolgu (İtalyan Folk, Evet, izlediginiz...), 25-95dk araliginda **70 dakika boyunca "Altyazı M.K." tek satir tekrar**.
+**Paket 2 (23 May 2026):** B1-B4 dort kalip icin ek katmanlar. Detay: [CHANGELOG.md](CHANGELOG.md).
+- **B1** — Win/faster-whisper `condition_on_previous_text=False` parite + LIVE -> Final pass icin `_strip_known_artifacts` cagrisi quick_transcribe'a tasindi
+- **B2** — opt-in agresif tekrar dedupe (`--aggressive` flag, default kapali, gercek "evet evet evet" korunur)
+- **B3** — Whisper segment metadata esik filtresi (`avg_logprob`, `no_speech_prob`, `compression_ratio`) `_drop_low_confidence_segments`
+- **B4** — filler vocalization regex dedupe (Eee/Hım/Aa 3+ tekrar tekillesir)
 
-**Uygulanan uc fix ([dictation.py](dictation.py)):**
+Yeni helper'lar: `_drop_low_confidence_segments`, `_dedupe_repeated_segments`, `_finalize_segments`, `_FILLER_RE`.
 
-1. **MLX yoluna Silero VAD on-filtresi** ([_vad_prefilter](dictation.py)). `faster-whisper.vad`'in `get_speech_timestamps + SpeechTimestampsMap` helper'lariyla konusma chunk'larini bul, audio'dan sessizligi kirp, MLX'e gonder, sonra segment timestamp'lerini orijinal zamana geri map'le. (iPhone testinde 11dk audio'da %22 sessizlik kirpildi, 0.9sn ek islem.)
-2. **`condition_on_previous_text=False`** hem `quick_transcribe` hem de `_transcribe_audio_path` MLX cagrilarinda. Halusinasyon ciksa bile model kendi ciktisini prompt'a sokarak tekrar etmesin — zincirleme tekrar (70dk "Altyazi M.K.") imkansiz hale gelir.
-3. **Segment-segment artifact temizleme** (`_strip_known_artifacts`). Final pass sonrasi her segment'i bilinen YouTube kaliplari (`_ARTIFACT_RE` + `_ENGLISH_HALLUC_RE`) ile filtreden gecir, bos kalan segmentleri at. **Onemli:** `_clean_transcription`'in aksine tekrar tespiti YAPMAZ — gercek "evet evet evet" cevaplari korunur, sadece dataset artifakti silinir.
+**Mac dogrulamasi acik:** Paket 1+2 Windows'ta dogrulandi (92sn test, [CHANGELOG.md](CHANGELOG.md)). Mac'te uzaktan mikrofon + uzun sessizlikli senaryo testi yapilmamis — bkz. TODO.md "Mac'te ilk session".
 
-**TO DO — Mac'te gercek lecture testi:** Yeni fix'ler Windows tarafinda (syntax + VAD helper) dogrulandi. Mac'te gercek bir lecture kaydiyla (mikrofon uzakta, uzun sessizlikli) uctan uca test gerekli — beklenti: spam tekrarli artifact yerine bos veya minimal "(sessizlik)" segmentler. Bu testten sonra fix dogrulanir.
-
-**Ek tavsiye:** Kullanim tarafinda iPhone Voice Memo ile paralel kayit hala ideal cozum (mac dahili mic'ten cok daha temiz sinyal). Ardindan `--transcribe`/tray ile cevir.
+**Ek tavsiye:** iPhone Voice Memo ile paralel kayit hala ideal cozum (mac dahili mic'ten cok daha temiz sinyal). Ardindan `--transcribe`/tray ile cevir; ses RawRecords'a tasinir.
 
 ### Baslatma
 
@@ -280,4 +311,4 @@ Kullanici ile **Turkce** iletisim kur.
 
 ---
 
-*Son Guncelleme: 22 Mayis 2026 (iPhone Voice Memos akisi netlestirildi + MLX lecture halusinasyon fix'i uygulandi: VAD on-filtre + condition_on_previous_text=False + segment artifact temizligi)*
+*Son Guncelleme: 23 Mayis 2026 — yeni klasor duzeni (G:\Drive Records\{VoiceDictation,RawRecords}), Lecture WAV dump, LIVE pass gecici dosyaya yazar (Drive'a yazilmaz, kayit bitince silinir), halusinasyon paket 2 (B1-B4), stop'ta isim dialog (Windows+Mac), Mac session ilk acilis prompt'u, CHANGELOG.md kuruldu, TODO.md toparlandi.*
