@@ -17,18 +17,11 @@ push'la, `gh pr create` ile PR ac.
 
 ## 0.5) **AGENT'A:** Mac'te Ilk Session Aciliyorsa
 
-Yigit Mac'te yeni bir Claude Code session actiginda **ilk konusmada** bu kontrol listesini hatirlat:
+Yigit Mac'te yeni Claude Code session actiginda **ilk konusmada** proaktif hatirlat: son Mac dogrulamasi **26 Nisan 2026** (CHANGELOG'da `macOS test paketi`). O tarihten sonraki 22-23 Mayis fix paketleri (halusinasyon B1-B4, yeni klasor duzeni, Lecture WAV dump, LIVE gecici dosya, stop'ta isim dialog) **Windows'ta dogrulandi, Mac'te dogrulanmadi**.
 
-> "Mac'te yeni session. Son Mac dogrulamasi **26 Nisan 2026** (CHANGELOG'da `macOS test paketi`). O tarihten sonra 22-23 Mayis arasi 4 buyuk degisiklik var ve Mac'te dogrulanmadi:
-> 1. **Halusinasyon paket 2** (B1-B4 fix) — 23 May
-> 2. **Yeni klasor duzeni** (G Drive Records altinda VoiceDictation + RawRecords) — 23 May
-> 3. **Lecture WAV dump** (RAM-only ilkesi kaldirildi, WAV RawRecords'a kalici) — 23 May
-> 4. **LIVE pass gecici dosyaya** (Drive'a yazilmaz, kayit bitince silinir; gorsel feedback amacli) — 23 May
-> 5. **Stop'ta isim dialog** (Windows tkinter + Mac osascript) — 23 May
->
-> Sirasiyla test edip Mac-spesifik durumlari dogrulamamiz lazim. TODO.md'de 'Mac'te ilk session' bolumunde tam checklist var."
+Tam Mac-spesifik test checklist'i: [TODO.md](TODO.md) "Onemli: Mac'te ilk session" bolumu (Drive yolu, WAV dump, `.qta`/`.m4a` tasima, dialog parite, diarization dahil).
 
-Bu hatirlatmayi atlamamak kritik — Yigit kendi sormayi unutabilir, agent proaktif onermeli.
+Bu hatirlatmayi atlamamak kritik — Yigit kendi sormayi unutabilir.
 
 ---
 
@@ -91,6 +84,8 @@ G:\Drive'ım\Records\
 
 **Drive fallback:** G:\ erisilemezse otomatik `~/Desktop/VoiceDictation/{VoiceDictation,RawRecords}/` kullanilir, log'da `[FALLBACK] Drive yok, Desktop'a duser` uyarisi.
 
+> **Paylasimli klasor — index dosyasi:** `G:\Drive'ım\Records\` birden cok proje tarafindan kullanilabilir (su an aktif tek proje VoiceDictation). Bu klasore yazma/okuma davranisi degisirse veya yeni alt klasor eklenirse, `G:\Drive'ım\Records\index.md`'yi de guncelle — orada "Aktif Projeler", "Klasor Sozlugu", "Cross-Project Referanslar" tablolari ve agent talimatlari var.
+
 **Halusinasyon paket 2 (B1-B4, 23 May 2026):** Bkz. [CHANGELOG.md](CHANGELOG.md). Default davranis: `LECTURE_AGGRESSIVE_CLEANUP=False` -> gercek "evet evet evet" cevaplari korunur; `--aggressive` flag ile opt-in agresif tekrar dedupe.
 
 #### Dosyadan Transkript
@@ -111,6 +106,26 @@ Mevcut bir ses dosyasini yuksek kaliteyle (beam=5) MD'ye cevirir.
 **Audio decoder (platform farki):**
 - **Windows / faster-whisper:** PyAV (libav) ile container okur — sistem ffmpeg PATH'i gerekmez. AAC/ALAC/MP3/Opus/vs. icerik tipinden bagimsiz dekod eder. Uzanti onemli degil; `.qta` (QuickTime+AAC) dahil tum mobil formatlar **dogrudan calisir** (test edildi: iPhone Voice Memo `Yeni Kayit 24.qta` → 48 kHz stereo AAC → 11.2 dk → 60 sn audio'da 24 segment, Turkce transkript dogru).
 - **macOS / mlx-whisper:** mlx_whisper'in dahili `load_audio`'su ffmpeg subprocess gerektiriyor; ffmpeg yerine **`afconvert` (macOS native)** ile dosya 16 kHz mono PCM'e on yuklenir, numpy olarak verilir. ffmpeg dependency'si gerekmiyor.
+
+#### Meet Dictation (Google Meet kayitlari, video dahil)
+
+Tray menusunden **"🎥 Meet Dictation..."** ile baslatilir. Mevcut bir Google Meet kaydini (veya herhangi bir video/ses dosyasini) sade dictation olarak transkripte eder. **Konusmaci ayirma (diarization) yok** — o ozellik kodda korunuyor ama tray'den cagrilmiyor; ileride opt-in "ek ozellik" olarak geri acilacak (bkz. `_pick_file_and_meet_dictate` ve speechbrain helper'lari, kullanilmadigi surece lazy import maliyeti yok).
+
+**Akis (23 May 2026):**
+1. Tray'den "🎥 Meet Dictation..." secilir.
+2. Dosya secici acilir — Meet kayitlari icin tipik formatlar: `.mp4` (Meet default), `.webm`, `.mov`, `.mkv` + her tur ses formati.
+3. **Dosya ismi dialog'u** acilir (lecture stop ile ayni helper; default = dosya stem).
+4. Audio decode:
+   - **Windows/Linux:** `faster_whisper.audio.decode_audio` (PyAV/libav, mp4 dahil her container).
+   - **macOS:** `_load_audio_via_afconvert` (native afconvert, ffmpeg gerekmez).
+5. Ses 16 kHz mono PCM olarak **`RawRecords/<isim>.wav`** altina yazilir (`_save_wav`, stdlib `wave`). Isim cakisirsa timestamp suffix.
+6. Whisper transkript (`beam=5`, `word_timestamps=False`); `_finalize_segments` ile B1-B4 temizligi otomatik (low-confidence drop + artifact strip + word correction + filler dedupe).
+7. **`VoiceDictation/<isim>.md`** yazilir (`_write_lecture_markdown`, header "Meet Dictation — <isim>").
+8. **Orijinal dosya (mp4 video dahil) DOKUNULMAZ — Meet Recordings/ klasoru veya hangi konumdaysa yerinde kalir.** Bu, `--transcribe`/"Ses dosyasini dok..." akisinin `shutil.move` davranisindan tek farktir.
+
+**Kaynak konum (tipik):** Meet otomatik Drive senkronu `G:\Drive'ım\Meet Recordings\` altina mp4'leri uzantisiz isimle dusurur (ornek: `trz-rjon-krk (2026-05-01 13 56 GMT) (1)`). Yigit bu dosyalari **elle isimlendirip** ayni klasorun alti olan **`G:\Drive'ım\Meet Recordings\RawRecords\`** altina tasiyor (ornek: `Mustafa-Yiğit tivibu toplantısı.mp4`). Sistem bu yapidan bagimsiz — kullanici dosya seciciyle elle gider; "🎥 Meet Dictation..." akisi orijinal dosyayi okur ama dokunmaz. Orijinal video burada kaldigi icin slide/ekran paylasimi/demo gibi gorsellere sonradan erisim bozulmaz.
+
+**Konusmaci ayirma neden simdilik kapali:** 22 May tarihli Meet diarization tek-konusmaciya yapisma + yanlis kume sayisi sorunu (TODO.md "Diarization (Meet) duzgun calismiyor"). Cozulene kadar gunluk Meet transkriptleri sade dictation ile guvenli; speaker-labelli MD ileride **ek ozellik** olarak (CLI flag veya ayri tray entry) geri acilacak.
 
 #### iPhone / Mobil Ses Kayitlari Akisi (Voice Memos, WhatsApp, vs.)
 
@@ -185,76 +200,16 @@ source venv/bin/activate && python dictation.py
 - rumps (macOS menu bar GUI)
 - logging (dosya + konsol, seviyeli loglama)
 
-### Windows Auto-Start (Bilgisayar Acilisinda Otomatik Baslatma)
+### Auto-Start
 
-Uygulama Windows baslarken otomatik calismali ve her zaman repodaki guncel kodu kullanmali.
+Daemon her iki platformda da repo'daki guncel `dictation.py`'dan calistirilir — `git pull` / dosya duzenleme sonrasi extra adim yok, bir sonraki acilis/login'de yeni kod devreye girer.
 
-**Mekanizma:** Startup klasorune VBScript koyulur, VBScript konsolsuz olarak `start.bat`'i calistirir.
+- **Windows:** Startup klasorunde `start.vbs` (`start.bat`'i konsolsuz calistirir) → `venv/Scripts/python.exe dictation.py`.
+- **macOS:** Login Items → `scripts/VoiceDictation.app` (osacompile uretilen AppleScript .app). LaunchAgent **kullanilmaz** — macOS Tahoe'da TCC dialog'u arka planda hang yapiyor; AppleScript .app `Automation` TCC kategorisinde oldugu icin calisir.
 
-**Dosyalar:**
-- `start.bat` — repo kokunde, `venv/Scripts/python.exe dictation.py` calistirir
-- `start.vbs` — repo kokunde, `start.bat`'i konsolsuz (gizli pencere) calistirir
-- Windows Startup klasoru kisayolu: `shell:startup` → `start.vbs` kisayolu
+> **Mac'te 4 izin zorunlu:** Mikrofon, Otomasyon, Input Monitoring, Accessibility. Eksikse kayit/launch/hotkey/paste bozulur.
 
-**Guncelleme Akisi:**
-- `dictation.py` degistiginde startup kisayolu guncellenmez — zaten repo'dan calistirilir
-- Tek yapilmasi gereken: `git pull` veya kodu duzenlemek
-- Bir sonraki bilgisayar acilisinda yeni kod otomatik devreye girer
-
-**Kurulum Adimlari (bir kez yapilir):**
-1. `start.bat` ve `start.vbs` dosyalari repo kokunde olusturulur
-2. `Win + R` → `shell:startup` → VBScript'e kisayol koyulur
-3. Tamamdir — bir daha dokunulmaz
-
-### macOS Auto-Start (Login'de Otomatik Baslatma)
-
-**Mekanizma:** Login Items -> `scripts/VoiceDictation.app` (osacompile uretilen AppleScript .app).
-.app `do shell script` ile `venv/bin/python -u dictation.py` calistirir.
-
-> **NEDEN AppleScript .app:** macOS Tahoe Desktop'a TCC kisitlamasi koyuyor.
-> - LaunchAgent: mikrofon TCC dialog'u arka planda gosterilemiyor, hang oluyor
-> - Login Items + start.sh: TextEdit ile aciliyor, execute olmuyor
-> - Login Items + ad-hoc imzali shell-script-app: TCC sessizce reddediyor (`PermissionError`)
-> - **Login Items + AppleScript .app:** `Automation` TCC kategorisinde, calisir ✅
-
-**Dosyalar:**
-- `scripts/VoiceDictation.app/` — osacompile uretilen .app bundle
-  - `Contents/Resources/Scripts/main.scpt` — `do shell script "cd ... && nohup ... &"`
-  - `Contents/Info.plist` — `LSUIElement=true` (dock'ta gorunmez)
-- `scripts/start.sh` — manuel baslatma icin (Login Items'ta kullanilmaz)
-
-**Guncelleme Akisi:**
-- `dictation.py` degistiginde .app guncellenmez — zaten repo'dan calistirilir
-- Tek yapilmasi gereken: `git pull` veya kodu duzenlemek
-- Bir sonraki login'de yeni kod otomatik devreye girer
-
-**Kurulum Adimlari (bir kez yapilir):**
-1. System Settings -> General -> Login Items & Extensions
-2. "Open at Login" altinda **+** -> `Cmd+Shift+G` -> `scripts/VoiceDictation.app` yolunu yapistir
-3. Ilk acilista **mikrofon** + **otomasyon** izinleri istenir → "Izin Ver"
-4. Privacy & Security panellerinde manuel toggle:
-   - **Input Monitoring** → `applet` entry'sini AC (Caps Lock hotkey icin)
-   - **Accessibility** → `applet` entry'sini AC (Cmd+V + Enter gonderme icin)
-5. Dictation'i bir kez yeniden baslat (izin degisikligi icin)
-6. Tamamdir — bir daha dokunulmaz
-
-**ZORUNLU 4 IZIN:**
-| Izin | Eksikse ne bozulur |
-|------|-------------------|
-| Mikrofon | Hicbir kayit yapilamaz |
-| Otomasyon | .app launcher hata, dictation baslamaz |
-| Input Monitoring | Caps Lock algilanmaz (sadece wake word calisir) |
-| Accessibility | Metin clipboard'da kalir, paste etmez |
-
-> Stale entry'ler: macOS eski .app denemelerinden TCC'de "VoiceDictation" gibi entry'ler
-> birakabilir. **−** butonuyla silinebilir. Aktif olan: `applet`.
-
-**.app yeniden olusturulmasi gerekirse** (osacompile + codesign):
-```bash
-osacompile -o scripts/VoiceDictation.app <(echo 'do shell script "cd '\''/full/path/to/repo'\'' && nohup venv/bin/python -u dictation.py > /dev/null 2>&1 &"')
-# LSUIElement=true ekle Info.plist'e (dock gizleme)
-codesign --sign - --force --deep scripts/VoiceDictation.app
-```
+Tam kurulum adimlari, izin troubleshooting'i, stale TCC entry temizligi ve `.app` yeniden olusturma snippet'i: [docs/auto-start.md](docs/auto-start.md).
 
 ---
 
@@ -311,4 +266,4 @@ Kullanici ile **Turkce** iletisim kur.
 
 ---
 
-*Son Guncelleme: 23 Mayis 2026 — yeni klasor duzeni (G:\Drive Records\{VoiceDictation,RawRecords}), Lecture WAV dump, LIVE pass gecici dosyaya yazar (Drive'a yazilmaz, kayit bitince silinir), halusinasyon paket 2 (B1-B4), stop'ta isim dialog (Windows+Mac), Mac session ilk acilis prompt'u, CHANGELOG.md kuruldu, TODO.md toparlandi.*
+*Son Guncelleme: 23 Mayis 2026 — Meet Dictation default davranisi diarize'siz plain dictation oldu (`_pick_file_and_meet_dictate_plain`); orijinal mp4 yerinde kalir, ses RawRecords/<isim>.wav'a yazilir, transkript VoiceDictation/<isim>.md'ye. Eski diarize'li pipeline ileride opt-in olarak geri acilacak. Onceki: sadelestirme (auto-start docs/'a), yeni klasor duzeni, Lecture WAV dump, LIVE pass gecici dosya, halusinasyon paket 2 (B1-B4), stop'ta isim dialog, CHANGELOG/TODO toparlama.*

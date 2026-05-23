@@ -473,7 +473,7 @@ def _start_menubar_gui():
                 "📁 Ses dosyasını dök...", callback=self.on_pick_file
             )
             self._meet_item = rumps.MenuItem(
-                "🎙 Meets Dictation (konuşmacı ayır)...", callback=self.on_meet_dictation
+                "🎥 Meet Dictation...", callback=self.on_meet_dictation
             )
             # Ayarlar submenu items
             self._wake_item = rumps.MenuItem(
@@ -560,7 +560,9 @@ def _start_menubar_gui():
             threading.Thread(target=_pick_file_and_transcribe, daemon=True).start()
 
         def on_meet_dictation(self, _):
-            threading.Thread(target=_pick_file_and_meet_dictate, daemon=True).start()
+            # 23 May 2026: diarize'suz plain Meet Dictation. Eski diarize'li
+            # _pick_file_and_meet_dictate ileride opt-in olarak geri acilacak.
+            threading.Thread(target=_pick_file_and_meet_dictate_plain, daemon=True).start()
 
         def on_reset(self, _):
             _do_reset()
@@ -620,7 +622,9 @@ def _start_tray_gui():
         threading.Thread(target=_pick_file_and_transcribe, daemon=True).start()
 
     def on_meet_dictation(icon, item):
-        threading.Thread(target=_pick_file_and_meet_dictate, daemon=True).start()
+        # 23 May 2026: diarize'suz plain Meet Dictation. Eski diarize'li
+        # _pick_file_and_meet_dictate ileride opt-in olarak geri acilacak.
+        threading.Thread(target=_pick_file_and_meet_dictate_plain, daemon=True).start()
 
     def on_change_wake_word(icon, item):
         threading.Thread(target=_prompt_change_wake_word, daemon=True).start()
@@ -637,7 +641,7 @@ def _start_tray_gui():
             on_lecture_toggle,
         ),
         pystray.MenuItem("📁 Ses dosyasını dök...", on_pick_file),
-        pystray.MenuItem("🎙 Meets Dictation (konuşmacı ayır)...", on_meet_dictation),
+        pystray.MenuItem("🎥 Meet Dictation...", on_meet_dictation),
     )
 
     # Submenu: Ayarlar
@@ -2113,7 +2117,155 @@ def _pick_file_and_transcribe():
         sound_error()
 
 
-# ---------- MEET DICTATION (file + diarization + names) ----------
+# ---------- PLAIN MEET DICTATION (file-pick + WAV + transcribe, NO diarization) ----------
+# 23 Mayis 2026: konusmaci ayirma (eski `_pick_file_and_meet_dictate`) opt-in ek ozellige
+# alindi. Default tray davranisi PLAIN dictation — Meet `.mp4` (veya herhangi bir video/ses
+# dosyasi) secilince ses tarafi cikartilir, `RawRecords/<isim>.wav` olarak diske yazilir,
+# transkript `VoiceDictation/<isim>.md`'ye. **Orijinal dosya (video dahil) dokunulmaz** —
+# Meet Recordings/ klasoru veya hangi konumdaysa yerinde kalir. Eski diarize pipeline
+# (`_pick_file_and_meet_dictate` + helper'lari) kodda korunuyor; ileride opt-in flag ile
+# geri acilacak.
+
+def _pick_file_and_meet_dictate_plain():
+    """Tray '🎥 Meet Dictation...' callback'i. Diarize YOK.
+
+    Akis: dosya sec -> isim sor -> ses decode (mp4/webm/vs. cikarilir) -> RawRecords/<isim>.wav
+    -> Whisper transkript (beam=5, _finalize_segments otomatik) -> VoiceDictation/<isim>.md.
+    Orijinal Meet dosyasi dokunulmadan yerinde kalir.
+    """
+    try:
+        # 1) Dosya sec
+        if IS_MAC:
+            path = _pick_audio_file_macos()
+        else:
+            import tkinter as tk
+            from tkinter import filedialog
+            root = tk.Tk()
+            root.withdraw()
+            try:
+                root.attributes("-topmost", True)
+            except Exception:
+                pass
+            path = filedialog.askopenfilename(
+                title="Meet kaydi sec (sesi cikarilir, orijinal yerinde kalir)",
+                filetypes=[
+                    ("Meet video / ses", "*.mp4 *.mov *.mkv *.avi *.webm *.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus *.qta"),
+                    ("Tum dosyalar", "*.*"),
+                ],
+            )
+            try:
+                root.destroy()
+            except Exception:
+                pass
+
+        if not path:
+            log.info("[MEET-PLAIN] Secim iptal edildi.")
+            return
+
+        log.info(f"[MEET-PLAIN] Dosya secildi: {path}")
+
+        # 2) Isim sor (default = dosya stem); iptal/bos => default'a duser
+        default_name = os.path.splitext(os.path.basename(path))[0]
+        user_name = _prompt_lecture_filename(default_name)
+        final_name = user_name if user_name else default_name
+        log.info(f"[MEET-PLAIN] Hedef isim: {final_name}")
+
+        sound_recording()
+
+        # 3) Audio decode -> float32 [-1, 1] @ 16 kHz mono
+        try:
+            if IS_MAC:
+                # afconvert: ffmpeg yok, native macOS
+                audio = _load_audio_via_afconvert(path)
+            else:
+                # Windows/Linux: faster-whisper bundled libav (PyAV)
+                from faster_whisper.audio import decode_audio
+                audio = decode_audio(path, sampling_rate=SAMPLE_RATE)
+        except Exception as e:
+            log.error(f"[MEET-PLAIN] Audio decode hatasi: {e}", exc_info=True)
+            sound_error()
+            _show_meet_error(
+                f"Ses dosyasi decode edilemedi.\n\n"
+                f"Dosya: {os.path.basename(path)}\n\nDetay: {e}\n\nLog: logs/dictation.log"
+            )
+            return
+
+        audio_dur = len(audio) / SAMPLE_RATE
+        log.info(f"[MEET-PLAIN] Audio decoded: {audio_dur:.0f}sn")
+
+        if audio_dur < 1.0:
+            sound_error()
+            _show_meet_error(
+                f"Dosya cok kisa ({audio_dur:.1f}sn). Bos placeholder olabilir; Meet "
+                f"kayitlarinda asil dosya genelde '(1)' suffix'lidir.\n\n"
+                f"Dosya: {os.path.basename(path)}"
+            )
+            return
+
+        # 4) WAV yaz (RawRecords/<isim>.wav, isim cakisirsa timestamp suffix)
+        raw_dir = _get_rawrecords_dir()
+        wav_path = os.path.join(raw_dir, f"{final_name}.wav")
+        if os.path.exists(wav_path):
+            wav_path = os.path.join(raw_dir, f"{final_name}_{time.strftime('%Y%m%d_%H%M%S')}.wav")
+        try:
+            _save_wav(audio, wav_path)
+            log.info(f"[MEET-PLAIN] WAV yazildi: {wav_path}")
+        except Exception as e:
+            log.error(f"[MEET-PLAIN] WAV yazma hatasi: {e}", exc_info=True)
+            sound_error()
+            _show_meet_error(f"WAV yazilamadi: {e}\n\nLog: logs/dictation.log")
+            return
+
+        # 5) Transcribe (B1-B4 temizligi _finalize_segments icinde otomatik)
+        try:
+            text, segments = _transcribe_audio_path(audio, beam_size=5, word_timestamps=False)
+        except Exception as e:
+            log.error(f"[MEET-PLAIN] Transcribe hatasi: {e}", exc_info=True)
+            sound_error()
+            _show_meet_error(f"Transcribe hatasi: {e}\n\nLog: logs/dictation.log")
+            return
+
+        if not segments and not text:
+            log.warning("[MEET-PLAIN] Transkript bos.")
+            sound_error()
+            _show_meet_error("Whisper transkripti bos — konusma algilanamadi.")
+            return
+
+        # 6) MD yaz (VoiceDictation/<isim>.md, isim cakisirsa timestamp suffix)
+        md_dir = _get_voicedictation_dir()
+        md_path = os.path.join(md_dir, f"{final_name}.md")
+        if os.path.exists(md_path):
+            md_path = os.path.join(md_dir, f"{final_name}_{time.strftime('%Y%m%d_%H%M%S')}.md")
+        try:
+            _write_lecture_markdown(
+                md_path, segments, audio_dur, wav_path,
+                header_title=f"Meet Dictation — {final_name}",
+            )
+            log.info(f"[MEET-PLAIN] MD yazildi: {md_path}")
+        except Exception as e:
+            log.error(f"[MEET-PLAIN] MD yazma hatasi: {e}", exc_info=True)
+            sound_error()
+            _show_meet_error(f"MD yazilamadi: {e}\n\nLog: logs/dictation.log")
+            return
+
+        sound_sent()
+        log.info(f"[MEET-PLAIN] Tamam — orijinal: {path} (dokunulmadi); WAV: {wav_path}; MD: {md_path}")
+        _open_in_editor(md_path)
+
+    except Exception as e:
+        log.error(f"[MEET-PLAIN] Beklenmedik hata: {e}", exc_info=True)
+        sound_error()
+        _show_meet_error(f"Beklenmedik hata:\n\n{e}\n\nLog: logs/dictation.log")
+
+
+# ---------- MEET DICTATION (file + diarization + names) — OPT-IN, su an tray'den cagrilmiyor ----------
+# 23 Mayis 2026: tray default davranisi yukaridaki _pick_file_and_meet_dictate_plain'e bagli.
+# Asagidaki diarize'li versiyon (speechbrain + sklearn + speaker naming UI) ileride
+# "ek ozellik" olarak opt-in flag/menu item ile geri acilacak. Helper'lar (_load_voice_encoder,
+# _diarize_audio_sliding_window, _split_segments_by_diarization, _smooth_speaker_labels,
+# _apply_speaker_names, _MeetProgressDialog, _ask_speaker_count_*, _ask_speaker_names_*,
+# _write_meet_dictation_markdown) yerinde duruyor — kullanilmadigi surece import maliyeti
+# yok (speechbrain/torch/sklearn lazy import).
 
 def _show_meet_error(message):
     """Hata mesajini messagebox ile goster (Win + Mac). Sessiz hata olmasin."""

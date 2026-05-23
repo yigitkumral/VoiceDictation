@@ -28,9 +28,14 @@ Mac'te ilk session acildiginda yapilmasi gerekenler:
 
 ## Acik Isler
 
-### Lecture / Toplanti Modu
+### Meet Dictation / Diarization (ek ozellik geri acma)
 
-- [ ] **Diarization (Meet) duzgun calismiyor** (22 May 2026 raporu, hala acik).
+- [ ] **Diarization (Meet) tray'den gizlendi — opt-in olarak geri ac** (23 May 2026 itibariyla default davranis diarize'siz `_pick_file_and_meet_dictate_plain`; eski diarize'li `_pick_file_and_meet_dictate` ve speechbrain helper'lari kodda korunuyor ama tray'den cagrilmiyor).
+  - Asagidaki diarize sorunu cozulduikten sonra opt-in olarak geri acilacak. Olasi yollar:
+    1. Yeni tray menu item: "🎥 Meet Dictation (konusmaci ayir)..." -> eski `_pick_file_and_meet_dictate` callback'i.
+    2. Veya CLI flag: `--diarize` (Win headless mode'a benzer).
+    3. Veya plain akista "konusmaci sayisi ver" dialog'una "0 = ayirma" / "N>0 = N konusmaci ayir" gibi unified UX.
+- [ ] **Diarization (Meet) duzgun calismiyor** (22 May 2026 raporu, hala acik — opt-in geri acmadan once cozulmeli).
   - Belirtiler: konusmacilar yanlis kumeleniyor, isimler yanlis ataniyor, tum transkript tek konusmaciya yapisiyor.
   - Platform: Windows, kayit tipi: Google Meet mp4.
   - Plan:
@@ -38,7 +43,7 @@ Mac'te ilk session acildiginda yapilmasi gerekenler:
     2. Tek-konusmaciya yapismanin sebebi: cluster sayisi 1'e mi dusuyor (low threshold) yoksa yanlis affinity mi? Ayirt et.
     3. Threshold/affinity tuning (cosine + dynamic threshold).
     4. Gerekirse pyannote-style turn boundary detection.
-  - Referans dosya: Drive'da `Meet Recordings/trz-rjon-krk (2026-05-01 13 56 GMT) (1)`
+  - **Referans test dosyasi:** `G:\Drive'ım\Meet Recordings\RawRecords\Mustafa-Yiğit tivibu toplantısı.mp4` (32.5 MB, 16dk, TVBuy telif hakki toplantisi — Mustafa + Yigit iki belirgin konusmaci, diarize icin temiz benchmark).
 
 ### Konfigurasyon / Persist
 

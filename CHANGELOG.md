@@ -7,6 +7,70 @@ Format: tarih + baslik. Implementation detaylari icin commit ID referans verilir
 
 ---
 
+## 2026-05-23 (en gec) — CLAUDE.md sadelestirme + Drive Records index + Meet Recordings manuel arsiv
+
+### CLAUDE.md sadelestirme (315 -> 247 satir)
+
+- Windows + macOS Auto-Start kurulum reseteleri (~70 satir) **`docs/auto-start.md`**'ye birebir tasindi; CLAUDE.md'de 5-6 satir ozet + link kaldi. Kurulum bir kez yapilan i$ oldugu icin agent'in her session'da okumasi gerekmiyordu.
+- Mac'te ilk session bloguu (0.5) ~15 sat -> 5 sat'a kisaltildi; tam Mac-spesifik test checklist'i zaten TODO.md'de var (daha detayli), CLAUDE.md sadece tarih + linkle proaktif hatirlatma yapar.
+- Yeni: `docs/auto-start.md` (76 sat) — Win VBScript + Mac AppleScript .app kurulum, TCC izinleri (4 zorunlu izin tablosu), stale TCC entry temizligi, `.app` yeniden olusturma snippet'i.
+
+### Drive Records paylasimli klasor index
+
+- Yeni dosya: **`G:\Drive'ım\Records\index.md`** — Records klasoru birden cok proje tarafindan kullanilabilen merkezi depo oldugu icin agent'lara rehber. Icinde "Klasor Sozlugu" (VoiceDictation/ + RawRecords/, hangi proje yazar), "Aktif Projeler" (su an: VoiceDictation; repo yolu + akis tablosu + Drive sabitleri), "Cross-Project Referanslar" (bos placeholder), "Agent Talimatlari" (5 maddelik kural: yeni proje, yeni klasor, cross-project read, rename, index update) var.
+- `Records/RawRecords/` ile `Meet Recordings/RawRecords/` karismasin diye index'te ayrim notu — birincisi VoiceDictation'in **otomatik yazdigi** islenmis ses, ikincisi Yigit'in **elle isimlendirip tasidigi** Meet ham kayitlari (mp4 video dahil).
+- VoiceDictation/CLAUDE.md §1 Modlar > Lecture Mode altina tek satir not: "Records paylasimli — yeni klasor/davranis eklerken index.md'yi de guncelle."
+
+### Meet Recordings manuel arsiv (repo disi)
+
+- Drive'da `G:\Drive'ım\Meet Recordings\RawRecords\` alt klasoru olusturuldu (mevcut `Records/RawRecords/` ile ayni isim/mantik, Yigit'in elle yonettigi Meet ham kayit arsivi).
+- Iki bekleyen Meet kaydi yeniden isimlendirilip tasindi:
+  - `trz-rjon-krk (2026-05-01 13 56 GMT) (1)` (32.5 MB, 16dk) -> **`Mustafa-Yiğit tivibu toplantısı.mp4`** (TVBuy telif hakki / korsan koruma toplantisi, Govinet firmasi)
+  - `trz-rjon-krk (2026-05-01 13 56 GMT) 2` (108.2 MB, 16dk) -> **`Mustafa-Yiğit Doğu.mp4`** (TVBuy projesi kapsaminda)
+- Drive Meet otomasyonu mp4'leri uzantisiz dusurdugu icin `.mp4` uzantisi manuel eklendi — Windows'ta dogru ikon + tray "🎥 Meet Dictation..." filtresine dusus icin.
+- CLAUDE.md Meet Dictation alt-bolumunde "Kaynak konum" ornegi guncellendi (Meet otomasyonu -> manuel isimlendirme -> Meet Recordings/RawRecords/ pattern'i).
+
+---
+
+## 2026-05-23 (gec) — Meet Dictation default davranisi: diarize'siz plain dictation
+
+Kullanici talebi: "konusmaci ayirma artik olmasin. Meets dosyalari Dictation'dan gecirilsin
+ses tarafi. Goruntu tarafi varsa ellenmesin, oldugu yerde birakilsin." Diarization, gunluk
+Meet transkriptlerini sabote ediyor (TODO acik is: tek-konusmaciya yapisma, yanlis kume
+sayisi); cozulene kadar default sade dictation'a alindi.
+
+### Davranis degisikligi
+
+- Tray menusu **"🎙 Meets Dictation (konuşmacı ayır)..."** → **"🎥 Meet Dictation..."** (Win + Mac).
+- Callback yeni `_pick_file_and_meet_dictate_plain()`'e baglandi. Eski diarize'li
+  `_pick_file_and_meet_dictate()` (line 2612+) ve speechbrain helper'lari (line 1293-1581)
+  yerinde duruyor — opt-in flag/menu item ile ileride geri acilacak. Lazy import oldugu
+  icin kullanilmadigi surece speechbrain/torch/sklearn yuku yok.
+
+### Plain Meet Dictation akisi (`_pick_file_and_meet_dictate_plain`)
+
+1. Dosya secici: mp4/webm/mov/mkv/avi/wav/mp3/m4a/aac/flac/ogg/opus/qta.
+2. Isim dialog'u: `_prompt_lecture_filename` (lecture stop ile ayni helper, default = dosya stem).
+3. Audio decode: Windows/Linux `faster_whisper.audio.decode_audio` (PyAV/libav), macOS `_load_audio_via_afconvert`.
+4. `_save_wav(audio, RawRecords/<isim>.wav)` — 16 kHz mono PCM, stdlib `wave` (isim cakisirsa timestamp suffix).
+5. `_transcribe_audio_path(audio, beam_size=5, word_timestamps=False)` — `_finalize_segments` B1-B4 temizligi otomatik.
+6. `_write_lecture_markdown(VoiceDictation/<isim>.md, ..., header="Meet Dictation — <isim>")`.
+7. `_open_in_editor(md_path)` — sonuc kullaniciya gosterilir.
+
+### Orijinal dosya politikasi (kritik fark)
+
+`--transcribe`/"Ses dosyasini dok..." akisi orijinal dosyayi `shutil.move` ile RawRecords'a
+**tasiyor**. Meet Dictation **tasimaz** — orijinal mp4 (video dahil) bulundugu konumda
+(tipik: `G:\Drive'ım\Meet Recordings\`) dokunulmadan kalir. Sebep: kullanici video tarafina
+sonradan tekrar bakmak isteyebilir (ekran paylasimi, slide, demo), goruntu kaybi olmasin.
+
+### CLAUDE.md
+
+§1 Modlar bolumune yeni "Meet Dictation" alt-baslik eklendi. Konusmaci ayirma neden simdilik
+kapali, akis adimlari, orijinal dosya politikasi documente edildi.
+
+---
+
 ## 2026-05-23 — Yeni klasor duzeni + LIVE gecici + Stop dialog + Halusinasyon paket 2
 
 ### Klasor duzeni (CLAUDE.md §1 guncellendi)
