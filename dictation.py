@@ -2974,9 +2974,38 @@ _WAKE_RE = _DEFAULT_WAKE_RE
 
 _WORD_CORRECTIONS = [
     # Zugzwang (Almanca satranc terimi): zooksvang, zooksvank, zugsvang, zuckswang,
-    # zucksvang, zugswang, zoogzwang, zukzwang, zooks vank vb. -> Zugzwang
-    # Whisper hem -ng hem -nk hem -ngk yazabilir, ortada bosluk birakabilir.
-    (re.compile(r"\bz[ou]+[gcktsz]+\s*[vw]an[gk]+\b", re.IGNORECASE), "Zugzwang"),
+    # zucksvang, zugswang, zoogzwang, zukzwang, zuxvank, zooks vank vb. -> Zugzwang
+    # Whisper hem -ng hem -nk hem -ngk yazabilir, ortada x/bosluk birakabilir.
+    (re.compile(r"\bz[ou]+[gcktsxz]+\s*[vw]an[gk]+\b", re.IGNORECASE), "Zugzwang"),
+
+    # --- Kalibrasyon paketi 1 (18 Haz 2026): reference_tr.txt sesli okuma diff'i ---
+    # Claude (Anthropic) — clout/cloud/claud/klod/klot -> Claude; ardindan "Claude code" -> "Claude Code"
+    # NOT: dogru form "Claude" (sondaki 'e' + \b) bu pattern'e takilmaz, sadece hatali varyasyonlar duzelir.
+    (re.compile(r"\b[ck]l[ao]u?[dt]\b", re.IGNORECASE), "Claude"),
+    (re.compile(r"\bClaude\s+code\b", re.IGNORECASE), "Claude Code"),
+    # Atelier projesi — ateliyer/atelyal/atelial/ateliyel -> Atelier
+    (re.compile(r"\batel[iy]+[ae]?[lr]\b", re.IGNORECASE), "Atelier"),
+    # VoiceDictation — "Voice Daktion / Voice Diction / Voice Stick" -> VoiceDictation
+    (re.compile(r"\bvoice\s*(?:da?ktion|diction|stick)\b", re.IGNORECASE), "VoiceDictation"),
+    # NotebookLM — "notebook lm / notebook lmd" -> NotebookLM
+    (re.compile(r"\bnotebook\s*lm[dt]?\b", re.IGNORECASE), "NotebookLM"),
+    # BMAD metodolojisi — vmed/vmad/vmat/bmat -> BMAD
+    (re.compile(r"\b[vb]m[ae][dt]\b", re.IGNORECASE), "BMAD"),
+    # PRD dosyasi — PDD -> PRD
+    (re.compile(r"\bP[RD]D\b"), "PRD"),
+    # ChatGPT — "chat gpt" -> ChatGPT
+    (re.compile(r"\bchat\s+gpt\b", re.IGNORECASE), "ChatGPT"),
+    # delisting — "d-listing" / "d listing" -> delisting ("delisting" dogru formu takilmaz)
+    (re.compile(r"\bd[-\s]?listing\b", re.IGNORECASE), "delisting"),
+    # PID lockfile — "PID log file" -> "PID lockfile"
+    (re.compile(r"\bPID\s+log\s*file\b", re.IGNORECASE), "PID lockfile"),
+    # docs klasoru — "doks"/"dox"/"doxs" -> docs (kosulsuz, guvenli:
+    #   "doksan"/"doku"/"Docs" dogru formu \b sayesinde takilmaz)
+    (re.compile(r"\bdo(?:ks|xs?)\b", re.IGNORECASE), "docs"),
+    # "box" -> docs SADECE klasor baglaminda (altinda/arsiv/yol/klasor); apostrofa
+    # ve genitif ekine ('un, 'a) tolerans. "Black Box" ve "Agent Box" korunur (lookbehind).
+    (re.compile(r"(?<!black )(?<!agent )\bbox(?=['’]?\w*\s+(?:alt|arşiv|yol|klasör))",
+                re.IGNORECASE), "docs"),
 ]
 
 

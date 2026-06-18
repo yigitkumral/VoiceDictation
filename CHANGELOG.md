@@ -7,6 +7,43 @@ Format: tarih + baslik. Implementation detaylari icin commit ID referans verilir
 
 ---
 
+## 2026-06-18 — Kalibrasyon paketi 1: sesli-okuma diff'inden kelime duzeltmeleri
+
+Yontem degisikligi: kronik Whisper transkripsiyon hatalarini gunluk log madenciligi yerine
+**tek bir kalibrasyon okumasiyla** yakaladik. Kullaniciya domain jargonunu + konusma stilini
+iceren ~5 paragraflik Turkce metin (`calibration/reference_tr.txt`) okutuldu; referans ↔
+Whisper ciktisi karsilastirilip ~25 substitution kalibi cikarildi. WER ~%8-9, hatalar ozel
+isimlerde yogunlasiyordu (bağlam kopmasinin asil sebebi).
+
+### Yeni: `calibration/`
+
+- **`reference_tr.txt`** — kalibrasyon okuma metni (3466 dikte log korpusu + Claude Code sohbet
+  gecmisinden damitilan jargon + kullanicinin gercek cumle ritmi; her kronik hata terimi gomulu).
+- **`README.md`** — kalibrasyon mantigi (jiwer diff → `_WORD_CORRECTIONS`/`hotwords` onerisi) ve
+  planlanan `--calibrate` motoru akisi.
+
+### `_WORD_CORRECTIONS` genisletildi (dictation.py)
+
+Tek kayittan (Zugzwang) 13 kayda cikti. Hepsi `quick_transcribe → _clean_transcription` uzerinden
+ana dikte akisinda aktif, geriye uyumlu:
+
+- **Zugzwang `x` bug fix** — eski regex `[gcktsz]` "Zuxvank" varyasyonunu kaciriyordu → `[gcktsxz]`.
+- **Claude/Claude Code** (clout/cloud/claud/klod), **Atelier** (ateliyer/atelyal/atelial/ateliyel),
+  **VoiceDictation** (Voice Daktion/Diction/Stick), **NotebookLM**, **BMAD** (VMED), **PRD** (PDD),
+  **ChatGPT** (chat GPT), **delisting** (D-Listing), **PID lockfile** (PID log file).
+- **docs** — `doks`/`dox` kosulsuz → docs; `box` → docs SADECE klasor baglaminda
+  (altinda/arsiv/yol/klasor), "Black Box" ve "Agent Box" lookbehind ile korunur.
+
+25 kalip icin izole regex testi (18 duzeltme + 7 false-positive) gecti. Daemon restart ile canli.
+
+### Acik / sonraki
+
+- B grubu (branch←"bir an", refactor←"reflektör", commit←"komit") regex'e uygun degil →
+  `hotwords` decode-boost'u bekliyor.
+- `--calibrate` motoru (jiwer ile tam otomatik diff) henuz yazilmadi.
+
+---
+
 ## 2026-05-23 (en gec) — CLAUDE.md sadelestirme + Drive Records index + Meet Recordings manuel arsiv
 
 ### CLAUDE.md sadelestirme (315 -> 247 satir)
