@@ -1,0 +1,16 @@
+["mcp_servers"]
+
+["mcp_servers"."context7"]
+"command" = "C:\\Python314\\python.exe"
+"args" = ["C:\\Users\\yigit\\Desktop\\Yazilim\\iFonzo\\tools\\codex\\sync-claude.py", "--serve", "context7", "--project", "C:\\Users\\yigit\\Desktop\\Yazilim\\VoiceDictation"]
+"enabled" = true
+
+["mcp_servers"."filesystem"]
+"command" = "C:\\Python314\\python.exe"
+"args" = ["C:\\Users\\yigit\\Desktop\\Yazilim\\iFonzo\\tools\\codex\\sync-claude.py", "--serve", "filesystem", "--project", "C:\\Users\\yigit\\Desktop\\Yazilim\\VoiceDictation"]
+"enabled" = true
+
+["mcp_servers"."playwright"]
+"command" = "C:\\Python314\\python.exe"
+"args" = ["C:\\Users\\yigit\\Desktop\\Yazilim\\iFonzo\\tools\\codex\\sync-claude.py", "--serve", "playwright", "--project", "C:\\Users\\yigit\\Desktop\\Yazilim\\VoiceDictation"]
+"enabled" = true

@@ -17,7 +17,7 @@ push'la, `gh pr create` ile PR ac.
 
 ## 0.5) **AGENT'A:** Mac'te Ilk Session Aciliyorsa
 
-Yigit Mac'te yeni Claude Code session actiginda **ilk konusmada** proaktif hatirlat: son Mac dogrulamasi **26 Nisan 2026** (CHANGELOG'da `macOS test paketi`). O tarihten sonraki 22-23 Mayis fix paketleri (halusinasyon B1-B4, yeni klasor duzeni, Lecture WAV dump, LIVE gecici dosya, stop'ta isim dialog) **Windows'ta dogrulandi, Mac'te dogrulanmadi**.
+Yigit Mac'te yeni Claude Code veya Codex session actiginda **ilk konusmada** proaktif hatirlat: son Mac dogrulamasi **26 Nisan 2026** (CHANGELOG'da `macOS test paketi`). O tarihten sonraki 22-23 Mayis fix paketleri (halusinasyon B1-B4, yeni klasor duzeni, Lecture WAV dump, LIVE gecici dosya, stop'ta isim dialog) **Windows'ta dogrulandi, Mac'te dogrulanmadi**.
 
 Tam Mac-spesifik test checklist'i: [TODO.md](TODO.md) "Onemli: Mac'te ilk session" bolumu (Drive yolu, WAV dump, `.qta`/`.m4a` tasima, dialog parite, diarization dahil).
 
