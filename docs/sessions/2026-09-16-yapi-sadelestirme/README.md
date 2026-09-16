@@ -1,7 +1,10 @@
 # VoiceDictation yapı sadeleştirme — 16 Eylül 2026
 
-**Sonuç:** Bağımsız analizler ortak bir hedef yapıda birleşti; Yiğit kararlarını verdi ve P1–P4 değişiklikleri çalışma
-ağacına uygulandı. P0 veri/log geçişi, çalışma zamanı kabulü ve commit'ler koordinatör ile Yiğit'in açık işidir.
+**Sonuç:** Bağımsız analizler ortak bir hedef yapıda birleşti; Yiğit kararlarını verdi, P1–P4 uygulandı ve beş commit'e
+ayrıldı (`24dd634` … `2cee1cb`). P0 aynı gün tamamlandı: 157 günlük log 7 aylık dosyada birleşti (103.526 satır, kayıp yok);
+Drive `Records/` verisi (16 MD + 11 ses, 1003,6 MB) SHA256 doğrulamasıyla `data/` altına alındı ve Drive'dan silindi;
+`--transcribe` smoke testi (göreli Kaynak, aynı adda zaman eki) ve `scripts/start.vbs` ile daemon başlatma geçti; Startup'taki
+kopya `VoiceDictation.lnk` kısayoluyla değiştirildi.
 
 ## Amaç
 
@@ -25,7 +28,7 @@ Windows/macOS kurulumunu taşınabilir kılmak ve belgeleri tek kaynaklı hale g
 3. Yiğit dokuz temel kararı [kararlar.md](kararlar.md) dosyasında netleştirdi.
 4. Dosya sahipleri, kabul kontrolleri ve teslim sırası [plan.md](plan.md) ile belirlendi.
 5. P1 kod, P2 repo hijyeni, P3 kurulum/başlatma ve P4 belge paketleri aynı çalışma ağacında uygulandı.
-6. P0 veri/log geçişi, çalışma zamanı testleri ve commit onayı ayrı tamamlanacak.
+6. P0 veri/log geçişi, çalışma zamanı testleri ve commit'ler aynı gün tamamlandı (koordinatör + Yiğit).
 
 ## Dosya haritası
 
