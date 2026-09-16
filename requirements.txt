@@ -1,5 +1,22 @@
-faster-whisper>=1.1.0
-sounddevice>=0.5.0
-numpy>=1.26.0
-pynput>=1.7.6
-pyperclip>=1.9.0
+# Python 3.14.2 ile test edildi (Windows venv); 3.12+ onerilir.
+# Platforma ozel satirlar PEP 508 kosuluyla secilir: win32 = Windows, darwin = macOS.
+faster-whisper>=1.2.1
+sounddevice>=0.5.5
+numpy>=2.4.3
+pynput>=1.8.1
+pyperclip>=1.11.0
+
+# Windows: tepsi ikonu + CUDA kutuphaneleri (ctranslate2 4.x cuDNN 9 ister)
+pystray>=0.19.5; sys_platform == "win32"
+Pillow>=12.1.1; sys_platform == "win32"
+nvidia-cublas-cu12>=12.9.1.4; sys_platform == "win32"
+nvidia-cudnn-cu12>=9.20.0.48,<10; sys_platform == "win32"
+
+# macOS: menu bar + Apple Silicon Whisper (faster-whisper yine gerekli: VAD on-filtresi)
+rumps>=0.4.0; sys_platform == "darwin"
+mlx-whisper>=0.4.0; sys_platform == "darwin"
+
+# Opsiyonel - konusmaci ayirma (uyuyan ozellik, tray'den cagrilmaz); gerekirse elle kurulur:
+# speechbrain>=1.1.0
+# torch>=2.12.0
+# scikit-learn>=1.8.0
