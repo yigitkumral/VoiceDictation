@@ -11,13 +11,22 @@ State gecisleri mutex ile korunur — race condition yok.
 Cross-platform: Windows + macOS
 
 Kullanim:
-    cd voice-dictation
+    cd VoiceDictation
     # Windows:
     ./venv/Scripts/python dictation.py
     # macOS:
     ./venv/bin/python dictation.py
 
 Cikis: Tray menusu / Menu bar -> Cikis
+
+Dosyalar (16 Eylul 2026 duzeni, hepsi repo koku altinda, git disi):
+    data/inbox/        kullanicinin elle biraktigi ses/video (dosya secici burada acilir)
+    data/audio/        lecture WAV + tasinan sesler
+    data/transcripts/  MD transkriptler
+    .local/logs/       aylik log (YYYY-MM-<Ay>.log) + dictation.pid
+    .local/models/     speechbrain (uyuyan diarize)
+    data/ kokunu degistirmek icin: VOICEDICTATION_DATA_DIR (ortam degiskeni veya .env).
+    Repo disi: Whisper modeli HF onbelleginde, LIVE.md ve gecici WAV OS temp'te.
 """
 
 import sys
@@ -41,12 +50,50 @@ if sys.stdout and hasattr(sys.stdout, 'reconfigure'):
 IS_MAC = platform.system() == "Darwin"
 IS_WIN = platform.system() == "Windows"
 
-# --- LOGGING ---
-from logging.handlers import TimedRotatingFileHandler
+# --- .env (yol blogundan once: VOICEDICTATION_DATA_DIR buradan da gelebilir) ---
 
-_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+def _load_env_file():
+    """.env dosyasini yukle (basit KEY=VALUE parser, harici dep yok)."""
+    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    if not os.path.isfile(env_path):
+        return
+    try:
+        with open(env_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, _, value = line.partition("=")
+                key = key.strip()
+                value = value.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = value
+    except OSError:
+        pass
+
+
+_load_env_file()
+
+# --- YOLLAR: her sey repo koku altinda (16 Eylul 2026 duzeni) ---
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.abspath(os.path.expanduser(
+    os.environ.get("VOICEDICTATION_DATA_DIR") or os.path.join(BASE_DIR, "data")))  # git disi, degerli
+INBOX_DIR = os.path.join(DATA_DIR, "inbox")              # kullanicinin elle biraktigi ses/video
+AUDIO_DIR = os.path.join(DATA_DIR, "audio")              # lecture WAV + tasinan sesler
+TRANSCRIPTS_DIR = os.path.join(DATA_DIR, "transcripts")  # MD transkriptler
+LOCAL_DIR = os.path.join(BASE_DIR, ".local")             # git disi, makineye ozel, yeniden uretilir
+_LOG_DIR = os.path.join(LOCAL_DIR, "logs")
+MODELS_DIR = os.path.join(LOCAL_DIR, "models")           # speechbrain (diarize, uyuyan)
+
+
+def _ensure_dirs():
+    """Klasor agaci baslangicta gorunur olsun. Yazilamayan hedef acik OSError verir (fallback yok)."""
+    for path in (INBOX_DIR, AUDIO_DIR, TRANSCRIPTS_DIR, _LOG_DIR, MODELS_DIR):
+        os.makedirs(path, exist_ok=True)
+
+
+# --- LOGGING ---
 os.makedirs(_LOG_DIR, exist_ok=True)
-_LOG_FILE = os.path.join(_LOG_DIR, "dictation.log")
 _PID_FILE = os.path.join(_LOG_DIR, "dictation.pid")
 
 
@@ -93,29 +140,6 @@ def _remove_daemon_pid():
         pass
 
 
-def _load_env_file():
-    """.env dosyasini yukle (basit KEY=VALUE parser, harici dep yok)."""
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if not os.path.isfile(env_path):
-        return
-    try:
-        with open(env_path, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                key, _, value = line.partition("=")
-                key = key.strip()
-                value = value.strip().strip('"').strip("'")
-                if key and key not in os.environ:
-                    os.environ[key] = value
-    except OSError:
-        pass
-
-
-_load_env_file()
-
-
 def _get_hf_token():
     """HuggingFace token'i al (env veya .env)."""
     return (os.environ.get("HUGGINGFACE_TOKEN")
@@ -123,16 +147,46 @@ def _get_hf_token():
             or os.environ.get("HUGGING_FACE_HUB_TOKEN"))
 
 
+_AYLAR = ["Ocak", "Subat", "Mart", "Nisan", "Mayis", "Haziran",
+          "Temmuz", "Agustos", "Eylul", "Ekim", "Kasim", "Aralik"]
+
+
+def _monthly_log_path(t=None):
+    """.local/logs/YYYY-MM-<Ay>.log (orn. 2026-09-Eylul.log). ASCII ay adi: Turkce karakterli
+    dosya adi PowerShell/argparse tarafinda sorun cikarabiliyor."""
+    lt = time.localtime(t)
+    name = f"{lt.tm_year:04d}-{lt.tm_mon:02d}-{_AYLAR[lt.tm_mon - 1]}.log"
+    return os.path.abspath(os.path.join(_LOG_DIR, name))
+
+
+class MonthlyFileHandler(logging.FileHandler):
+    """Ay degisince dosyayi kapatip .local/logs/YYYY-MM-<Ay>.log acar; hicbir log silinmez."""
+
+    def __init__(self):
+        super().__init__(_monthly_log_path(), mode="a", encoding="utf-8", delay=False)
+
+    def emit(self, record):
+        # handle() lock'u zaten tutuyor; ay sinirini kaydin kendi zamanina gore belirle
+        path = _monthly_log_path(record.created)
+        if path != self.baseFilename:
+            try:
+                if self.stream:
+                    self.stream.close()
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                self.baseFilename = path
+                self.stream = self._open()
+            except Exception:
+                self.stream = None
+                self.handleError(record)
+                return
+        super().emit(record)
+
+
 log = logging.getLogger("dictation")
 log.setLevel(logging.DEBUG)
 
-# Dosya handler — gunluk rotate, tum gecmis saklanir
-_fh = TimedRotatingFileHandler(
-    _LOG_FILE, when="midnight", interval=1,
-    backupCount=0,  # 0 = sinirsiz, hicbir log silinmez
-    encoding="utf-8",
-)
-_fh.suffix = "%Y-%m-%d"  # dictation.log.2026-03-15
+# Dosya handler — aylik dosya, tum gecmis saklanir
+_fh = MonthlyFileHandler()
 _fh.setLevel(logging.DEBUG)
 _fh.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
 
@@ -146,8 +200,7 @@ log.addHandler(_ch)
 
 # CUDA DLL'lerini PATH'e ekle (Windows + venv icin gerekli)
 if IS_WIN:
-    _script_dir = os.path.dirname(os.path.abspath(__file__))
-    _nvidia_dir = os.path.join(_script_dir, "venv", "Lib", "site-packages", "nvidia")
+    _nvidia_dir = os.path.join(BASE_DIR, "venv", "Lib", "site-packages", "nvidia")
     if os.path.isdir(_nvidia_dir):
         for _pkg in os.listdir(_nvidia_dir):
             _dll_dir = os.path.join(_nvidia_dir, _pkg, "bin")
@@ -213,18 +266,8 @@ DEVICE, COMPUTE_TYPE = _detect_device()
 SAMPLE_RATE = 16000
 CHANNELS = 1
 
-# --- CIKTI DIZINLERI (23 Mayis 2026 yeni duzen) ---
-# Birincil: G Drive'da Records altinda iki klasor.
-#   VoiceDictation/: MD transkriptler (LIVE + final + --transcribe ciktilari)
-#   RawRecords/:     islenen ses dosyalari (lecture WAV dump + dis dosyalardan tasinanlar)
-# Drive yok / erisilemiyorsa: Desktop/VoiceDictation altinda ayni alt yapi (fallback).
+# Cikti dizinleri dosyanin basindaki YOLLAR blogunda (data/audio, data/transcripts).
 # Hicbir dosya silinmez: lecture sesi WAV'a dumplenir, --transcribe ile gelen dosya TASINIR.
-DRIVE_RECORDS_BASE = r"G:\Drive'ım\Records"
-DRIVE_VOICEDICTATION_DIR = os.path.join(DRIVE_RECORDS_BASE, "VoiceDictation")
-DRIVE_RAWRECORDS_DIR = os.path.join(DRIVE_RECORDS_BASE, "RawRecords")
-FALLBACK_BASE = os.path.join(os.path.expanduser("~"), "Desktop", "VoiceDictation")
-FALLBACK_VOICEDICTATION_DIR = os.path.join(FALLBACK_BASE, "VoiceDictation")
-FALLBACK_RAWRECORDS_DIR = os.path.join(FALLBACK_BASE, "RawRecords")
 
 # Sessizlik algilama
 SILENCE_THRESHOLD = 0.008
@@ -1063,39 +1106,46 @@ def quick_transcribe(audio_data, beam_size=3):
 
 # --- LECTURE / FILE TRANSCRIBE ---
 
-def _get_desktop_path():
-    """Cross-platform masaustu yolu."""
-    return os.path.join(os.path.expanduser("~"), "Desktop")
+def _get_transcripts_dir():
+    """Transkript MD'lerinin yazildigi klasor (data/transcripts). Yazilamazsa OSError."""
+    os.makedirs(TRANSCRIPTS_DIR, exist_ok=True)
+    return TRANSCRIPTS_DIR
 
 
-def _ensure_writable_dir(primary, fallback, label):
-    """Primary dir'i kullanilabilir mi dene (mkdir + W_OK); olmazsa fallback'e duş.
-    Drive (G:\\) gibi network mount'lar bagli degilse veya senkron sorun varsa fallback devreye girer."""
-    try:
-        os.makedirs(primary, exist_ok=True)
-        if os.access(primary, os.W_OK):
-            return primary
-        raise PermissionError(f"{primary} yazilabilir degil")
-    except OSError as e:
-        log.warning(f"[FALLBACK] {label}: Drive kullanilamiyor ({type(e).__name__}: {e}); Desktop'a duser -> {fallback}")
-        os.makedirs(fallback, exist_ok=True)
-        return fallback
+def _get_audio_dir():
+    """Islenen ses dosyalarinin tasindigi/yazildigi klasor (data/audio). Yazilamazsa OSError."""
+    os.makedirs(AUDIO_DIR, exist_ok=True)
+    return AUDIO_DIR
 
 
-def _get_voicedictation_dir():
-    """Transkript MD'lerinin yazildigi klasor. Once Drive, olmazsa Desktop/VoiceDictation/VoiceDictation."""
-    return _ensure_writable_dir(DRIVE_VOICEDICTATION_DIR, FALLBACK_VOICEDICTATION_DIR, "VoiceDictation")
-
-
-def _get_rawrecords_dir():
-    """Islenen ses dosyalarinin tasindigi/yazildigi klasor. Once Drive, olmazsa Desktop/VoiceDictation/RawRecords."""
-    return _ensure_writable_dir(DRIVE_RAWRECORDS_DIR, FALLBACK_RAWRECORDS_DIR, "RawRecords")
+def _get_inbox_dir():
+    """Dosya secicilerin acildigi, kullanicinin elle yonettigi klasor (data/inbox)."""
+    os.makedirs(INBOX_DIR, exist_ok=True)
+    return INBOX_DIR
 
 
 def _get_lectures_dir():
-    """[DEPRECATED 23 Mayis 2026] Eski isim; yeni VoiceDictation/RawRecords duzenine shim.
-    Tum eski cagirilarin tek noktadan yonlenmesi icin korunuyor."""
-    return _get_voicedictation_dir()
+    """[DEPRECATED] Eski isim; yalniz uyuyan diarize kodu kullaniyor -> _get_transcripts_dir."""
+    return _get_transcripts_dir()
+
+
+def _unique_path(directory, stem, ext):
+    """<directory>/<stem><ext>; varsa <stem>_YYYYmmdd_HHMMSS<ext> (ustune yazma yok)."""
+    path = os.path.join(directory, stem + ext)
+    if os.path.exists(path):
+        path = os.path.join(directory, f"{stem}_{time.strftime('%Y%m%d_%H%M%S')}{ext}")
+    return path
+
+
+def _source_label(source_path):
+    """MD 'Kaynak' satiri: repo altindaki yol repo-goreli ('/' ayiricili) yazilir, digerleri
+    (repo disi yol, '(WAV diske yazilamadi ...)' gibi not) oldugu gibi kalir."""
+    if not isinstance(source_path, str) or not os.path.isabs(source_path):
+        return source_path
+    full = os.path.abspath(source_path)
+    if not os.path.normcase(full).startswith(os.path.normcase(BASE_DIR) + os.sep):
+        return source_path
+    return os.path.relpath(full, BASE_DIR).replace(os.sep, "/")
 
 
 def _save_wav(audio_data, path, sample_rate=SAMPLE_RATE):
@@ -1279,7 +1329,7 @@ def _write_lecture_markdown(md_path, segments, audio_duration, source_path, head
         f.write(f"- **Tarih:** {timestamp}\n")
         f.write(f"- **Ses suresi:** {_format_seconds(audio_duration)}\n")
         f.write(f"- **Model:** {LECTURE_MODEL_SIZE} ({DEVICE})\n")
-        f.write(f"- **Kaynak:** `{source_path}`\n\n")
+        f.write(f"- **Kaynak:** `{_source_label(source_path)}`\n\n")
         f.write("---\n\n")
         if paragraphs:
             for start_sec, paragraph in paragraphs:
@@ -1327,8 +1377,7 @@ def _load_voice_encoder():
 
     log.info("[DIARIZE] ECAPA-TDNN konusmaci modeli yukleniyor (lokal)...")
     t0 = time.time()
-    save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "models", "spkrec-ecapa-voxceleb")
+    save_dir = os.path.join(MODELS_DIR, "spkrec-ecapa-voxceleb")
 
     # Windows'ta symlink admin/Developer Mode istiyor; COPY ile bypass
     kwargs = {
@@ -1586,11 +1635,11 @@ def _apply_speaker_names(segments, speaker_names):
 
 
 def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
-    """Dis ses dosyasini transkripte et: MD'yi VoiceDictation/'a yaz, sesi RawRecords/'a TASI.
+    """Dis ses dosyasini transkripte et: MD'yi data/transcripts/'e yaz, sesi data/audio/'ya TASI.
 
-    23 Mayis 2026 duzeni: tek MD ciktisi (VoiceDictation altinda), ses dosyasi RawRecords'a
-    tasinir (silinmez). output_dir verilirse MD oraya yazilir (ses tasimasi yine RawRecords).
-    Donus: olusan .md yolu (basarisizsa None).
+    Tek MD ciktisi; ses dosyasi data/audio'ya tasinir (silinmez). Ayni isim varsa ikisi de
+    zaman eki alir (ustune yazma yok). output_dir verilirse MD oraya yazilir (ses tasimasi
+    yine data/audio). Donus: olusan .md yolu (basarisizsa None).
     """
     if not os.path.isfile(audio_path):
         log.error(f"[FILE] Dosya bulunamadi: {audio_path}")
@@ -1609,17 +1658,15 @@ def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
     title = header_title or "Ses Dosyasi Transkripti"
     base_name = os.path.splitext(os.path.basename(audio_path))[0]
 
-    # 1) Sesi RawRecords'a tasi (zaten icinde degilse). MD'de "Kaynak" yeni yolu gosterir.
-    raw_dir = _get_rawrecords_dir()
+    # 1) Sesi data/audio'ya tasi (zaten icinde degilse). MD'de "Kaynak" yeni yolu gosterir.
+    audio_dir = _get_audio_dir()
     src_norm = os.path.normcase(os.path.abspath(audio_path))
-    raw_norm = os.path.normcase(os.path.abspath(raw_dir))
-    if src_norm.startswith(raw_norm + os.sep):
-        final_audio_path = audio_path  # zaten RawRecords altinda
+    audio_norm = os.path.normcase(os.path.abspath(audio_dir))
+    if src_norm.startswith(audio_norm + os.sep):
+        final_audio_path = audio_path  # zaten data/audio altinda
     else:
-        dst = os.path.join(raw_dir, os.path.basename(audio_path))
-        if os.path.exists(dst):
-            stem, ext = os.path.splitext(os.path.basename(audio_path))
-            dst = os.path.join(raw_dir, f"{stem}_{time.strftime('%Y%m%d_%H%M%S')}{ext}")
+        stem, ext = os.path.splitext(os.path.basename(audio_path))
+        dst = _unique_path(audio_dir, stem, ext)
         try:
             import shutil
             shutil.move(audio_path, dst)
@@ -1629,9 +1676,9 @@ def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
             log.error(f"[FILE] Ses tasinamadi ({type(e).__name__}: {e}); orijinal yerinde kaldi.")
             final_audio_path = audio_path
 
-    # 2) MD'yi VoiceDictation/'a yaz (tek kopya).
-    target_dir = output_dir or _get_voicedictation_dir()
-    md_path = os.path.join(target_dir, base_name + ".md")
+    # 2) MD'yi data/transcripts/'e yaz (tek kopya, ayni isim varsa zaman eki).
+    target_dir = output_dir or _get_transcripts_dir()
+    md_path = _unique_path(target_dir, base_name, ".md")
     try:
         _write_lecture_markdown(md_path, segments, audio_dur, final_audio_path, header_title=title)
         log.info(f"[FILE] MD yazildi: {md_path}")
@@ -1821,8 +1868,8 @@ def _live_transcribe_loop(md_path):
 
 
 def _get_live_temp_dir():
-    """LIVE.md icin gecici dizin (Drive'a yazilmaz, kayit bitince silinir).
-    Windows: %LOCALAPPDATA%\\Temp\\voicedictation_live, Mac: /tmp/voicedictation_live."""
+    """LIVE.md icin gecici dizin (data/'ya yazilmaz, kayit bitince silinir).
+    Windows: %LOCALAPPDATA%\\Temp\\voicedictation_live, Mac: $TMPDIR/voicedictation_live."""
     import tempfile
     path = os.path.join(tempfile.gettempdir(), "voicedictation_live")
     os.makedirs(path, exist_ok=True)
@@ -1831,7 +1878,7 @@ def _get_live_temp_dir():
 
 def start_lecture_recording():
     """Tray menusunden cagrilir: lecture kaydi baslat. LIVE.md gecici dizine acilir
-    (Drive'a yazilmaz, kayit bitince silinir). Final pass WAV+MD Drive'a yazilir."""
+    (data/'ya yazilmaz, kayit bitince silinir). Final pass WAV+MD data/ altina yazilir."""
     global lecture_active, lecture_start_time, lecture_live_md_path
     global lecture_live_speech_detected, lecture_live_last_speech_time
     with lecture_lock:
@@ -1840,7 +1887,7 @@ def start_lecture_recording():
             return False
         try:
             ts = time.strftime("%Y-%m-%d_%H-%M-%S")
-            # LIVE.md gecici dizine — kullanici canli izleyebilir ama Drive'a yazilmaz
+            # LIVE.md gecici dizine — kullanici canli izleyebilir ama data/'ya yazilmaz
             lecture_live_md_path = os.path.join(_get_live_temp_dir(), f"{ts}_LIVE.md")
             _init_live_md(lecture_live_md_path, "(canli izleme — bu LIVE dosyasi kayit bitince SILINIR)")
             # Buffer / VAD reset
@@ -1858,7 +1905,7 @@ def start_lecture_recording():
             return False
 
     sound_recording()
-    log.info("[LECTURE] Toplanti kaydi basladi (canli LIVE gecici, kayit bitince WAV+MD Drive'a yazilir)")
+    log.info("[LECTURE] Toplanti kaydi basladi (canli LIVE gecici, kayit bitince WAV+MD data/ altina yazilir)")
     log.info(f"[LECTURE] Canli (gecici) MD: {lecture_live_md_path}")
 
     # Live transcribe thread'i baslat
@@ -1923,9 +1970,9 @@ def stop_lecture_recording():
             audio_data = np.concatenate(chunks_local, axis=0).flatten()
             chunks_local = None
 
-            # WAV dump -> RawRecords/<isim>.wav (kalici, silinmez)
+            # WAV dump -> data/audio/<isim>.wav (kalici, silinmez; ayni isim varsa zaman eki)
             try:
-                wav_path = os.path.join(_get_rawrecords_dir(), final_base + ".wav")
+                wav_path = _unique_path(_get_audio_dir(), final_base, ".wav")
                 _save_wav(audio_data, wav_path)
                 log.info(f"[LECTURE] Ham ses kaydedildi: {wav_path} ({len(audio_data)/SAMPLE_RATE:.0f}sn)")
             except Exception as e:
@@ -1941,7 +1988,7 @@ def stop_lecture_recording():
                 return
 
             audio_dur = max((s["end"] for s in segments), default=duration_local)
-            md_path = os.path.join(_get_voicedictation_dir(), final_base + ".md")
+            md_path = _unique_path(_get_transcripts_dir(), final_base, ".md")
             _write_lecture_markdown(
                 md_path, segments, audio_dur,
                 wav_path or "(WAV diske yazilamadi — sadece transkript var)",
@@ -1952,7 +1999,7 @@ def stop_lecture_recording():
             log.error(f"[LECTURE] Final transcribe hatasi: {e}", exc_info=True)
             sound_error()
         finally:
-            # Gecici LIVE.md'yi sil (kullanici icin gorsel feedback'ti, Drive'a yazilmiyor)
+            # Gecici LIVE.md'yi sil (kullanici icin gorsel feedback'ti, arsivlenmez)
             if live_md_local and os.path.isfile(live_md_local):
                 try:
                     os.remove(live_md_local)
@@ -2054,26 +2101,32 @@ def _prompt_lecture_filename_macos(default_name):
 
 
 def _pick_audio_file_macos():
-    """macOS native AppleScript file picker (osascript). tkinter rumps ile main-thread
-    cakismasi yapip GIL deadlock'a girdigi icin kullanilmiyor."""
+    """macOS native AppleScript file picker (osascript), data/inbox'ta acilir. tkinter rumps ile
+    main-thread cakismasi yapip GIL deadlock'a girdigi icin kullanilmiyor."""
     import subprocess
-    script = (
+    inbox = _get_inbox_dir().replace("\\", "\\\\").replace('"', '\\"')
+    choose = (
         'set theFile to choose file with prompt '
         '"Transkripte edilecek ses dosyasini sec" '
-        'of type {"wav","mp3","m4a","aac","flac","ogg","wma","opus","aif","aiff","caf","qta","mp4","mov","mkv","webm"}\n'
-        'POSIX path of theFile'
+        'of type {"wav","mp3","m4a","aac","flac","ogg","wma","opus","aif","aiff","caf","qta","mp4","mov","mkv","webm"}'
     )
-    try:
-        result = subprocess.run(
-            ["osascript", "-e", script], capture_output=True, text=True, timeout=300
-        )
-        if result.returncode != 0:
-            # Kullanici iptal ettiyse stderr'de "User canceled" / -128 olur
+    # Varsayilan klasor Mac'te henuz dogrulanmadi: kabul edilmezse klasorsuz tekrar ac.
+    for location in (f' default location (POSIX file "{inbox}" as alias)', ""):
+        script = choose + location + '\nPOSIX path of theFile'
+        try:
+            result = subprocess.run(
+                ["osascript", "-e", script], capture_output=True, text=True, timeout=300
+            )
+        except Exception as e:
+            log.error(f"[FILE] osascript hatasi: {e}")
             return None
-        return result.stdout.strip() or None
-    except Exception as e:
-        log.error(f"[FILE] osascript hatasi: {e}")
-        return None
+        if result.returncode == 0:
+            return result.stdout.strip() or None
+        # Kullanici iptal ettiyse stderr'de "User canceled" / -128 olur
+        if "-128" in result.stderr or not location:
+            return None
+        log.warning(f"[FILE] Varsayilan klasor kabul edilmedi, klasorsuz aciliyor: {result.stderr.strip()}")
+    return None
 
 
 def _pick_file_and_transcribe():
@@ -2092,6 +2145,7 @@ def _pick_file_and_transcribe():
                 pass
             path = filedialog.askopenfilename(
                 title="Transkripte edilecek ses dosyasini sec",
+                initialdir=_get_inbox_dir(),
                 filetypes=[
                     ("Ses dosyalari", "*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.wma *.opus *.qta *.aif *.aiff *.caf"),
                     ("Video (sesi cikarilir)", "*.mp4 *.mov *.mkv *.avi *.webm"),
@@ -2118,20 +2172,20 @@ def _pick_file_and_transcribe():
 
 
 # ---------- PLAIN MEET DICTATION (file-pick + WAV + transcribe, NO diarization) ----------
-# 23 Mayis 2026: konusmaci ayirma (eski `_pick_file_and_meet_dictate`) opt-in ek ozellige
-# alindi. Default tray davranisi PLAIN dictation — Meet `.mp4` (veya herhangi bir video/ses
-# dosyasi) secilince ses tarafi cikartilir, `RawRecords/<isim>.wav` olarak diske yazilir,
-# transkript `VoiceDictation/<isim>.md`'ye. **Orijinal dosya (video dahil) dokunulmaz** —
-# Meet Recordings/ klasoru veya hangi konumdaysa yerinde kalir. Eski diarize pipeline
+# Konusmaci ayirma (eski `_pick_file_and_meet_dictate`) opt-in ek ozellige alindi. Default
+# tray davranisi PLAIN dictation — video/ses dosyasi (tipik olarak kullanicinin data/inbox'a
+# biraktigi toplanti kaydi) secilince ses tarafi cikartilir, `data/audio/<isim>.wav` olarak
+# diske yazilir, transkript `data/transcripts/<isim>.md`'ye. **Orijinal dosya (video dahil)
+# dokunulmaz** — bulundugu yerde kalir; inbox'u kullanici elle yonetir. Eski diarize pipeline
 # (`_pick_file_and_meet_dictate` + helper'lari) kodda korunuyor; ileride opt-in flag ile
 # geri acilacak.
 
 def _pick_file_and_meet_dictate_plain():
     """Tray '🎥 Meet Dictation...' callback'i. Diarize YOK.
 
-    Akis: dosya sec -> isim sor -> ses decode (mp4/webm/vs. cikarilir) -> RawRecords/<isim>.wav
-    -> Whisper transkript (beam=5, _finalize_segments otomatik) -> VoiceDictation/<isim>.md.
-    Orijinal Meet dosyasi dokunulmadan yerinde kalir.
+    Akis: dosya sec (data/inbox'ta acilir) -> isim sor -> ses decode (mp4/webm/vs. cikarilir)
+    -> data/audio/<isim>.wav -> Whisper transkript (beam=5, _finalize_segments otomatik)
+    -> data/transcripts/<isim>.md. Orijinal dosya dokunulmadan yerinde kalir.
     """
     try:
         # 1) Dosya sec
@@ -2148,6 +2202,7 @@ def _pick_file_and_meet_dictate_plain():
                 pass
             path = filedialog.askopenfilename(
                 title="Meet kaydi sec (sesi cikarilir, orijinal yerinde kalir)",
+                initialdir=_get_inbox_dir(),
                 filetypes=[
                     ("Meet video / ses", "*.mp4 *.mov *.mkv *.avi *.webm *.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus *.qta"),
                     ("Tum dosyalar", "*.*"),
@@ -2186,7 +2241,7 @@ def _pick_file_and_meet_dictate_plain():
             sound_error()
             _show_meet_error(
                 f"Ses dosyasi decode edilemedi.\n\n"
-                f"Dosya: {os.path.basename(path)}\n\nDetay: {e}\n\nLog: logs/dictation.log"
+                f"Dosya: {os.path.basename(path)}\n\nDetay: {e}\n\nLog: .local/logs/"
             )
             return
 
@@ -2196,24 +2251,20 @@ def _pick_file_and_meet_dictate_plain():
         if audio_dur < 1.0:
             sound_error()
             _show_meet_error(
-                f"Dosya cok kisa ({audio_dur:.1f}sn). Bos placeholder olabilir; Meet "
-                f"kayitlarinda asil dosya genelde '(1)' suffix'lidir.\n\n"
+                f"Dosya cok kisa ({audio_dur:.1f}sn); konusma icermiyor olabilir.\n\n"
                 f"Dosya: {os.path.basename(path)}"
             )
             return
 
-        # 4) WAV yaz (RawRecords/<isim>.wav, isim cakisirsa timestamp suffix)
-        raw_dir = _get_rawrecords_dir()
-        wav_path = os.path.join(raw_dir, f"{final_name}.wav")
-        if os.path.exists(wav_path):
-            wav_path = os.path.join(raw_dir, f"{final_name}_{time.strftime('%Y%m%d_%H%M%S')}.wav")
+        # 4) WAV yaz (data/audio/<isim>.wav, isim cakisirsa timestamp suffix)
         try:
+            wav_path = _unique_path(_get_audio_dir(), final_name, ".wav")
             _save_wav(audio, wav_path)
             log.info(f"[MEET-PLAIN] WAV yazildi: {wav_path}")
         except Exception as e:
             log.error(f"[MEET-PLAIN] WAV yazma hatasi: {e}", exc_info=True)
             sound_error()
-            _show_meet_error(f"WAV yazilamadi: {e}\n\nLog: logs/dictation.log")
+            _show_meet_error(f"WAV yazilamadi: {e}\n\nLog: .local/logs/")
             return
 
         # 5) Transcribe (B1-B4 temizligi _finalize_segments icinde otomatik)
@@ -2222,7 +2273,7 @@ def _pick_file_and_meet_dictate_plain():
         except Exception as e:
             log.error(f"[MEET-PLAIN] Transcribe hatasi: {e}", exc_info=True)
             sound_error()
-            _show_meet_error(f"Transcribe hatasi: {e}\n\nLog: logs/dictation.log")
+            _show_meet_error(f"Transcribe hatasi: {e}\n\nLog: .local/logs/")
             return
 
         if not segments and not text:
@@ -2231,12 +2282,9 @@ def _pick_file_and_meet_dictate_plain():
             _show_meet_error("Whisper transkripti bos — konusma algilanamadi.")
             return
 
-        # 6) MD yaz (VoiceDictation/<isim>.md, isim cakisirsa timestamp suffix)
-        md_dir = _get_voicedictation_dir()
-        md_path = os.path.join(md_dir, f"{final_name}.md")
-        if os.path.exists(md_path):
-            md_path = os.path.join(md_dir, f"{final_name}_{time.strftime('%Y%m%d_%H%M%S')}.md")
+        # 6) MD yaz (data/transcripts/<isim>.md, isim cakisirsa timestamp suffix)
         try:
+            md_path = _unique_path(_get_transcripts_dir(), final_name, ".md")
             _write_lecture_markdown(
                 md_path, segments, audio_dur, wav_path,
                 header_title=f"Meet Dictation — {final_name}",
@@ -2245,7 +2293,7 @@ def _pick_file_and_meet_dictate_plain():
         except Exception as e:
             log.error(f"[MEET-PLAIN] MD yazma hatasi: {e}", exc_info=True)
             sound_error()
-            _show_meet_error(f"MD yazilamadi: {e}\n\nLog: logs/dictation.log")
+            _show_meet_error(f"MD yazilamadi: {e}\n\nLog: .local/logs/")
             return
 
         sound_sent()
@@ -2255,7 +2303,7 @@ def _pick_file_and_meet_dictate_plain():
     except Exception as e:
         log.error(f"[MEET-PLAIN] Beklenmedik hata: {e}", exc_info=True)
         sound_error()
-        _show_meet_error(f"Beklenmedik hata:\n\n{e}\n\nLog: logs/dictation.log")
+        _show_meet_error(f"Beklenmedik hata:\n\n{e}\n\nLog: .local/logs/")
 
 
 # ---------- MEET DICTATION (file + diarization + names) — OPT-IN, su an tray'den cagrilmiyor ----------
@@ -2733,7 +2781,7 @@ def _write_meet_dictation_markdown(md_path, segments, audio_duration, source_pat
         f.write(f"- **Ses suresi:** {_format_seconds(audio_duration)}\n")
         f.write(f"- **Model:** {LECTURE_MODEL_SIZE} ({DEVICE}) + speechbrain diarization (lokal)\n")
         f.write(f"- **Konusmacilar:** {', '.join(names_list)}\n")
-        f.write(f"- **Kaynak:** `{source_path}`\n\n")
+        f.write(f"- **Kaynak:** `{_source_label(source_path)}`\n\n")
         f.write("---\n\n")
 
         current_speaker = None
@@ -2778,6 +2826,7 @@ def _pick_file_and_meet_dictate():
                 pass
             path = filedialog.askopenfilename(
                 title="Meet kaydi sec (diarization + transcribe)",
+                initialdir=_get_inbox_dir(),
                 filetypes=[
                     ("Tum dosyalar", "*.*"),
                     ("Tum medya", "*.mp4 *.mov *.mkv *.avi *.webm *.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus"),
@@ -2890,9 +2939,7 @@ def _pick_file_and_meet_dictate():
             if kind == "too_short":
                 _, audio_dur, path_x = err
                 _show_meet_error(
-                    f"Bu dosya cok kisa/bos ({audio_dur:.1f}sn).\n\n"
-                    f"Yanlis dosya secmis olabilir misin? Meet kayitlarinda bazen "
-                    f"0 byte placeholder dosyalar olur; asil kayit '(1)' suffix'li olandir.\n\n"
+                    f"Dosya cok kisa ({audio_dur:.1f}sn); konusma icermiyor olabilir.\n\n"
                     f"Dosya: {os.path.basename(path_x)}"
                 )
             elif kind == "empty_segments":
@@ -2900,7 +2947,7 @@ def _pick_file_and_meet_dictate():
             elif kind == "setup":
                 _show_meet_error(err[1])
             else:
-                _show_meet_error(f"Beklenmeyen hata:\n\n{err[1]}\n\nDetay: logs/dictation.log")
+                _show_meet_error(f"Beklenmeyen hata:\n\n{err[1]}\n\nDetay: .local/logs/")
             return
 
         audio = pipeline_state["audio"]
@@ -2918,38 +2965,28 @@ def _pick_file_and_meet_dictate():
         # 7) İsimleri segmentlere uygula
         segments_with_speakers = _apply_speaker_names(segments, speaker_names)
 
-        # 8) Markdown yaz (kaynak yaninda + Desktop kopyasi)
+        # 8) Markdown yaz: tek kopya data/transcripts/<isim>_meet.md (kaynagin yanina yazilmaz,
+        #    inbox'u kullanici elle yonetir; isim cakisirsa timestamp suffix)
         base_name = os.path.splitext(os.path.basename(path))[0]
-        primary_md = os.path.splitext(path)[0] + "_meet.md"
         try:
+            md_path = _unique_path(_get_lectures_dir(), base_name + "_meet", ".md")
             _write_meet_dictation_markdown(
-                primary_md, segments_with_speakers, audio_dur, path, speaker_names
+                md_path, segments_with_speakers, audio_dur, path, speaker_names
             )
-            log.info(f"[MEET] Yazildi: {primary_md}")
+            log.info(f"[MEET] Yazildi: {md_path}")
         except Exception as e:
-            log.error(f"[MEET] Yazma hatasi (kaynak yaninda): {e}")
-            primary_md = None
-
-        try:
-            base = _get_lectures_dir()
-            desktop_md = os.path.join(base, base_name + "_meet.md")
-            _write_meet_dictation_markdown(
-                desktop_md, segments_with_speakers, audio_dur, path, speaker_names
-            )
-            log.info(f"[MEET] Masaustu kopyasi: {desktop_md}")
-            if primary_md is None:
-                primary_md = desktop_md
-        except Exception as e:
-            log.error(f"[MEET] Masaustu kopya hatasi: {e}")
+            log.error(f"[MEET] Yazma hatasi: {e}")
+            sound_error()
+            _show_meet_error(f"MD yazilamadi: {e}\n\nDetay: .local/logs/")
+            return
 
         sound_sent()
-        if primary_md:
-            _open_in_editor(primary_md)
+        _open_in_editor(md_path)
 
     except Exception as e:
         log.error(f"[MEET] Hata: {e}", exc_info=True)
         sound_error()
-        _show_meet_error(f"Beklenmeyen hata:\n\n{e}\n\nDetay icin: logs/dictation.log")
+        _show_meet_error(f"Beklenmeyen hata:\n\n{e}\n\nDetay icin: .local/logs/")
 
 
 # --- REGEX ---
@@ -3074,7 +3111,7 @@ def audio_callback(indata, frames, time_info, status):
     level = np.abs(indata).mean()
 
     # Lecture mode: iki paralel buffer
-    #   1) full-duration chunks → final pass + RawRecords/<isim>.wav diske
+    #   1) full-duration chunks → final pass + data/audio/<isim>.wav diske
     #   2) live buffer → cumle bazli VAD flush, gecici LIVE.md (kayit bitince silinir)
     if lecture_active:
         global lecture_live_speech_detected, lecture_live_last_speech_time
@@ -3567,6 +3604,9 @@ def _run_headless_transcribe(file_path, aggressive=False):
 def main():
     global audio_stream
 
+    # data/{inbox,audio,transcripts} + .local/{logs,models} gorunur olsun (--transcribe dahil)
+    _ensure_dirs()
+
     import argparse
     parser = argparse.ArgumentParser(prog="dictation", add_help=True,
                                      description="Voice Dictation - Whisper STT")
@@ -3592,7 +3632,8 @@ def main():
     print(f"  Cikis        : Tray/Menu bar -> Cikis")
     print(f"  Model        : {MODEL_SIZE} ({DEVICE})")
     print(f"  Custom vocab : {len(INITIAL_PROMPT.split(','))} terim")
-    print(f"  Log dosyasi  : {_LOG_FILE}")
+    print(f"  Log klasoru  : {_LOG_DIR} (aylik)")
+    print(f"  Veri klasoru : {DATA_DIR}")
     print("=" * 55)
     log.info(f"Baslatildi: {os_name}, model={MODEL_SIZE}, device={DEVICE}")
 
