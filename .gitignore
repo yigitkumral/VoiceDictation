@@ -1,42 +1,21 @@
-# Python venv (recreated per-platform)
+# Python
 venv/
 __pycache__/
-*.pyc
-*.pyo
+*.py[co]
 
-# Runtime artifacts
-logs/
-dictation.log
-.dictation.log
-.dictation.pid
+# Calisma ciktilari (K3: program kullanimi git durumunu kirletmez)
+data/
+.local/
 
-# Secrets (HuggingFace token, etc.)
+# Makineye ozel / uretilen ayarlar ve sirlar
 .env
-.env.local
+.mcp.json
+.codex/config.toml
+.claude/settings.local.json
 
-# Speechbrain / ML model cache (lokal indirilen modeller)
-models/
-pretrained_models/
-
-# IDE
+# Arac artiklari
+.playwright-mcp/
 .vscode/
 .idea/
-
-# Claude Code local settings
-.claude/settings.local.json
-settings.json
-.mcp.json
-
-# Windows local startup scripts
-start.bat
-start.vbs
-
-# Playwright MCP cache
-.playwright-mcp/
-
-# BMAD outputs (kisisel PRD/story/dokuman ureticileri)
-_bmad-output/
-
-# OS
 .DS_Store
 Thumbs.db

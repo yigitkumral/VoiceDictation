@@ -1,0 +1,7 @@
+# Satir sonlari: Mac betikleri LF, Windows betikleri CRLF (core.autocrlf'ten bagimsiz)
+*.sh   text eol=lf
+*.bat  text eol=crlf
+*.vbs  text eol=crlf
+*.py   text
+*.md   text
+*.txt  text
