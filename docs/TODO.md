@@ -1,69 +1,68 @@
 # TODO — VoiceDictation
 
-> **Not:** Tamamlanmis is kayitlari [CHANGELOG.md](CHANGELOG.md) altinda. Bu dosya sadece **acik** islerdir.
+Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGELOG.md](CHANGELOG.md) dosyasına yazılır.
 
----
+## Mac'te ilk oturum
 
-## Onemli: Mac'te ilk session
+**Ajan:** Mac'te açılan ilk oturumda bu listeyi Yiğit'e öner. Son Mac doğrulaması 26 Nisan 2026'da yapıldı. O tarihten sonraki bütün değişiklikler yalnız Windows'ta doğrulandı: Mayıs'taki halüsinasyon paketleri, ad penceresi, toplantı WAV'ı ve 16 Eylül'deki yapı sadeleştirmesi.
 
-**Agent talimatı:** Yigit Mac'te yeni bir Claude Code session actiginda, repo'yu `git pull` ile cektikten sonra **derhal** Mac-spesifik testleri calistirmasini onermeli.
+- [ ] `git pull`, ardından `./scripts/setup.sh` çalıştır. `requirements.txt` artık `rumps` ve `mlx-whisper` paketlerini de kuruyor. macOS bağımlılık çözümü Windows'tan yalnız yaklaşık denendi; kurulumun temiz bir venv'de hatasız bittiğini doğrula. Sonra `venv/bin/python -m py_compile dictation.py`.
+- [ ] İsteğe bağlı: Windows'taki `data/` klasörünü kopyala (cihazlar arası eşitleme yok).
+- [ ] `scripts/VoiceDictation.app` uygulamasını `path to me` betiğiyle yeniden derle, imzala, Login Items'a yeniden ekle ve dört izni doğrula ([kurulum.md](kurulum.md)). Repodaki mevcut `.app` içinde eski, sabit bir repo yolu var.
+- [ ] Daemon'ı `.app` ile başlat: menü çubuğu simgesi açılıyor mu, Caps Lock x2 ile dikte ve yapıştırma çalışıyor mu?
+- [ ] `data/inbox/`, `data/audio/`, `data/transcripts/` ve `.local/logs/<YYYY-MM-Ay>.log` repo altında oluşuyor mu?
+- [ ] "Ses dosyasını dök" ve "Meet Dictation" dosya seçicileri `data/inbox/` klasöründe açılıyor mu (osascript `default location`)?
+- [ ] Halüsinasyon paketi 2 (B1–B4) testleri:
+  - 2–3 dakikalık, uzaktan mikrofonlu ve bilerek sessizlik bırakılmış bir toplantı kaydı: son transkriptte "Altyazı M.K." benzeri tekrar olmamalı.
+  - "Eee Eee Eee": tek örneğe inmeli.
+  - "Evet evet evet katılıyorum": korunmalı.
+- [ ] Toplantı kaydı:
+  - Durdurunca osascript ad penceresi açılıyor mu?
+  - WAV `data/audio/` altına yazılıyor mu?
+  - `LIVE.md` temp klasöründe oluşup kayıt bitince siliniyor mu?
+- [ ] `--transcribe` ile `.qta` ve `.m4a`: ses `data/audio/` klasörüne taşınıyor mu, transkript `data/transcripts/` altına yazılıyor mu, Kaynak satırı göreli mi? iCloud'dan gelen dosyada taşıma izni sorunu çıkıyor mu?
+- [ ] Aynı adla ikinci kayıt zaman eki alıyor mu (üstüne yazma olmamalı)?
+- [ ] Sonuçları [CHANGELOG.md](CHANGELOG.md) dosyasına yaz, bu bölümü kapat.
 
-Mac'in son dokunulma tarihi: **26 Nisan 2026** (CHANGELOG'da macOS test paketi). 22-23 Mayis fix'leri (B1-B4 halusinasyon + yeni klasor duzeni + LIVE gecici + stop dialog) Windows'ta dogrulandi, **Mac'te dogrulanmadi**.
+## Açık işler
 
-Mac'te ilk session acildiginda yapilmasi gerekenler:
+### Ayarlar
 
-- [ ] `git pull` sonrasi `venv` aktif, `python -m py_compile dictation.py` ile syntax kontrolu
-- [ ] Daemon'i baslat: `scripts/VoiceDictation.app` (Login Items) veya manuel `venv/bin/python dictation.py`
-- [ ] **Sessizlik halusinasyon paket 2 (B1-B4) Mac dogrulamasi**:
-  - 2-3 dk lecture kaydet (uzaktan mikrofon, kasitli sessizlikli) -> Final.md'de "Altyazi M.K." benzeri spam YOK
-  - "Eee Eee Eee" filler test -> tekillesti mi
-  - "Evet evet evet katiliyorum" -> tek cumle olarak korundu mu (default `LECTURE_AGGRESSIVE_CLEANUP=False`)
-- [ ] **Yeni klasor duzeni Mac yolu**: G Drive Mac'te muhtemelen `/Volumes/GoogleDrive/Drive'ım/` veya benzeri — `DRIVE_RECORDS_BASE` constant'i Mac yoluna gore guncellenmesi gerekebilir. Eger Drive klient Mac'te `~/Library/CloudStorage/GoogleDrive-*/My Drive/` kullaniyorsa platform-ozel constant ayarla.
-- [ ] **WAV dump Mac yolu**: `_save_wav` Mac'te de calisiyor mu (stdlib `wave` modulu cross-platform, sorun olmamali ama dogrula).
-- [ ] **`--transcribe` ses tasima Mac yolu**: `.qta` / `.m4a` dosyalari iCloud Drive ile gelen tipik akista RawRecords'a tasima sirasinda permission/symlink sorunu olur mu.
-- [ ] **Dosya ismi dialog (Mac)**: `_prompt_lecture_filename_macos` zaten Mac'te calisiyor; Windows ekledikten sonra Mac davranisi degismedi mi kontrol et.
-- [ ] **Diarization (Meet) Mac'te**: TODO.md acik bir is olarak duruyor; Mac'te de ayni bozulma var mi gozle.
+- [ ] Ayar dosyası (JSON/YAML): kodda sabit duran ayarları (eşikler, model, cihaz, kısayol tuşu, wake word, `LECTURE_AGGRESSIVE_CLEANUP`) dışarı al.
+- [ ] Wake word değişikliğini diske kaydet (şu an yeniden başlatınca varsayılana dönüyor).
+- [ ] Yeni wake word'ler için Whisper yazım varyasyonu kalıplarını kendiliğinden genişlet.
 
----
+### Test
 
-## Acik Isler
+- [ ] Birim testleri: durum makinesi, wake word kalıpları, `extract_message`, ses tamponu, `_dedupe_repeated_segments`, `_drop_low_confidence_segments`. `tests/` klasöründe şu an yalnız `file_queue` testleri var (`venv\Scripts\python -m unittest discover -s tests`).
+- [ ] Durum makinesi geçişleri için thread güvenliği regresyon testi.
 
-### Meet Dictation / Diarization (ek ozellik geri acma)
+### Çıktı ve arayüz
 
-- [ ] **Diarization (Meet) tray'den gizlendi — opt-in olarak geri ac** (23 May 2026 itibariyla default davranis diarize'siz `_pick_file_and_meet_dictate_plain`; eski diarize'li `_pick_file_and_meet_dictate` ve speechbrain helper'lari kodda korunuyor ama tray'den cagrilmiyor).
-  - Asagidaki diarize sorunu cozulduikten sonra opt-in olarak geri acilacak. Olasi yollar:
-    1. Yeni tray menu item: "🎥 Meet Dictation (konusmaci ayir)..." -> eski `_pick_file_and_meet_dictate` callback'i.
-    2. Veya CLI flag: `--diarize` (Win headless mode'a benzer).
-    3. Veya plain akista "konusmaci sayisi ver" dialog'una "0 = ayirma" / "N>0 = N konusmaci ayir" gibi unified UX.
-- [ ] **Diarization (Meet) duzgun calismiyor** (22 May 2026 raporu, hala acik — opt-in geri acmadan once cozulmeli).
-  - Belirtiler: konusmacilar yanlis kumeleniyor, isimler yanlis ataniyor, tum transkript tek konusmaciya yapisiyor.
-  - Platform: Windows, kayit tipi: Google Meet mp4.
-  - Plan:
-    1. Kucuk test dosyasiyla (2-3 dk, bilinen konusmaci sayisi) raw embedding output'unu logla — kume sayisi, mesafe matrisi, threshold karari.
-    2. Tek-konusmaciya yapismanin sebebi: cluster sayisi 1'e mi dusuyor (low threshold) yoksa yanlis affinity mi? Ayirt et.
-    3. Threshold/affinity tuning (cosine + dynamic threshold).
-    4. Gerekirse pyannote-style turn boundary detection.
-  - **Referans test dosyasi:** `G:\Drive'ım\Meet Recordings\RawRecords\Mustafa-Yiğit tivibu toplantısı.mp4` (32.5 MB, 16dk, TVBuy telif hakki toplantisi — Mustafa + Yigit iki belirgin konusmaci, diarize icin temiz benchmark).
+- [ ] Hedef pencere seçimi: metni aktif pencere yerine seçilen bir pencereye yaz.
+- [ ] Çoklu proje: farklı wake word'lerle farklı hedeflere yönlendirme.
+- [ ] Toplantı transkripti hazır olduğunda bildirim göster (Windows toast, macOS rumps).
 
-### Konfigurasyon / Persist
+### Kalibrasyon
 
-- [ ] Konfigurasyon dosyasi (JSON/YAML) — hardcoded ayarlari disari cikar (threshold, model, device, hotkey, wake_word, `LECTURE_AGGRESSIVE_CLEANUP`, klasor yollari).
-- [ ] Wake word disk'te persist (su an restart'ta default'a doner).
-- [ ] Yeni wake word'lerin Whisper varyasyon regex'lerini otomatik genisletme.
+- [ ] B grubu düzeltmeleri (branch ← "bir an", refactor ← "reflektör", commit ← "komit") regex'e uymuyor; `hotwords` ile çözümleme önceliği bekliyor.
 
-### Test ve Regresyon
+## Gelecek
 
-- [ ] Birim testleri (state machine, regex pattern, `extract_message`, audio buffer, `_dedupe_repeated_segments`, `_drop_low_confidence_segments`).
-- [ ] Thread safety regresyon testi (state machine gecisleri).
-- [ ] Mac auto-start dogrulamasi (CHANGELOG 22-23 May fix'leri sonrasi yeniden test).
-
-### Cikti / UX
-
-- [ ] Hedef pencere secimi: aktif pencere disinda secilen pencereye yazma.
-- [ ] Multi-proje destegi: farkli wake word'ler ile farkli projelere yonlendirme.
-- [ ] Windows notification toast (lecture bittiginde "Transkript hazir").
-- [ ] macOS rumps notification (ayni amac).
-
----
-
-_Son guncelleme: 2026-05-23 — TODO genel toparlama + CHANGELOG ayristirma._
+- [ ] **Konuşmacı ayırmayı isteğe bağlı olarak geri aç.** Kod `dictation.py` içinde duruyor ama tray'den çağrılmıyor. Paketleri `requirements.txt` içinde yorum satırı, model `.local/models/` altında.
+  - Açma seçenekleri:
+    1. Yeni tray öğesi: "🎥 Meet Dictation (konuşmacı ayır)…"
+    2. `--diarize` bayrağı
+    3. Tek pencerede konuşmacı sayısı sorusu (0 = ayırma yok)
+  - **Önce hata çözülmeli:** Meet mp4 kayıtlarında konuşmacılar yanlış kümeleniyor ve transkriptin tamamı tek konuşmacıya yapışıyor (Windows, 22 Mayıs 2026).
+  - Çözüm planı:
+    1. Bilinen konuşmacı sayısıyla kısa bir dosyada gömme çıktısını logla (küme sayısı, mesafe matrisi, eşik kararı).
+    2. Küme sayısı mı 1'e düşüyor (düşük eşik), yoksa benzerlik mi yanlış? Hangisi olduğunu ayırt et.
+    3. Eşik ve benzerlik ayarı (kosinüs + dinamik eşik).
+    4. Gerekirse konuşmacı değişim sınırı tespiti.
+  - Referans dosya: `data/audio/2026-05-01_Sonar-2-Dogu-teknik-toplanti.mp4` (~34 MB, 16 dakika, iki konuşmacı).
+- [ ] **`file_queue` daemon bağlantısı:** Modül ve testleri hazır, ama `dictation.py` modülü içe aktarmıyor. Bağlanınca kuyruk dış istemcilerin ses dosyalarını daemon'ın açık modeliyle işler.
+- [ ] **`--calibrate` akışı:** Yöntem [calibration/README.md](calibration/README.md) dosyasında anlatılıyor, akış henüz yazılmadı. Kapsamı: okuma kaydı, `jiwer` ile karşılaştırma ve önerilen düzeltme tablosu.
+- [ ] **Yedek filtresi (ayrı onay):** `Yazilim` yedeğinin rclone filtresine `- /VoiceDictation/.local/` ekle. `data/` yedekte kalmalı.
+- [ ] **Sonar belgeleri:** Sonar projesindeki eski Drive kayıt klasörü referanslarını yeni yerle (`VoiceDictation/data/audio/`) güncelle. Bu iş Sonar oturumunda yapılır.
+- [ ] **HF önbelleği (ayrı onay):** Kullanılmayan `medium` ve `small` Whisper modelleri (~1,9 GB) silinebilir. `large-v3`, iFonzo ses aracının kullanıp kullanmadığı doğrulanmadan silinmez.

@@ -1,9 +1,79 @@
 # CHANGELOG — VoiceDictation
 
-Yapilan tum onemli degisikliklerin tarih sirasiyla kaydidir. Git log gercege uygun kaynak
-olmaya devam eder; bu dosya kullanici-okur, gruplanmis ve gerekceli ozet sunar.
+Bu dosya tamamlanan önemli işlerin ve kararların kaydıdır; en yeni kayıt en üstte durur. Ayrıntı için commit kimliği verilir, tam geçmiş `git log` çıktısındadır. Açık işler [TODO.md](TODO.md) dosyasındadır.
 
-Format: tarih + baslik. Implementation detaylari icin commit ID referans verilir.
+> 16 Eylül 2026'dan önceki kayıtlarda geçen yollar tarihçedir: Drive `Records/`, `RawRecords/`, `calibration/`, `logs/`, `docs/auto-start.md`. Güncel yerler README'deki [Yerel dosyalar](../README.md#yerel-dosyalar) tablosundadır.
+
+---
+
+## 2026-09-16 — Yapı sadeleştirme: veri repo içine, tek yol bloğu, yeni belge seti
+
+Aylar sonraki ilk büyük bakım turu. Proje, Yiğit'in genel düzenini yeniden yansıtsın ve MacBook'a taşınabilsin diye sadeleştirildi. Kullanım değişmedi: kısayol tuşları, "Diktasyon", tray menüsü, `--transcribe` ve çıktı biçimi aynı kaldı. Analiz ve uygulama brifleri `docs/sessions/2026-09-16-yapi-sadelestirme/` klasöründe.
+
+### Kararlar (Yiğit)
+
+| # | Karar |
+|---|---|
+| K1 | Veri klasörleri İngilizce: `data/inbox/`, `data/audio/`, `data/transcripts/`. |
+| K2 | BMAD kaldırıldı: `_bmad/`, 116 `bmad-*` skill'i, `.agents/` aynası ve CLAUDE.md'deki BMAD bölümü. |
+| K3 | `file_queue.py` ve `tests/` commit edildi, daemon'a bağlanmadı. Programı kullanmak git durumunu değiştirmez; tüm çalışma çıktıları ignore'lu. |
+| K4 | Konuşmacı ayırma kodu yerinde ama kapalı. Model `models/` klasöründen `.local/models/` klasörüne taşındı. |
+| K5 | Drive `Records/` klasörünün tamamı repoya alındı: 16 MD `data/transcripts/`, 11 ses dosyası `data/audio/` altına kopyalandı. Sayı, boyut ve hash doğrulandıktan sonra Drive'daki `Records/` klasörü (`index.md` dahil) kaldırıldı. |
+| K6 | Cihazlar arası veri eşitlemesi yok; neyin nerede durduğu README'de belgelendi. |
+| K7 | Loglar tam metinle tutulmaya devam ediyor, artık aylık dosyalarda: `.local/logs/YYYY-MM-<Ay>.log`. 157 günlük dosya ve kökteki Mart logu aylık dosyalarda birleştirildi; içerik silinmedi. |
+| K8 | `data/inbox/` elle yönetilir. Meet akışı seçilen dosyaya dokunmaz, "dök" akışı dosyayı `data/audio/` klasörüne taşır. |
+| K9 | Yeni transkriptlerde Kaynak satırı repo köküne göreli. Eski transkriptler değiştirilmedi. |
+
+### Kod (`dictation.py`)
+
+- Tüm yollar dosya başındaki tek blokta toplandı. İsteğe bağlı `VOICEDICTATION_DATA_DIR` değişkeni eklendi. Drive ve Masaüstü yedek yolları kaldırıldı; yazılamayan hedef artık açık hata verir.
+- Dosya seçiciler `data/inbox/` klasöründe açılıyor.
+- Aynı ada yazılan dosyalar artık zaman eki alıyor (`_unique_path`). Eskiden toplantı WAV'ı, toplantı MD'si ve "dök" MD'si aynı adlı dosyanın üstüne yazıyordu.
+- Günlük log dönüşümünün yerini aylık log dosyası aldı.
+- Drive ve Meet klasörü bilgisi kod yorumlarından ve kullanıcı mesajlarından temizlendi.
+
+### Kurulum ve başlatma
+
+- `requirements.txt` PEP 508 platform koşullarıyla tamamlandı: `pystray`, `Pillow`, CUDA kütüphaneleri, `rumps`, `mlx-whisper`. Temiz bir macOS kurulumunun `rumps` eksik olduğu için çökmesi sorunu kapandı.
+- Windows başlatması:
+  - `scripts/start.vbs` repo yolunu kendi konumundan buluyor.
+  - Startup klasöründeki sabit yollu `start.vbs` kopyasının yerini `VoiceDictation.lnk` kısayolu aldı; kısayolu `setup.bat` yazıyor.
+  - Kökteki `start.bat` ve `start.vbs` silindi.
+- macOS `.app` betiği `path to me` ile repo yolundan bağımsız hale getirildi. Derleme adımları `docs/kurulum.md` dosyasında; Mac'te derlenecek (TODO).
+
+### Repo ve belgeler
+
+- **Taşınanlar:**
+  - `CHANGELOG.md` ve `TODO.md` → `docs/`
+  - `calibration/` → `docs/calibration/`
+  - `docs/auto-start.md` içeriği → yeni `docs/kurulum.md` (eski dosya silindi)
+- **Yeni belge seti:**
+  - README, tek "Yerel dosyalar" tablosuyla insan girişi oldu.
+  - `CLAUDE.md` 269 satırdan 80 satırın altına indi.
+  - `docs/nasil-calisir.md` akışları, `docs/kurulum.md` kurulumu ve taşımayı anlatıyor.
+  - Belgelerdeki kodla çelişen bilgiler düzeltildi: lecture'ın "diske yazılmaz" ifadesi, kurulum komutlarının klasörü, eksik Meet menü öğesi, başlatıcı zinciri.
+- **Silinenler:**
+  - `.playwright-mcp/` ve `__pycache__/`
+  - Kökteki `dictation.log` (içeriği aylık loga birleştirildi)
+- **Git dışına alınan:** `.codex/config.toml`. Dosyayı artık iFonzo'daki `sync-claude.py` üretiyor. `.gitignore` baştan yazıldı.
+- **Arşivlenen:** `.agents/legacy-instructions/2026-09-14-agents.md`, `docs/sessions/2026-09-16-yapi-sadelestirme/arsiv/eski-agents-2026-09-14.md` olarak arşivlendi. Dosya Codex'in eski `AGENTS.md`'siydi ve `CLAUDE.md`'nin yalnız ad değişimli kopyasıydı. Özgün bilgi içermiyor; Codex 14 Eylül'den beri `CLAUDE.md`'yi doğrudan okuyor.
+
+### Sonar notu
+
+Sonar projesinin kaynak kayıtları (`2026-05-01_Sonar-1-Mustafa-brifing.mp4`, `2026-05-01_Sonar-2-Dogu-teknik-toplanti.mp4`, `2026-06-18_Sonar-3-Dogu-teknik-toplanti`) artık `VoiceDictation/data/audio/` altında. Sonar belgelerindeki ve kayıt yazan skill'indeki eski Drive yolu Sonar oturumunda güncellenecek (TODO).
+
+---
+
+## 2026-09-15 / 2026-09-14 — Codex ortak talimat ve MCP kaynağı
+
+- `95d0684`: Codex, projenin `CLAUDE.md` dosyasını doğrudan okumaya başladı. Proje MCP kaynağı paylaşılır oldu ve `.codex/config.toml` eklendi.
+- `69af2e6`: Ortak Codex köprüsünün yolu güncellendi.
+
+---
+
+## 2026-06-12 — Drive kayıt klasörleri birleştirildi (Sonar oturumu)
+
+Bu değişiklik Sonar oturumunda, repo dışında yapıldı. Drive'daki `Meet Recordings\RawRecords\` klasörü `Records\RawRecords\` altına birleştirildi, boşalan klasör silindi. Sonar'ın iki Meet kaydı içeriğe uygun adlarla yeniden adlandırıldı ve Drive `Records/index.md` dosyasına Sonar referansı eklendi.
 
 ---
 
@@ -36,7 +106,7 @@ ana dikte akisinda aktif, geriye uyumlu:
 
 25 kalip icin izole regex testi (18 duzeltme + 7 false-positive) gecti. Daemon restart ile canli.
 
-### Acik / sonraki
+### Acik / sonraki (16 Eylul 2026'da TODO.md'ye tasindi)
 
 - B grubu (branch←"bir an", refactor←"reflektör", commit←"komit") regex'e uygun degil →
   `hotwords` decode-boost'u bekliyor.
