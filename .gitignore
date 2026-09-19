@@ -9,7 +9,6 @@ data/
 
 # Makineye ozel / uretilen ayarlar ve sirlar
 .env
-.mcp.json
 .codex/config.toml
 .claude/settings.local.json
 

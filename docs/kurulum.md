@@ -139,7 +139,7 @@ Git kodu ve belgeleri taşır; veri git dışında kalır ve cihazlar arasında 
 3. `./scripts/setup.sh` (macOS) veya `scripts\setup.bat` (Windows) çalıştır. Bu adım venv'i kurar; Windows'ta Startup kısayolunu da yazar. Eski bir venv varsa paketler `requirements.txt` alt sınırlarına yükseltilir.
 4. İlk açılışta Whisper turbo modeli `~/.cache/huggingface/hub/` klasörüne iner; bu adım bir kez internet ister. macOS'ta model `mlx-community/whisper-turbo`, boyutu yaklaşık 1,6 GB. `.local/` klasörü kendiliğinden oluşur.
 5. Ajan ayarlarını yeniden oluştur:
-   - `.mcp.json` dosyasını `.mcp.json.example` dosyasından üret (proje kök yolunu yaz).
+   - `.mcp.json` Git'le gelir; sır gerekirse değeri Git dışı `.env`'e yaz (python-dotenv ile okunur).
    - `.codex/config.toml` dosyasını iFonzo'nun `docs/tools-global/codex/sync-claude.py --apply` komutuyla üret.
 6. macOS'ta `.app`'i derle, Login Items'a ekle ve dört izni ver (yukarıda).
 7. Mac'te ilk kez çalıştırıyorsan [TODO.md](TODO.md) dosyasındaki "Mac'te ilk oturum" listesini uygula.
