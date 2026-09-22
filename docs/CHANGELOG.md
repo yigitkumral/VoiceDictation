@@ -6,6 +6,14 @@ Bu dosya tamamlanan önemli işlerin ve kararların kaydıdır; en yeni kayıt e
 
 ---
 
+## 2026-09-22 — `data/raw/`: elle düzeltilen transkriptlerin ham hâli
+
+- Yiğit kararı: elle ya da ajanla düzeltilen transkriptin düzenlenmemiş Whisper çıktısı `data/raw/` klasöründe, `data/transcripts/` ile aynı dosya adıyla tutulur. Düzeltilen dosyanın başlığına `- **Düzeltme:** …` satırı eklenir. Program bu klasörü kullanmaz; klasör elle yönetilir. README "Yerel dosyalar" tablosu ve `docs/nasil-calisir.md` "Çıktı biçimi" bölümü güncellendi.
+- İlk kullanım: Google Meet'ten alınan iki kayıt (4 Temmuz ve 21 Eylül) `--transcribe` ile işlendi, elle düzeltildi, ham çıktıları `data/raw/` klasörüne kondu.
+- Google Meet, Temmuz 2026'dan beri yeni kayıtları Drive'da `Google Meet/<toplantı>/` klasörüne yazıyor. Eski `Meet Recordings` klasörü Google tarafından `Google Meet/Legacy Meet Recordings` altına taşınıyor. Kayıtlar Drive'a uzantısız iner; dosya adına `.mp4` eklenmeden "Meet Dictation" dosya seçicisinde görünmez.
+
+---
+
 ## 2026-09-16 — Yapı sadeleştirme: veri repo içine, tek yol bloğu, yeni belge seti
 
 Aylar sonraki ilk büyük bakım turu. Proje, Yiğit'in genel düzenini yeniden yansıtsın ve MacBook'a taşınabilsin diye sadeleştirildi. Kullanım değişmedi: kısayol tuşları, "Diktasyon", tray menüsü, `--transcribe` ve çıktı biçimi aynı kaldı. Analiz ve uygulama brifleri `docs/sessions/2026-09-16-yapi-sadelestirme/` klasöründe.

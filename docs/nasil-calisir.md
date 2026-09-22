@@ -127,6 +127,7 @@ _**Transkript tamamlandi.** Sure: … • Model: …_
 
 - **Kaynak satırı:** Dosya repo içindeyse repo köküne göreli yol, repo dışındaysa mutlak yol yazılır. 16 Eylül 2026'dan önceki transkriptlerde eski mutlak yollar olduğu gibi kalır.
 - **Ad çakışması:** Aynı adlı dosya varsa yeni dosyanın adına `_YYYYmmdd_HHMMSS` eklenir; hiçbir dosyanın üstüne yazılmaz.
+- **Elle düzeltme:** Bir transkript elle (ya da ajanla) düzeltilecekse önce Whisper'ın ham çıktısı aynı adla `data/raw/` klasörüne kopyalanır, düzeltme `data/transcripts/` altındaki dosyada yapılır ve başlığa `- **Düzeltme:** …` satırı eklenir. `data/raw/` klasörünü program kullanmaz; yalnız elle yönetilir.
 
 ## Transkript temizliği
 

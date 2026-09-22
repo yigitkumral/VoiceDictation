@@ -61,6 +61,7 @@ Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tutt
 | `data/inbox/` | Elle bırakılan ses/video dosyaları (Meet kayıtları, iPhone kayıtları). Program buradaki dosyayı yalnız "dök" akışında `data/audio/`'ya taşır; başka hiçbir şey yapmaz. | Değerli, git dışı | Kopyalanır |
 | `data/audio/` | Toplantı kayıtlarının WAV'ları ve işlenmiş ses dosyaları | Değerli, git dışı | Kopyalanır |
 | `data/transcripts/` | Markdown transkriptler | Değerli, git dışı | Kopyalanır |
+| `data/raw/` | Elle düzeltilen transkriptlerin düzenlenmemiş Whisper çıktısı; `data/transcripts/` ile aynı dosya adı. Program kullanmaz, elle yönetilir. | Değerli, git dışı | Kopyalanır |
 | `.local/logs/` | Aylık log (`YYYY-MM-<Ay>.log`, örn. `2026-09-Eylul.log`; dikte metni dahil tam içerik, silinmez) ve `dictation.pid` | Makineye özel, git dışı | Kendiliğinden oluşur |
 | `.local/models/` | speechbrain modeli (uyuyan konuşmacı ayırma özelliği) | Makineye özel, git dışı | Gerekirse kendiliğinden iner |
 | `.local/file-queue/` | `file_queue.py` iş kuyruğu (daemon'a bağlı değil) | Makineye özel, git dışı | Kendiliğinden oluşur |
