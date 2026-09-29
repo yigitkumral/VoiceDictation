@@ -78,18 +78,26 @@ Uygulama yalnız başlatıcıdır ve her açılışta repodaki `dictation.py`'yi
 
 ```applescript
 set appPath to POSIX path of (path to me)
-do shell script "cd \"$(dirname " & quoted form of appPath & ")/..\" && nohup venv/bin/python -u dictation.py > /dev/null 2>&1 &"
+do shell script "cd \"$(dirname " & quoted form of appPath & ")/..\" && nohup venv/bin/python -u dictation.py > .local/logs/applet.log 2>&1 &"
 ```
 
 - **Yol çözümü:** `dirname`, `.app/` sonundaki eğik çizgiyi yok sayar ve `…/scripts` döndürür; `/..` repo köküne çıkar. Repo yolu uygulamanın içine yazılmaz, bu yüzden `Yazılım` gibi Türkçe karakterli ya da boşluklu yollar ve taşınan klasörler sorun çıkarmaz.
-- **Eski `.app`:** Repodaki sürümün içinde eski, sabit bir repo yolu var. Mac'teki ilk oturumda uygulamayı aşağıdaki adımlarla yeniden derle.
+- **Eski `.app`:** 30 Eylül 2026'dan önceki sürümün içinde sabit bir repo yolu vardı ve içindeki `Yazılım`
+  yazımı ASCII `Yazilim` klasörüyle eşleşmediği için applet `cd` adımında sessizce kopuyordu. Depodaki
+  uygulama artık yoldan bağımsızdır; yine de klasör taşınırsa ya da imza yenilenirse aşağıdaki adımlar geçerlidir.
+- **Yeniden derlemekten kaçın.** Her `osacompile` + ad-hoc imza yeni bir kod kimliği üretir; macOS izin
+  kaydını imzaya bağladığı için Input Monitoring ve Accessibility listelerindeki eski girdiler ölü kalır ve
+  uygulama izinli görünmesine rağmen çalışmaz. Belirti: `applet.log` içinde
+  `This process is not trusted!`. Çözüm, iki listedeki tüm eski girdileri **−** ile silip `.app`'i tek
+  seferde yeniden eklemektir. Aynı uygulama listelerde hem `applet` (ikili adı) hem `VoiceDictation`
+  (paket adı) olarak görünebilir; ikisi de aynı şeydir, ikisini de temizle.
 
 **Uygulamayı derle** (Mac'te, repo kökünde):
 
 ```bash
 cat > /tmp/vd-main.applescript <<'EOF'
 set appPath to POSIX path of (path to me)
-do shell script "cd \"$(dirname " & quoted form of appPath & ")/..\" && nohup venv/bin/python -u dictation.py > /dev/null 2>&1 &"
+do shell script "cd \"$(dirname " & quoted form of appPath & ")/..\" && nohup venv/bin/python -u dictation.py > .local/logs/applet.log 2>&1 &"
 EOF
 rm -rf scripts/VoiceDictation.app
 osacompile -o scripts/VoiceDictation.app /tmp/vd-main.applescript
