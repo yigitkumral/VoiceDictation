@@ -20,9 +20,10 @@ Kullanim:
 Cikis: Tray menusu / Menu bar -> Cikis
 
 Dosyalar (16 Eylul 2026 duzeni, hepsi repo koku altinda, git disi):
-    data/inbox/        kullanicinin elle biraktigi ses/video (dosya secici burada acilir)
-    data/audio/        lecture WAV + tasinan sesler
-    data/transcripts/  MD transkriptler
+    data/media/        elle birakilan ses/video (mp4 dahil) + programin yazdigi WAV;
+                       dosya seciciler burada acilir, program buraya tasir/yazar
+    data/raw/          Whisper'in ham MD transkriptleri — programin tek MD ciktisi
+    data/transcripts/  elle duzeltilmis MD transkriptler; program yalnizca klasoru olusturur
     .local/logs/       aylik log (YYYY-MM-<Ay>.log) + dictation.pid
     .local/models/     speechbrain (uyuyan diarize)
     data/ kokunu degistirmek icin: VOICEDICTATION_DATA_DIR (ortam degiskeni veya .env).
@@ -78,9 +79,9 @@ _load_env_file()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.abspath(os.path.expanduser(
     os.environ.get("VOICEDICTATION_DATA_DIR") or os.path.join(BASE_DIR, "data")))  # git disi, degerli
-INBOX_DIR = os.path.join(DATA_DIR, "inbox")              # kullanicinin elle biraktigi ses/video
-AUDIO_DIR = os.path.join(DATA_DIR, "audio")              # lecture WAV + tasinan sesler
-TRANSCRIPTS_DIR = os.path.join(DATA_DIR, "transcripts")  # MD transkriptler
+MEDIA_DIR = os.path.join(DATA_DIR, "media")              # elle birakilan ses/video + yazilan WAV
+RAW_DIR = os.path.join(DATA_DIR, "raw")                  # Whisper ham MD (programin tek MD ciktisi)
+TRANSCRIPTS_DIR = os.path.join(DATA_DIR, "transcripts")  # elle duzeltilmis MD (program dokunmaz)
 LOCAL_DIR = os.path.join(BASE_DIR, ".local")             # git disi, makineye ozel, yeniden uretilir
 _LOG_DIR = os.path.join(LOCAL_DIR, "logs")
 MODELS_DIR = os.path.join(LOCAL_DIR, "models")           # speechbrain (diarize, uyuyan)
@@ -88,7 +89,7 @@ MODELS_DIR = os.path.join(LOCAL_DIR, "models")           # speechbrain (diarize,
 
 def _ensure_dirs():
     """Klasor agaci baslangicta gorunur olsun. Yazilamayan hedef acik OSError verir (fallback yok)."""
-    for path in (INBOX_DIR, AUDIO_DIR, TRANSCRIPTS_DIR, _LOG_DIR, MODELS_DIR):
+    for path in (MEDIA_DIR, RAW_DIR, TRANSCRIPTS_DIR, _LOG_DIR, MODELS_DIR):
         os.makedirs(path, exist_ok=True)
 
 
@@ -266,8 +267,9 @@ DEVICE, COMPUTE_TYPE = _detect_device()
 SAMPLE_RATE = 16000
 CHANNELS = 1
 
-# Cikti dizinleri dosyanin basindaki YOLLAR blogunda (data/audio, data/transcripts).
-# Hicbir dosya silinmez: lecture sesi WAV'a dumplenir, --transcribe ile gelen dosya TASINIR.
+# Cikti dizinleri dosyanin basindaki YOLLAR blogunda (data/media, data/raw).
+# Hicbir dosya silinmez: lecture sesi WAV'a dumplenir, --transcribe ile gelen dosya
+# (data/media disindaysa) TASINIR. Duzeltme data/transcripts'te elle yapilir.
 
 # Sessizlik algilama
 SILENCE_THRESHOLD = 0.008
@@ -1106,27 +1108,20 @@ def quick_transcribe(audio_data, beam_size=3):
 
 # --- LECTURE / FILE TRANSCRIBE ---
 
-def _get_transcripts_dir():
-    """Transkript MD'lerinin yazildigi klasor (data/transcripts). Yazilamazsa OSError."""
-    os.makedirs(TRANSCRIPTS_DIR, exist_ok=True)
-    return TRANSCRIPTS_DIR
+def _get_raw_dir():
+    """Whisper ham MD'lerinin yazildigi klasor (data/raw). Yazilamazsa OSError.
+
+    Programin tek MD hedefi burasi. Elle duzeltme data/transcripts altinda yapilir;
+    program o klasore yazmaz."""
+    os.makedirs(RAW_DIR, exist_ok=True)
+    return RAW_DIR
 
 
-def _get_audio_dir():
-    """Islenen ses dosyalarinin tasindigi/yazildigi klasor (data/audio). Yazilamazsa OSError."""
-    os.makedirs(AUDIO_DIR, exist_ok=True)
-    return AUDIO_DIR
-
-
-def _get_inbox_dir():
-    """Dosya secicilerin acildigi, kullanicinin elle yonettigi klasor (data/inbox)."""
-    os.makedirs(INBOX_DIR, exist_ok=True)
-    return INBOX_DIR
-
-
-def _get_lectures_dir():
-    """[DEPRECATED] Eski isim; yalniz uyuyan diarize kodu kullaniyor -> _get_transcripts_dir."""
-    return _get_transcripts_dir()
+def _get_media_dir():
+    """Ses/video klasoru (data/media). Dosya seciciler burada acilir, WAV buraya yazilir,
+    disaridan gelen kaynak buraya tasinir. Girdi ve cikti ayni klasor. Yazilamazsa OSError."""
+    os.makedirs(MEDIA_DIR, exist_ok=True)
+    return MEDIA_DIR
 
 
 def _unique_path(directory, stem, ext):
@@ -1635,11 +1630,12 @@ def _apply_speaker_names(segments, speaker_names):
 
 
 def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
-    """Dis ses dosyasini transkripte et: MD'yi data/transcripts/'e yaz, sesi data/audio/'ya TASI.
+    """Dis ses/video dosyasini transkripte et: MD'yi data/raw/'a yaz, kaynagi data/media/'ya TASI.
 
-    Tek MD ciktisi; ses dosyasi data/audio'ya tasinir (silinmez). Ayni isim varsa ikisi de
-    zaman eki alir (ustune yazma yok). output_dir verilirse MD oraya yazilir (ses tasimasi
-    yine data/audio). Donus: olusan .md yolu (basarisizsa None).
+    Tek MD ciktisi; kaynak dosya data/media'ya tasinir (silinmez), zaten oradaysa yerinde kalir
+    — girdi ve cikti klasoru ayni. Ayni isim varsa ikisi de zaman eki alir (ustune yazma yok).
+    output_dir verilirse MD oraya yazilir (kaynak tasimasi yine data/media).
+    Donus: olusan .md yolu (basarisizsa None).
     """
     if not os.path.isfile(audio_path):
         log.error(f"[FILE] Dosya bulunamadi: {audio_path}")
@@ -1658,26 +1654,26 @@ def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
     title = header_title or "Ses Dosyasi Transkripti"
     base_name = os.path.splitext(os.path.basename(audio_path))[0]
 
-    # 1) Sesi data/audio'ya tasi (zaten icinde degilse). MD'de "Kaynak" yeni yolu gosterir.
-    audio_dir = _get_audio_dir()
+    # 1) Kaynagi data/media'ya tasi (zaten icinde degilse). MD'de "Kaynak" yeni yolu gosterir.
+    media_dir = _get_media_dir()
     src_norm = os.path.normcase(os.path.abspath(audio_path))
-    audio_norm = os.path.normcase(os.path.abspath(audio_dir))
-    if src_norm.startswith(audio_norm + os.sep):
-        final_audio_path = audio_path  # zaten data/audio altinda
+    media_norm = os.path.normcase(os.path.abspath(media_dir))
+    if src_norm.startswith(media_norm + os.sep):
+        final_audio_path = audio_path  # zaten data/media altinda, tasima yok
     else:
         stem, ext = os.path.splitext(os.path.basename(audio_path))
-        dst = _unique_path(audio_dir, stem, ext)
+        dst = _unique_path(media_dir, stem, ext)
         try:
             import shutil
             shutil.move(audio_path, dst)
-            log.info(f"[FILE] Ses tasindi: {audio_path} -> {dst}")
+            log.info(f"[FILE] Kaynak tasindi: {audio_path} -> {dst}")
             final_audio_path = dst
         except Exception as e:
-            log.error(f"[FILE] Ses tasinamadi ({type(e).__name__}: {e}); orijinal yerinde kaldi.")
+            log.error(f"[FILE] Kaynak tasinamadi ({type(e).__name__}: {e}); orijinal yerinde kaldi.")
             final_audio_path = audio_path
 
-    # 2) MD'yi data/transcripts/'e yaz (tek kopya, ayni isim varsa zaman eki).
-    target_dir = output_dir or _get_transcripts_dir()
+    # 2) MD'yi data/raw/'a yaz (tek kopya, ayni isim varsa zaman eki).
+    target_dir = output_dir or _get_raw_dir()
     md_path = _unique_path(target_dir, base_name, ".md")
     try:
         _write_lecture_markdown(md_path, segments, audio_dur, final_audio_path, header_title=title)
@@ -1970,9 +1966,9 @@ def stop_lecture_recording():
             audio_data = np.concatenate(chunks_local, axis=0).flatten()
             chunks_local = None
 
-            # WAV dump -> data/audio/<isim>.wav (kalici, silinmez; ayni isim varsa zaman eki)
+            # WAV dump -> data/media/<isim>.wav (kalici, silinmez; ayni isim varsa zaman eki)
             try:
-                wav_path = _unique_path(_get_audio_dir(), final_base, ".wav")
+                wav_path = _unique_path(_get_media_dir(), final_base, ".wav")
                 _save_wav(audio_data, wav_path)
                 log.info(f"[LECTURE] Ham ses kaydedildi: {wav_path} ({len(audio_data)/SAMPLE_RATE:.0f}sn)")
             except Exception as e:
@@ -1988,7 +1984,7 @@ def stop_lecture_recording():
                 return
 
             audio_dur = max((s["end"] for s in segments), default=duration_local)
-            md_path = _unique_path(_get_transcripts_dir(), final_base, ".md")
+            md_path = _unique_path(_get_raw_dir(), final_base, ".md")
             _write_lecture_markdown(
                 md_path, segments, audio_dur,
                 wav_path or "(WAV diske yazilamadi — sadece transkript var)",
@@ -2101,17 +2097,17 @@ def _prompt_lecture_filename_macos(default_name):
 
 
 def _pick_audio_file_macos():
-    """macOS native AppleScript file picker (osascript), data/inbox'ta acilir. tkinter rumps ile
+    """macOS native AppleScript file picker (osascript), data/media'da acilir. tkinter rumps ile
     main-thread cakismasi yapip GIL deadlock'a girdigi icin kullanilmiyor."""
     import subprocess
-    inbox = _get_inbox_dir().replace("\\", "\\\\").replace('"', '\\"')
+    media = _get_media_dir().replace("\\", "\\\\").replace('"', '\\"')
     choose = (
         'set theFile to choose file with prompt '
         '"Transkripte edilecek ses dosyasini sec" '
         'of type {"wav","mp3","m4a","aac","flac","ogg","wma","opus","aif","aiff","caf","qta","mp4","mov","mkv","webm"}'
     )
     # Varsayilan klasor Mac'te henuz dogrulanmadi: kabul edilmezse klasorsuz tekrar ac.
-    for location in (f' default location (POSIX file "{inbox}" as alias)', ""):
+    for location in (f' default location (POSIX file "{media}" as alias)', ""):
         script = choose + location + '\nPOSIX path of theFile'
         try:
             result = subprocess.run(
@@ -2145,7 +2141,7 @@ def _pick_file_and_transcribe():
                 pass
             path = filedialog.askopenfilename(
                 title="Transkripte edilecek ses dosyasini sec",
-                initialdir=_get_inbox_dir(),
+                initialdir=_get_media_dir(),
                 filetypes=[
                     ("Ses dosyalari", "*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.wma *.opus *.qta *.aif *.aiff *.caf"),
                     ("Video (sesi cikarilir)", "*.mp4 *.mov *.mkv *.avi *.webm"),
@@ -2173,19 +2169,19 @@ def _pick_file_and_transcribe():
 
 # ---------- PLAIN MEET DICTATION (file-pick + WAV + transcribe, NO diarization) ----------
 # Konusmaci ayirma (eski `_pick_file_and_meet_dictate`) opt-in ek ozellige alindi. Default
-# tray davranisi PLAIN dictation — video/ses dosyasi (tipik olarak kullanicinin data/inbox'a
-# biraktigi toplanti kaydi) secilince ses tarafi cikartilir, `data/audio/<isim>.wav` olarak
-# diske yazilir, transkript `data/transcripts/<isim>.md`'ye. **Orijinal dosya (video dahil)
-# dokunulmaz** — bulundugu yerde kalir; inbox'u kullanici elle yonetir. Eski diarize pipeline
+# tray davranisi PLAIN dictation — video/ses dosyasi (tipik olarak kullanicinin data/media'ya
+# biraktigi toplanti kaydi) secilince ses tarafi cikartilir, `data/media/<isim>.wav` olarak
+# diske yazilir, transkript `data/raw/<isim>.md`'ye. **Orijinal dosya (video dahil) dokunulmaz**
+# — bulundugu yerde kalir; data/media'yi kullanici elle yonetir. Eski diarize pipeline
 # (`_pick_file_and_meet_dictate` + helper'lari) kodda korunuyor; ileride opt-in flag ile
 # geri acilacak.
 
 def _pick_file_and_meet_dictate_plain():
     """Tray '🎥 Meet Dictation...' callback'i. Diarize YOK.
 
-    Akis: dosya sec (data/inbox'ta acilir) -> isim sor -> ses decode (mp4/webm/vs. cikarilir)
-    -> data/audio/<isim>.wav -> Whisper transkript (beam=5, _finalize_segments otomatik)
-    -> data/transcripts/<isim>.md. Orijinal dosya dokunulmadan yerinde kalir.
+    Akis: dosya sec (data/media'da acilir) -> isim sor -> ses decode (mp4/webm/vs. cikarilir)
+    -> data/media/<isim>.wav -> Whisper transkript (beam=5, _finalize_segments otomatik)
+    -> data/raw/<isim>.md. Orijinal dosya dokunulmadan yerinde kalir.
     """
     try:
         # 1) Dosya sec
@@ -2202,7 +2198,7 @@ def _pick_file_and_meet_dictate_plain():
                 pass
             path = filedialog.askopenfilename(
                 title="Meet kaydi sec (sesi cikarilir, orijinal yerinde kalir)",
-                initialdir=_get_inbox_dir(),
+                initialdir=_get_media_dir(),
                 filetypes=[
                     ("Meet video / ses", "*.mp4 *.mov *.mkv *.avi *.webm *.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus *.qta"),
                     ("Tum dosyalar", "*.*"),
@@ -2256,9 +2252,9 @@ def _pick_file_and_meet_dictate_plain():
             )
             return
 
-        # 4) WAV yaz (data/audio/<isim>.wav, isim cakisirsa timestamp suffix)
+        # 4) WAV yaz (data/media/<isim>.wav, isim cakisirsa timestamp suffix)
         try:
-            wav_path = _unique_path(_get_audio_dir(), final_name, ".wav")
+            wav_path = _unique_path(_get_media_dir(), final_name, ".wav")
             _save_wav(audio, wav_path)
             log.info(f"[MEET-PLAIN] WAV yazildi: {wav_path}")
         except Exception as e:
@@ -2282,9 +2278,9 @@ def _pick_file_and_meet_dictate_plain():
             _show_meet_error("Whisper transkripti bos — konusma algilanamadi.")
             return
 
-        # 6) MD yaz (data/transcripts/<isim>.md, isim cakisirsa timestamp suffix)
+        # 6) MD yaz (data/raw/<isim>.md, isim cakisirsa timestamp suffix)
         try:
-            md_path = _unique_path(_get_transcripts_dir(), final_name, ".md")
+            md_path = _unique_path(_get_raw_dir(), final_name, ".md")
             _write_lecture_markdown(
                 md_path, segments, audio_dur, wav_path,
                 header_title=f"Meet Dictation — {final_name}",
@@ -2826,7 +2822,7 @@ def _pick_file_and_meet_dictate():
                 pass
             path = filedialog.askopenfilename(
                 title="Meet kaydi sec (diarization + transcribe)",
-                initialdir=_get_inbox_dir(),
+                initialdir=_get_media_dir(),
                 filetypes=[
                     ("Tum dosyalar", "*.*"),
                     ("Tum medya", "*.mp4 *.mov *.mkv *.avi *.webm *.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus"),
@@ -2965,11 +2961,11 @@ def _pick_file_and_meet_dictate():
         # 7) İsimleri segmentlere uygula
         segments_with_speakers = _apply_speaker_names(segments, speaker_names)
 
-        # 8) Markdown yaz: tek kopya data/transcripts/<isim>_meet.md (kaynagin yanina yazilmaz,
-        #    inbox'u kullanici elle yonetir; isim cakisirsa timestamp suffix)
+        # 8) Markdown yaz: tek kopya data/raw/<isim>_meet.md (kaynagin yanina yazilmaz;
+        #    isim cakisirsa timestamp suffix)
         base_name = os.path.splitext(os.path.basename(path))[0]
         try:
-            md_path = _unique_path(_get_lectures_dir(), base_name + "_meet", ".md")
+            md_path = _unique_path(_get_raw_dir(), base_name + "_meet", ".md")
             _write_meet_dictation_markdown(
                 md_path, segments_with_speakers, audio_dur, path, speaker_names
             )
@@ -3111,7 +3107,7 @@ def audio_callback(indata, frames, time_info, status):
     level = np.abs(indata).mean()
 
     # Lecture mode: iki paralel buffer
-    #   1) full-duration chunks → final pass + data/audio/<isim>.wav diske
+    #   1) full-duration chunks → final pass + data/media/<isim>.wav diske
     #   2) live buffer → cumle bazli VAD flush, gecici LIVE.md (kayit bitince silinir)
     if lecture_active:
         global lecture_live_speech_detected, lecture_live_last_speech_time
@@ -3604,7 +3600,7 @@ def _run_headless_transcribe(file_path, aggressive=False):
 def main():
     global audio_stream
 
-    # data/{inbox,audio,transcripts} + .local/{logs,models} gorunur olsun (--transcribe dahil)
+    # data/{media,raw,transcripts} + .local/{logs,models} gorunur olsun (--transcribe dahil)
     _ensure_dirs()
 
     import argparse

@@ -10,23 +10,26 @@ Uygulama, arka planda çalışan tek bir süreçtir (`dictation.py`). Mikrofonu 
 flowchart LR
     Mic[Mikrofon] --> D[Dikte]
     Mic --> T[Toplantı kaydı]
-    Inbox[data/inbox/] --> F[Ses dosyasını dök]
-    Inbox --> M[Meet Dictation]
+    Media[data/media/] --> F[Ses dosyasını dök]
+    Media --> M[Meet Dictation]
     D --> P[Pano + yapıştır + Enter]
-    T --> A[data/audio/]
-    T --> TR[data/transcripts/]
-    F -->|dosya taşınır| A
-    F --> TR
-    M -->|yalnız WAV kopyası| A
-    M --> TR
+    T -->|WAV| Media
+    T --> R[data/raw/]
+    F -->|dosya zaten burada| Media
+    F --> R
+    M -->|yalnız WAV kopyası| Media
+    M --> R
+    R -->|elle düzeltme| TR[data/transcripts/]
 ```
+
+Program yalnız `data/media/` ve `data/raw/` klasörlerine yazar. `data/transcripts/` elle yönetilir: ham transkripti düzeltip oraya alan Yiğit'tir (aşağıda [Elle düzeltme](#çıktı-biçimi)).
 
 | Akış | Başlatma | Kalıcı çıktı | Kaynak dosyaya ne olur |
 |---|---|---|---|
 | Dikte | F13 / Caps Lock x2 / "Diktasyon" | Yok (metin aktif pencereye gider) | — |
-| Toplantı kaydı | Tray → 🎤 Toplantı → Başlat | `data/audio/<ad>.wav` + `data/transcripts/<ad>.md` | — |
-| Ses dosyasını dök | Tray → 📁 veya `--transcribe FILE` | `data/transcripts/<dosya adı>.md` | `data/audio/` klasörüne **taşınır** |
-| Meet Dictation | Tray → 🎥 | `data/audio/<ad>.wav` + `data/transcripts/<ad>.md` | **Dokunulmaz**, yerinde kalır |
+| Toplantı kaydı | Tray → 🎤 Toplantı → Başlat | `data/media/<ad>.wav` + `data/raw/<ad>.md` | — |
+| Ses dosyasını dök | Tray → 📁 veya `--transcribe FILE` | `data/raw/<dosya adı>.md` | `data/media/` içindeyse **yerinde kalır**; dışındaysa oraya **taşınır** |
+| Meet Dictation | Tray → 🎥 | `data/media/<ad>.wav` + `data/raw/<ad>.md` | **Dokunulmaz**, yerinde kalır |
 
 ## Dikte
 
@@ -52,37 +55,37 @@ Uzun kayıtlar (toplantı, ders) içindir. Kayıt sürerken F13 ve wake word yok
    - VS Code'da `Ctrl+K V` önizlemeyi yan panelde açar.
 3. Tray → 🎤 Toplantı → **⏹ Toplantı Kaydını Durdur**.
 4. **Ad penceresi** açılır (Windows'ta tkinter, macOS'ta osascript). Boş bırakır ya da iptal edersen zaman damgası ad olur.
-5. Kaydın tamamı `data/audio/<ad>.wav` olarak yazılır (16 kHz, mono, 16-bit PCM).
+5. Kaydın tamamı `data/media/<ad>.wav` olarak yazılır (16 kHz, mono, 16-bit PCM).
 6. **Son geçiş** tüm sesi `beam=5` ile çevirir ve [temizlik katmanlarını](#transkript-temizliği) uygular.
-7. Transkript `data/transcripts/<ad>.md` olarak yazılır ve editörde açılır.
+7. Transkript `data/raw/<ad>.md` olarak yazılır ve editörde açılır.
 8. Geçici `LIVE.md` silinir.
 
 ## Ses dosyasını dök
 
 Mevcut bir ses veya video dosyasını yüksek kaliteyle (`beam=5`) transkripte çevirir.
 
-- **Tray:** 🎤 Toplantı → **📁 Ses dosyasını dök…** Dosya seçici `data/inbox/` klasöründe açılır (Windows'ta tkinter, macOS'ta yerel osascript seçicisi).
+- **Tray:** 🎤 Toplantı → **📁 Ses dosyasını dök…** Dosya seçici `data/media/` klasöründe açılır (Windows'ta tkinter, macOS'ta yerel osascript seçicisi).
 - **Komut satırı:** `venv\Scripts\python dictation.py --transcribe FILE [--aggressive]`. Daemon açıkken reddedilir; önce Tray → Çıkış.
 - **Biçimler:** `wav mp3 m4a aac flac ogg wma opus qta aif aiff caf`. Video dosyalarında (`mp4 mov mkv avi webm`) ses ayrılır.
 - **Çözme:**
   - Windows'ta faster-whisper PyAV kullanır; sistemde ffmpeg gerekmez.
   - macOS'ta `afconvert` dosyayı 16 kHz mono PCM'e çevirir; ffmpeg gerekmez.
-- **Çıktı:** Transkript `data/transcripts/<dosya adı>.md` olarak yazılır, ad sorulmaz. Kaynak dosya `data/audio/` klasörüne **taşınır** (zaten oradaysa yerinde kalır).
+- **Çıktı:** Transkript `data/raw/<dosya adı>.md` olarak yazılır, ad sorulmaz. Kaynak dosya `data/media/` klasörüne **taşınır**; dosyayı zaten oraya bıraktıysan hiç kıpırdamaz (olağan durum).
 
 ## Meet Dictation
 
 Toplantı kayıtları (video dahil) içindir. Konuşmacı ayırma yapmaz; düz transkript üretir.
 
-1. Tray → 🎤 Toplantı → **🎥 Meet Dictation…** Dosya seçici `data/inbox/` klasöründe açılır.
+1. Tray → 🎤 Toplantı → **🎥 Meet Dictation…** Dosya seçici `data/media/` klasöründe açılır.
 2. Ad penceresi açılır; varsayılan ad, dosyanın kendi adıdır.
-3. Ses ayrılır ve `data/audio/<ad>.wav` olarak yazılır.
+3. Ses ayrılır ve `data/media/<ad>.wav` olarak yazılır.
 4. `beam=5` ile çevrilir, temizlik uygulanır.
-5. Transkript `data/transcripts/<ad>.md` olarak yazılır (başlık: "Meet Dictation — <ad>") ve editörde açılır.
-6. **Seçilen dosyaya dokunulmaz.** `data/inbox/` klasörünü Yiğit elle yönetir.
+5. Transkript `data/raw/<ad>.md` olarak yazılır (başlık: "Meet Dictation — <ad>") ve editörde açılır.
+6. **Seçilen dosyaya dokunulmaz.** Video ve ondan çıkarılan WAV aynı klasörde (`data/media/`) yan yana durur; klasörü Yiğit elle yönetir.
 
 ## iPhone ve mobil kayıtlar
 
-iPhone Ses Kayıtları uygulaması, sıkıştırılmış ayarda `.m4a` (AAC), kayıpsız ayarda `.qta` (ALAC) üretir. İkisi de iki platformda doğrudan çözülür; dosyayı `data/inbox/` klasörüne bırakıp "dök" akışını kullan. macOS'ta Ses Kayıtları dosyaları uygulamadan sürükle-bırak ile dışarı alınır.
+iPhone Ses Kayıtları uygulaması, sıkıştırılmış ayarda `.m4a` (AAC), kayıpsız ayarda `.qta` (ALAC) üretir. İkisi de iki platformda doğrudan çözülür; dosyayı `data/media/` klasörüne bırakıp "dök" akışını kullan. macOS'ta Ses Kayıtları dosyaları uygulamadan sürükle-bırak ile dışarı alınır.
 
 ## Tray menüsü
 
@@ -114,7 +117,7 @@ Her transkript aynı Markdown iskeletini kullanır:
 - **Tarih:** 2026-09-16 14:05:00
 - **Ses suresi:** …
 - **Model:** turbo (cuda)
-- **Kaynak:** `data/audio/<ad>.wav`
+- **Kaynak:** `data/media/<ad>.wav`
 
 ---
 
@@ -127,7 +130,7 @@ _**Transkript tamamlandi.** Sure: … • Model: …_
 
 - **Kaynak satırı:** Dosya repo içindeyse repo köküne göreli yol, repo dışındaysa mutlak yol yazılır. 16 Eylül 2026'dan önceki transkriptlerde eski mutlak yollar olduğu gibi kalır.
 - **Ad çakışması:** Aynı adlı dosya varsa yeni dosyanın adına `_YYYYmmdd_HHMMSS` eklenir; hiçbir dosyanın üstüne yazılmaz.
-- **Elle düzeltme:** Bir transkript elle (ya da ajanla) düzeltilecekse önce Whisper'ın ham çıktısı aynı adla `data/raw/` klasörüne kopyalanır, düzeltme `data/transcripts/` altındaki dosyada yapılır ve başlığa `- **Düzeltme:** …` satırı eklenir. `data/raw/` klasörünü program kullanmaz; yalnız elle yönetilir.
+- **Elle düzeltme:** Program her transkripti `data/raw/` klasörüne yazar; orası Whisper'ın dokunulmamış çıktısıdır. Bir transkript elle (ya da ajanla) düzeltilecekse ham dosya aynı adla `data/transcripts/` klasörüne **kopyalanır**, düzeltme oradaki kopyada yapılır ve başlığa `- **Düzeltme:** …` satırı eklenir. Böylece `data/raw/` her zaman karşılaştırılabilir ham hâli tutar; `data/transcripts/` yalnız elden geçmiş transkriptleri içerir ve programın yazdığı bir dosya asla üstüne binmez.
 
 ## Transkript temizliği
 

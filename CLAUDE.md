@@ -11,9 +11,10 @@ Mac'te açılan ilk oturumda, ilk yanıtta şunu hatırlat: son Mac doğrulamas�
 - **Commit:** Commit'ten önce Yiğit'in onayını al. `master` dalına yalnız Yiğit push eder; başka bir katkıcı adına çalışıyorsan `feature/<konu>` dalı aç ve PR gönder.
 - **Kullanım değişmez:** F13 / Caps Lock x2, "Diktasyon" wake word, tray menüsü, `--transcribe` ve `--aggressive` bayrakları, transkript biçimi. Bunları değiştiren iş yeni özelliktir; ayrı onay ister.
 - **Veri gizliliği:** `data/` altındaki transkript ve ses dosyalarından, `.local/logs/` içindeki loglardan yalnız ad, boyut ve sayı bilgisini oku. Yiğit istemedikçe içeriklerini okuma veya raporlama.
+- **Veri akışı:** Program yalnız `data/media/` (ses + video, girdi ve arşiv aynı klasör) ve `data/raw/` (ham Whisper MD) klasörlerine yazar. `data/transcripts/` elle düzeltilen kopyaların yeridir; oraya yazan kod eklenmez.
 - **Daemon:** Çalışıyor olabilir. Yalnız Yiğit'in bilgisiyle durdur (tray → Çıkış). Daemon açıkken `dictation.py`'yi ikinci kez başlatma. `--transcribe` zaten reddedilir (PID kilidi): aynı GPU'da iki model çakışır. Kod değişikliğini `venv\Scripts\python -m py_compile dictation.py` ile denetle.
 - **Git temizliği:** Programı kullanmak git durumunu değiştirmez. Çalışma çıktıları yalnız `data/` (değerli) veya `.local/` (yeniden üretilir) altına yazılır; ikisi de ignore'ludur. Yeni bir çıktı türü de bu iki klasörden birine gider.
-- **Yollar tek yerde:** Tüm yollar `dictation.py` başındaki yol bloğundadır (`BASE_DIR`, `DATA_DIR`, `INBOX_DIR`, `AUDIO_DIR`, `TRANSCRIPTS_DIR`, `LOCAL_DIR`, `_LOG_DIR`, `MODELS_DIR`). Repo dışına veri yazan kod ekleme.
+- **Yollar tek yerde:** Tüm yollar `dictation.py` başındaki yol bloğundadır (`BASE_DIR`, `DATA_DIR`, `MEDIA_DIR`, `RAW_DIR`, `TRANSCRIPTS_DIR`, `LOCAL_DIR`, `_LOG_DIR`, `MODELS_DIR`). Repo dışına veri yazan kod ekleme.
 - **Belge bakımı:** Yol, klasör, menü veya CLI değiştiren commit, aynı commit içinde README'deki "Yerel dosyalar" tablosunu ve [docs/nasil-calisir.md](docs/nasil-calisir.md) dosyasını günceller. Teslimden önce şu komut boş dönmeli:
 
   ```bash

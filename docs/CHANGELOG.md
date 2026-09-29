@@ -6,6 +6,38 @@ Bu dosya tamamlanan önemli işlerin ve kararların kaydıdır; en yeni kayıt e
 
 ---
 
+## 2026-09-30 — `data/media/` + `data/raw/`: tek medya klasörü, ham çıktı ayrı
+
+Veri düzeni üç klasöre indi. Kullanım (F13, wake word, tray menüsü, `--transcribe`, `--aggressive`, transkript biçimi) değişmedi; değişen yalnız dosyaların nereye gittiği.
+
+### Kararlar (Yiğit)
+
+| # | Karar |
+|---|---|
+| K1 | `data/inbox/` ve `data/audio/` birleşti: tek klasör **`data/media/`**. Girdi ve arşiv aynı yerdedir — elle bıraktığın kayıt da programın yazdığı WAV da orada durur. |
+| K2 | Klasör adı `audio` değil `media`: içerik ses değil, `.mp4` gibi video dosyalarını da kapsıyor. |
+| K3 | Program artık transkripti **`data/raw/`** klasörüne yazar (eskiden `data/transcripts/`). `data/transcripts/` elle düzeltilen kopyaların yeridir; program oraya yazmaz, yalnız klasörü oluşturur. |
+
+### Akış
+
+`data/media/<kayıt>` → Whisper → `data/raw/<ad>.md` → elle düzeltme → `data/transcripts/<ad>.md`
+
+Ham dosya `data/raw/` altında dokunulmadan kalır, düzeltme kopyada yapılır. Program çıktısının elle düzeltilmiş bir dosyanın üstüne binmesi artık yapısal olarak imkânsız.
+
+### Kod
+
+- Yol bloğu: `INBOX_DIR` + `AUDIO_DIR` → `MEDIA_DIR`; yeni `RAW_DIR`. `_ensure_dirs` üç veri klasörünü oluşturur.
+- Getter'lar: `_get_inbox_dir` + `_get_audio_dir` → `_get_media_dir`; `_get_transcripts_dir` → `_get_raw_dir`. Ölü `_get_lectures_dir` shim'i silindi.
+- Dosya seçiciler (Windows tkinter x3, macOS osascript) `data/media/` klasöründe açılır.
+- "Dök" akışındaki taşıma korundu ama olağan durumda artık çalışmaz: kaynak zaten `data/media/` altındaysa yerinde kalır.
+- Üç MD yazan yol (toplantı kaydı, dök, Meet Dictation) ve uyuyan diarize kodu `data/raw/` klasörüne yazar.
+
+### Taşıma
+
+`data/audio/` → `data/media/` yeniden adlandırıldı, `data/inbox/` içindeki tek dosya (`Yigit - Mert - ShapeCosmos3D (2026-09-29 22 34 GMT+3).mp4`, 264 MB) oraya alındı ve boşalan `data/inbox/` silindi. 17 dosya, boyutlar değişmedi. Eski transkriptlerdeki `Kaynak` satırları tarihçedir; `data/audio/...` olarak kalır.
+
+---
+
 ## 2026-09-22 — `data/raw/`: elle düzeltilen transkriptlerin ham hâli
 
 - Yiğit kararı: elle ya da ajanla düzeltilen transkriptin düzenlenmemiş Whisper çıktısı `data/raw/` klasöründe, `data/transcripts/` ile aynı dosya adıyla tutulur. Düzeltilen dosyanın başlığına `- **Düzeltme:** …` satırı eklenir. Program bu klasörü kullanmaz; klasör elle yönetilir. README "Yerel dosyalar" tablosu ve `docs/nasil-calisir.md` "Çıktı biçimi" bölümü güncellendi.

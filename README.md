@@ -43,11 +43,11 @@ Uygulama her zaman repodaki güncel `dictation.py`'yi çalıştırır; `git pull
 | Kaydı iptal et | F13'ü 1,25 sn basılı tut | Caps Lock üç kez |
 | Toplantı kaydı, dosya dökme, Meet Dictation | Tray → 🎤 Toplantı | Menü çubuğu → 🎤 Toplantı |
 
-Dosya seçiciler `data/inbox/` klasöründe açılır: işlenecek ses veya video dosyasını önce oraya bırak. Daemon kapalıyken komut satırından da çevirebilirsin:
+Dosya seçiciler `data/media/` klasöründe açılır: işlenecek ses veya video dosyasını önce oraya bırak. Aynı klasör programın yazdığı WAV'ları da tutar, yani girdi ve arşiv tek yerdedir. Daemon kapalıyken komut satırından da çevirebilirsin:
 
 ```bash
-venv\Scripts\python dictation.py --transcribe "data\inbox\kayit.m4a"     # Windows
-venv/bin/python dictation.py --transcribe "data/inbox/kayit.qta"         # macOS
+venv\Scripts\python dictation.py --transcribe "data\media\kayit.m4a"     # Windows
+venv/bin/python dictation.py --transcribe "data/media/kayit.qta"         # macOS
 ```
 
 Modların adım adım akışı, tray menüsü, çıktı biçimi ve ayarlar: [docs/nasil-calisir.md](docs/nasil-calisir.md).
@@ -58,10 +58,9 @@ Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tutt
 
 | Yol | İçerik | Sınıf | Yeni cihazda |
 |---|---|---|---|
-| `data/inbox/` | Elle bırakılan ses/video dosyaları (Meet kayıtları, iPhone kayıtları). Program buradaki dosyayı yalnız "dök" akışında `data/audio/`'ya taşır; başka hiçbir şey yapmaz. | Değerli, git dışı | Kopyalanır |
-| `data/audio/` | Toplantı kayıtlarının WAV'ları ve işlenmiş ses dosyaları | Değerli, git dışı | Kopyalanır |
-| `data/transcripts/` | Markdown transkriptler | Değerli, git dışı | Kopyalanır |
-| `data/raw/` | Elle düzeltilen transkriptlerin düzenlenmemiş Whisper çıktısı; `data/transcripts/` ile aynı dosya adı. Program kullanmaz, elle yönetilir. | Değerli, git dışı | Kopyalanır |
+| `data/media/` | **Ses ve video dosyalarının tek klasörü.** Elle bırakılan kayıtlar (Meet `.mp4`, iPhone `.m4a`/`.qta`, …) ve programın yazdığı WAV'lar birlikte durur; dosya seçiciler burada açılır. Dışarıdan `--transcribe` ile verilen dosya buraya taşınır, zaten buradaysa yerinde kalır. | Değerli, git dışı | Kopyalanır |
+| `data/raw/` | **Programın tek Markdown çıktısı:** Whisper'ın düzeltilmemiş ham transkriptleri. Her akış (toplantı, dök, Meet) buraya yazar. | Değerli, git dışı | Kopyalanır |
+| `data/transcripts/` | **Elle düzeltilmiş transkriptler.** `data/raw/` içindeki dosya aynı adla buraya kopyalanır ve düzeltme burada yapılır. Program bu klasöre yazmaz, yalnız oluşturur. | Değerli, git dışı | Kopyalanır |
 | `.local/logs/` | Aylık log (`YYYY-MM-<Ay>.log`, örn. `2026-09-Eylul.log`; dikte metni dahil tam içerik, silinmez) ve `dictation.pid` | Makineye özel, git dışı | Kendiliğinden oluşur |
 | `.local/models/` | speechbrain modeli (uyuyan konuşmacı ayırma özelliği) | Makineye özel, git dışı | Gerekirse kendiliğinden iner |
 | `.local/file-queue/` | `file_queue.py` iş kuyruğu (daemon'a bağlı değil) | Makineye özel, git dışı | Kendiliğinden oluşur |
@@ -82,7 +81,7 @@ Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tutt
 
 | Değişken | Etkisi |
 |---|---|
-| `VOICEDICTATION_DATA_DIR` | Veri kökünü değiştirir; `inbox/`, `audio/` ve `transcripts/` bu klasörün altında oluşur. Varsayılan: `data/`. |
+| `VOICEDICTATION_DATA_DIR` | Veri kökünü değiştirir; `media/`, `raw/` ve `transcripts/` bu klasörün altında oluşur. Varsayılan: `data/`. |
 | `VOICEDICTATION_EDITOR` | Toplantı transkriptini açan editör (`notepad++`, `obsidian`, `subl` …). `none` ise dosya yolu yalnız panoya kopyalanır. Varsayılan sıra: VS Code → sistem varsayılanı → pano. |
 | `VOICEDICTATION_QUEUE_DIR` | `file_queue.py` kuyruk kökü. Varsayılan: `.local/file-queue/`. |
 
