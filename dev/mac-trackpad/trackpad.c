@@ -35,6 +35,7 @@ static void (*tapCallback)(void);
 static bool enabled;
 static unsigned long frameCount, tapCount;
 static unsigned long rejected[7];
+static unsigned long threeRejected[7];
 
 static void contacts(Device dev, Contact *input, size_t count, double timestamp, size_t frame, void *ref) {
     if (count > 16 || (count && !input)) return;
@@ -49,9 +50,12 @@ static void contacts(Device dev, Contact *input, size_t count, double timestamp,
     pthread_mutex_lock(&mutex);
     frameCount++;
     bool hadGesture = gesture.active;
+    bool hadThree = gesture.three;
     bool fire = VDFeed(&gesture, timestamp, points, n, blocked || !enabled);
-    if (enabled && hadGesture && n == 0 && !fire && gesture.lastReject >= 0 && gesture.lastReject < 7)
+    if (enabled && hadGesture && n == 0 && !fire && gesture.lastReject >= 0 && gesture.lastReject < 7) {
         rejected[gesture.lastReject]++;
+        if (hadThree) threeRejected[gesture.lastReject]++;
+    }
     if (fire && tapCallback) {
         tapCount++;
         // Callback yalniz sinirli Python kuyruguna olay birakir; model/GUI calistirmaz.
@@ -75,6 +79,12 @@ void vd_trackpad_counts(unsigned long *frames, unsigned long *taps) {
 void vd_trackpad_rejections(unsigned long *values) {
     pthread_mutex_lock(&mutex);
     memcpy(values, rejected, sizeof(rejected));
+    pthread_mutex_unlock(&mutex);
+}
+
+void vd_trackpad_three_rejections(unsigned long *values) {
+    pthread_mutex_lock(&mutex);
+    memcpy(values, threeRejected, sizeof(threeRejected));
     pthread_mutex_unlock(&mutex);
 }
 

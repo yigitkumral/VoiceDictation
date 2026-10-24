@@ -18,6 +18,9 @@ class Trackpad:
         self._on_tap, self._log = on_tap, log
         self._worker = None
         self._last_report = 0
+        self._dropped_full = 0
+        self._dropped_stale = 0
+        self._three_rejections = None
         if not Path(library_path).is_file():
             return
         try:
@@ -32,6 +35,10 @@ class Trackpad:
             lib.vd_trackpad_counts.restype = None
             lib.vd_trackpad_rejections.argtypes = [ctypes.POINTER(ctypes.c_ulong)]
             lib.vd_trackpad_rejections.restype = None
+            self._three_rejections = getattr(lib, 'vd_trackpad_three_rejections', None)
+            if self._three_rejections is not None:
+                self._three_rejections.argtypes = [ctypes.POINTER(ctypes.c_ulong)]
+                self._three_rejections.restype = None
             result = lib.vd_trackpad_start(self._callback)
             if result:
                 self.status = f"baslatilamadi ({result})"
@@ -51,7 +58,7 @@ class Trackpad:
         try:
             self._events.put_nowait(time.monotonic())
         except queue.Full:
-            pass
+            self._dropped_full += 1
 
     def _run(self):
         while not self._stop.is_set():
@@ -59,12 +66,16 @@ class Trackpad:
                 stamp = self._events.get(timeout=.1)
             except queue.Empty:
                 continue
-            if self.enabled and not self._stop.is_set() and time.monotonic() - stamp < .2:
+            age = time.monotonic() - stamp
+            if self.enabled and not self._stop.is_set() and age < .2:
                 try:
                     self._on_tap()
-                    self._log.info("[TRACKPAD] Uc parmak -> F13 isleyicisi")
+                    self._log.info("[TRACKPAD] Uc parmak -> F13 isleyicisi (kuyruk=%.1f ms)", age * 1000)
                 except Exception:
                     self._log.exception("[TRACKPAD] Hareket islenemedi")
+            elif self.enabled and not self._stop.is_set() and age >= .2:
+                self._dropped_stale += 1
+                self._log.info("[TRACKPAD] Eski olay atlandi (kuyruk=%.1f ms)", age * 1000)
 
     def set_enabled(self, enabled):
         if not self.ready or self._stop.is_set():
@@ -90,6 +101,12 @@ class Trackpad:
             self._library.vd_trackpad_rejections(rejected)
             self._log.info("[TRACKPAD] frame=%d tap=%d red(hareket,parmak,sure,modifier,gec_parmak,veri)=%s",
                            frames.value, taps.value, list(rejected)[1:])
+            three = (ctypes.c_ulong * 7)()
+            if self._three_rejections is not None:
+                self._three_rejections(three)
+            self._log.info("[TRACKPAD] uc_parmak_red=%s kuyruk_dolu=%d kuyruk_eski=%d",
+                           list(three)[1:] if self._three_rejections is not None else 'bilinmiyor',
+                           self._dropped_full, self._dropped_stale)
         return frames.value, taps.value
 
     def close(self):

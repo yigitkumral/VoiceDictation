@@ -1,5 +1,12 @@
 # CHANGELOG — VoiceDictation
 
+## 25 Ekim 2026 — Mac klavye izni ve trackpad tanısı
+
+- Yeni başlatıcı için kullanıcı Erişilebilirlik ve Giriş İzleme izinlerini yeniden verdi. Son açılışta güvenilmeyen klavye süreci uyarısı yok; mikrofon ve trackpad hazır. Menüden çıkışın daemon, model alt süreci ve PID kaydını birlikte kapattığı gerçek Mac'te doğrulandı.
+- Mac'te yapıştırmadan önce daemon'ın gerçek Erişilebilirlik izni sorgulanır. İzin yoksa metin panoda kalır, tuş gönderilmez ve sonuç `permission_denied` olur; yanlış `pasted`/başarı sesi üretilmez. Menüde son ölçüm yerine izin eksikliği görünür.
+- Trackpad logları genel hareket reddi ile gerçekten üç parmak görülen hareketlerin reddini ayırır. Kuyruk gecikmesi, dolu/eski olay sayısı ve F13 öncesi/sonrası durum kaydedilir. Hareket toleransları değiştirilmedi; eski yerel modül de yüklenebilir, yeni sayaç o durumda bilinmiyor görünür.
+- 189 Python testi (Mac tamamı, Windows bir ortam atlaması) ve 12 C hareket senaryosu geçti. Otomatik yapıştırmanın kullanıcı kabulü ayrıca izleniyor.
+
 ## 25 Ekim 2026 — Mac klasör geçişi
 
 - Mac reposu `dev/` ve `.local/` düzenine geçirildi. 71 veri dosyasının ad/boyut envanteri ve 55 paket sürümü korundu; 27 paket komutu yeni ortama göre yeniden üretildi. Önceki yerel değişiklikler Git stash'te, eski ortam ve imzalı uygulama `.local/migration-20261025/` altında korundu.

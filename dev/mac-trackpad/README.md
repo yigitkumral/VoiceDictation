@@ -20,6 +20,8 @@ Eski TP prototip uygulaması kullanılmaz ve başlatılmamalıdır; eski üretim
 
 ## Hareket
 
+Tanı kayıtlarında `uc_parmak_red` yalnız gerçekten üç parmak görülen hareketlerin reddini sayar; genel `red` normal tek parmak kullanımını da içerir. `kuyruk_dolu` ve `kuyruk_eski` kaybolan olayları, `F13 durum=...` ise algılanan dokunuşun uygulamada hangi duruma geçtiğini gösterir. Bu sayaçlar koordinat veya konuşma metni içermez. Yeni sayaç için yerel modül yeniden derlenir; eski modülde değer bilinmiyor olarak yazılır.
+
 - Dahili trackpad'e üç parmağı 200 ms içinde yerleştir, 30–600 ms toplam sürede kaldır.
 - Hafif dokunma ve fiziksel sol tıklama kabul edilir. Her parmak başlangıca göre normalize
   0,035'ten fazla yer değiştirirse kaydırma/sürükleme sayılıp reddedilir.

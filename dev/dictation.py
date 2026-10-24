@@ -421,6 +421,16 @@ MODIFIER = pynput_kb.Key.cmd if IS_MAC else pynput_kb.Key.ctrl
 paste_controller = pynput_kb.Controller()
 _suppress_hotkey = False  # paste_only sirasinda hotkey'leri yoksay
 
+def _mac_keyboard_access():
+    """Yalniz mevcut daemon'in iznini sorgular; izin penceresi acmaz."""
+    try:
+        from ApplicationServices import AXIsProcessTrusted
+        return bool(AXIsProcessTrusted())
+    except (ImportError, AttributeError) as exc:
+        log.warning("[IZIN] Klavye izni sorgulanamadi: %s", type(exc).__name__)
+        return False
+
+
 def paste_only(valid=lambda: True):
     global _suppress_hotkey
     _suppress_hotkey = True
@@ -4042,7 +4052,7 @@ def _write_timing(values):
     row = {k: round(v, 3) for k, v in values.items()
            if k in numeric and isinstance(v, (int, float)) and v >= 0}
     statuses = {"pasted", "returned", "cancelled", "empty", "error", "disabled", "not_ready", "accepted",
-                "rejected", "timeout", "busy", "oversize", "unavailable", "skipped"}
+                "rejected", "timeout", "busy", "oversize", "unavailable", "skipped", "permission_denied"}
     for key in ("status", "cleanup_status"):
         if values.get(key) in statuses:
             row[key] = values[key]
@@ -4058,6 +4068,8 @@ def _write_timing(values):
                f"Ses {row.get('whisper_ms', 0)/1000:.1f} | "
                f"Düzenleme {row.get('cleanup_ms', 0)/1000:.1f} | "
                f"Yapıştırma {row.get('paste_ms', 0)/1000:.1f}")
+    if row.get("status") == "permission_denied":
+        summary = "Klavye izni eksik — metin panoda"
     with timing_lock:
         last_timing_summary = summary
         try:
@@ -4093,6 +4105,11 @@ def _send_final(msg, record_id, source=None, timings=None):
     started = time.perf_counter()
     pyperclip.copy(msg)
     _diagnostic_event("clipboard", text=msg)
+    if IS_MAC and not _mac_keyboard_access():
+        timings["paste_ms"] = (time.perf_counter() - started) * 1000
+        _diagnostic_event("paste_blocked", reason="mac_accessibility_permission")
+        _delivery_notice("Mac klavye izni eksik; metin panoda. Yeni VoiceDictation uygulamasını Erişilebilirlik'e ekleyin.")
+        return "permission_denied"
     if paste_only(valid):
         timings["paste_ms"] = (time.perf_counter() - started) * 1000
         log.info(f"[OK] >> {msg}")
@@ -4477,8 +4494,10 @@ def toggle_recording():
 def _trackpad_f13():
     """Ayni process icinde mevcut F13 yolu; OS'ye sahte tus/ayri izin gerekmez."""
     if not should_quit.is_set():
+        before = sm.state.name
         on_press(pynput_kb.Key.f13)
         on_release(pynput_kb.Key.f13)
+        log.info("[TRACKPAD] F13 durum=%s -> %s", before, sm.state.name)
 
 
 _reset_cooldown_until = 0.0  # reset sonrasi bounce engelleme

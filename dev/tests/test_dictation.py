@@ -29,7 +29,7 @@ def load(*names):
     ns = dict(_diagnostic_event=Mock(), _diagnostic_destination=Mock(),
               _start_diagnostic=Mock(return_value="a" * 32), _finish_diagnostic=Mock(),
               MODEL_SIZE="test", DEVICE="test", CLEANUP_MODEL="test.gguf", os=os, re=re, time=time, threading=threading, json=json, subprocess=subprocess,
-              tempfile=tempfile, np=np, Enum=Enum, log=Mock(), IS_WIN=True,
+              tempfile=tempfile, np=np, Enum=Enum, log=Mock(), IS_WIN=True, IS_MAC=False,
               wake_word_string="diktasyon", _cancel_windows_hotkey=Mock())
     for node in TREE.body:
         if isinstance(node, (ast.FunctionDef, ast.ClassDef)) and node.name in names:
@@ -234,6 +234,22 @@ class RecordingTests(unittest.TestCase):
         with patch.object(time, "sleep"):
             self.assertTrue(ns["paste_only"](valid))
         self.assertNotIn(unittest.mock.call("enter"), keys.press.call_args_list)
+
+    def test_mac_denied_permission_keeps_clipboard_without_claiming_paste(self):
+        ns = self.ns
+        ns.update(IS_MAC=True, _mac_keyboard_access=Mock(return_value=False))
+        status = ns['_send_final']('Merhaba.', 1)
+        self.assertEqual(status, 'permission_denied')
+        ns['pyperclip'].copy.assert_called_once_with('Merhaba.')
+        ns['paste_only'].assert_not_called()
+        ns['sound_sent'].assert_not_called()
+        ns['_delivery_notice'].assert_called_once()
+
+    def test_mac_granted_permission_uses_existing_paste(self):
+        ns = self.ns
+        ns.update(IS_MAC=True, _mac_keyboard_access=Mock(return_value=True))
+        self.assertEqual(ns['_send_final']('Merhaba.', 1), 'pasted')
+        ns['paste_only'].assert_called_once()
 
     def test_stop_claims_recording_once_without_blocking_keyboard(self):
         ns = self.ns

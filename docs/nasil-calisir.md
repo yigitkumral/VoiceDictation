@@ -12,6 +12,8 @@ Kurulum arşivleri çalışırken kullanılmaz; Windows'taki eski ZIP dosyaları
 
 Mac'te menüden Çıkış, Cocoa uygulamayı sonlandırmadan önce trackpad'i, tanı yazıcısını, sahip olunan Qwen sürecini ve PID kaydını kapatır. Böylece her yeniden açılışta eski model süreçleri bellekte birikmez. Klasör geçişinin geri dönüş kayıtları `.local/migration-YYYYMMDD/` altında tutulur.
 
+Mac'te otomatik yapıştırma için yeni başlatıcının Erişilebilirlik izni gerekir. İzin yoksa metin panoya alınır ama `⌘V` gönderilmez; tanıda `permission_denied`, menüde “Klavye izni eksik — metin panoda” görünür. Başarı sesi çalmaz. İzin varken tuş gönderimi, hedef uygulamanın metni gerçekten kabul ettiğinin tek başına kanıtı değildir; gerçek kullanım ayrıca doğrulanır.
+
 ```mermaid
 flowchart LR
     Mic[Mikrofon] --> D[Dikte]

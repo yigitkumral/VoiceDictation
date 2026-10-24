@@ -2,7 +2,7 @@
 
 Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGELOG.md](CHANGELOG.md) dosyasına yazılır.
 
-- [ ] Mac yeni başlatıcısının Erişilebilirlik/Giriş İzleme izinlerini ve gerçek üç parmak → kayıt → yapıştırma akışını doğrula. Klasör, ortam ve Login Items geçişi tamamlandı; eski ortam `.local/migration-20261025/` altında kullanım kabulüne kadar korunuyor.
+- [ ] Mac'te gerçek üç parmak → kayıt → otomatik yapıştırma akışının kullanıcı kabulünü tamamla. Yeni başlatıcının mikrofon, Erişilebilirlik ve Giriş İzleme izinleri verildi; yeniden açılışta güven uyarısı yok. Eski ortam `.local/migration-20261025/` altında kullanım kabulüne kadar korunuyor.
 
 ## Mac'te ilk oturum
 
