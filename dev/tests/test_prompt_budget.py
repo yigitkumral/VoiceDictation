@@ -5,7 +5,7 @@ import re
 from types import SimpleNamespace
 import unittest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class ByteTokenizer:

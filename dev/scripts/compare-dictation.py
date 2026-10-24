@@ -43,7 +43,7 @@ if __name__ == '__main__':
         parser.error('--last must be positive')
     records = deque(maxlen=args.last)
     invalid = 0
-    root = Path(__file__).resolve().parents[1] / '.local' / 'diagnostics'
+    root = Path(__file__).resolve().parents[2] / '.local' / 'diagnostics'
     for path in sorted(root.glob('*.jsonl')):
         with path.open(encoding='utf-8') as stream:
             for line in stream:

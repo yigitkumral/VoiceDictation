@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-cd "$(dirname "$0")/.."
+cd "$(dirname "$0")/../.."
 test "$(uname -s)" = Darwin || { echo "macOS required" >&2; exit 1; }
 DEST="$PWD/.local/trackpad"
 mkdir -p "$DEST"

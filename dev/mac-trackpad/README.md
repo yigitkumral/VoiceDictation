@@ -7,7 +7,7 @@ işletim sistemine sahte tuş gönderilmez.
 
 ## Kurulum ve kullanım
 
-Mac'te repo kökünde `bash scripts/build-mac-trackpad.sh` çalıştırılır; yalnız
+Mac'te repo kökünde `bash dev/scripts/build-mac-trackpad.sh` çalıştırılır; yalnız
 `.local/trackpad/libvdtrackpad.dylib` ve sentetik test ikilisi üretilir. VoiceDictation
 normal menüsünden kapatılıp açılınca modül yüklenir ve trackpad etkin başlar.
 Modül yoksa dikte normal çalışır, trackpad menüsünde kurulu olmadığı görünür.

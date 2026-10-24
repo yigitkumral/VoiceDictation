@@ -1,5 +1,5 @@
 """file_queue birim testleri (model/GPU yok). Calistirma:
-    venv\\Scripts\\python -m unittest discover -s tests
+    .local\\venv\\Scripts\\python -m unittest discover -s dev/tests
 """
 import json
 import os
@@ -9,7 +9,7 @@ import threading
 import time
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from dev import file_queue as fq  # noqa: E402
 
 JOB_ID = "a" * 64

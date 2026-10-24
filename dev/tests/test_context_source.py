@@ -16,7 +16,7 @@ import unittest
 from unittest.mock import Mock, call, patch
 
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dev import context_source as source
 
 

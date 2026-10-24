@@ -8,20 +8,18 @@ Yerel Whisper modeliyle çalışan, Windows ve macOS'ta kullanılan sesli yazım
 
 | Konum | Görevi | Git'te mi? |
 |---|---|---|
-| `dev/` | Uygulamanın Python kaynakları ve `mac-trackpad/` içindeki yerel C modülü | Evet |
-| `scripts/` | Kurulum, başlatma, derleme ve tanı karşılaştırma komutları; Mac `.app` başlatıcısı | Evet |
-| `dictation.py` | Mevcut başlatıcılar için beş satırlık giriş; asıl kod `dev/dictation.py` | Evet |
-| `tests/`, `docs/` | Otomatik testler ve belgeler | Evet |
-| `data/` | Değerli ses/video kayıtları ve transkriptler | Hayır |
+| `dev/` | Bütün geliştirme dosyaları: Python/C kaynakları, `scripts/` komutları, `tests/` testleri ve bağımlılık listesi | Evet |
+| `docs/` | Kullanım belgeleri ve çalışma kayıtları | Evet |
+| `.local/data/` | Değerli ses/video kayıtları ve transkriptler | Hayır |
 | `.local/` | Yerel modeller, çalıştırıcılar, loglar, tanı ve deneme çıktıları | Hayır |
-| `venv/` | Bu makineye kurulu Python ortamı ve bağımlılıklar | Hayır |
-| `__pycache__/` | Python'ın otomatik ürettiği hızlandırma önbelleği; alt klasörlerde de oluşabilir | Hayır |
+| `.local/venv/` | Bu makineye kurulu Python ortamı ve bağımlılıklar | Hayır |
+| `.local/__pycache__/` | Başlatıcıların yönlendirdiği Python önbelleği | Hayır |
 | `.claude/`, `.codex/` | Ajanların yerel proje ayarları; mevcut yerel ayar dosyaları paylaşılmaz | Hayır, mevcut yerel ayarlar |
-| `.env` | İsteğe bağlı yerel ortam ayarları; yoksa gerekmez | Hayır |
+| `.local/.env` | İsteğe bağlı yerel ortam ayarları; yoksa gerekmez | Hayır |
 | `.git/` | Git'in yerel tarihçesi ve depo bilgisi | Push ile klasör olarak gönderilmez |
 | `.gitignore`, `.gitattributes`, `.mcp.json` | Git kuralları ve paylaşılabilir araç tanımı | Evet |
 
-Noktayla başlayan adlar çoğunlukla araç ayarlarıdır; gizli görünmeleri gereksiz oldukları anlamına gelmez. `dev/` kaynakları, `scripts/` ise bu kaynakları kuran/başlatan komutları içerir. Eski Mac başlatıcısının yolu ve izinleri korunsun diye kökte yalnız küçük giriş dosyası kalır.
+Kod ve geliştirme araçları tek `dev/` ağacında; veriler, modeller, Python ortamı ve üretilen Mac uygulaması tek `.local/` ağacındadır. Kökte Python başlatıcısı yoktur: `python -m dev.dictation` kullanılır. `.git/`, `.claude/` ve `.codex/` araçların beklediği kök konumlarında kalır.
 
 ## Özellikler
 
@@ -37,13 +35,13 @@ Noktayla başlayan adlar çoğunlukla araç ayarlarıdır; gizli görünmeleri g
 
 ## Kurulum
 
-Python 3.12 veya üstü gerekir (3.14.2 ile test edildi). Tüm bağımlılıklar tek `requirements.txt` içindedir; platforma özel paketler (Windows: `pystray`, `Pillow`, CUDA kütüphaneleri; macOS: `rumps`, `mlx-whisper`) kendiliğinden seçilir.
+Python 3.12 veya üstü gerekir (3.14.2 ile test edildi). Tüm bağımlılıklar tek `dev/requirements.txt` içindedir; platforma özel paketler (Windows: `pystray`, `Pillow`, CUDA kütüphaneleri; macOS: `rumps`, `mlx-whisper`) kendiliğinden seçilir.
 
 ```bash
 git clone https://github.com/yigitkumral/VoiceDictation.git
 cd VoiceDictation
-scripts\setup.bat          # Windows: venv + paketler + açılışta başlatma kısayolu
-./scripts/setup.sh         # macOS: portaudio + venv + paketler
+dev\scripts\setup.bat          # Windows: venv + paketler + açılışta başlatma kısayolu
+./dev/scripts/setup.sh         # macOS: portaudio + venv + paketler
 ```
 
 Ayrıntılar, otomatik başlatma, macOS izinleri ve yeni cihaza taşıma: [docs/kurulum.md](docs/kurulum.md).
@@ -52,8 +50,8 @@ Ayrıntılar, otomatik başlatma, macOS izinleri ve yeni cihaza taşıma: [docs/
 
 | Platform | Arka planda (normal kullanım) | Konsollu (hata ayıklama) |
 |---|---|---|
-| Windows | `scripts\start.vbs` — açılışta Startup kısayolu çalıştırır | `scripts\start.bat` |
-| macOS | `scripts/VoiceDictation.app` — Login Items çalıştırır | `./scripts/start.sh` veya `venv/bin/python dictation.py` |
+| Windows | `dev\scripts\start.vbs` — açılışta Startup kısayolu çalıştırır | `dev\scripts\start.bat` |
+| macOS | `.local/VoiceDictation.app` — Login Items çalıştırır | `./dev/scripts/start.sh` veya `.local/venv/bin/python -m dev.dictation` |
 
 Uygulama her zaman repodaki güncel `dev/dictation.py`'yi çalıştırır; `git pull` sonrası bir sonraki açılışta yeni kod devrededir. Aynı anda tek örnek çalışır (PID kilidi). Kapatmak için: tray / menü çubuğu → **Çıkış**.
 
@@ -67,62 +65,63 @@ Uygulama her zaman repodaki güncel `dev/dictation.py`'yi çalıştırır; `git 
 | Kaydı iptal et | F13'ü 1,25 sn basılı tut | Caps Lock üç kez |
 | Toplantı kaydı, dosya dökme, Meet Dictation | Tray → 🎤 Toplantı | Menü çubuğu → 🎤 Toplantı |
 
-Dosya seçiciler `data/media/` klasöründe açılır: işlenecek ses veya video dosyasını önce oraya bırak. Aynı klasör programın yazdığı WAV'ları da tutar, yani girdi ve arşiv tek yerdedir. Daemon kapalıyken komut satırından da çevirebilirsin:
+Dosya seçiciler `.local/data/media/` klasöründe açılır: işlenecek ses veya video dosyasını önce oraya bırak. Aynı klasör programın yazdığı WAV'ları da tutar, yani girdi ve arşiv tek yerdedir. Daemon kapalıyken komut satırından da çevirebilirsin:
 
 ```bash
-venv\Scripts\python dictation.py --transcribe "data\media\kayit.m4a"     # Windows
-venv/bin/python dictation.py --transcribe "data/media/kayit.qta"         # macOS
+.local\venv\Scripts\python -m dev.dictation --transcribe ".local\data\media\kayit.m4a"     # Windows
+.local/venv/bin/python -m dev.dictation --transcribe ".local/data/media/kayit.qta"         # macOS
 ```
 
 Modların adım adım akışı, tray menüsü, çıktı biçimi ve ayarlar: [docs/nasil-calisir.md](docs/nasil-calisir.md).
 
 ## Yerel dosyalar
 
-Uygulamanın Python kaynakları `dev/` altında toplanır. Kökteki `dictation.py` yalnız uyumluluk başlatıcısıdır; mevcut Windows/Mac başlatıcıları ve komut satırı kullanımı değişmez. Testler `tests/`, yardımcı betikler `scripts/` altındadır. `data/`, `.local/`, `.env` ve `venv/` repo kökünde kalır.
+Geliştirme kaynakları `dev/`, makineye özel dosyalar `.local/` altındadır. Eski kurulumdan geçişte veri ve Python ortamı taşınmalı, başlatıcılar güncellenmelidir; [geçiş adımları](docs/kurulum.md#eski-klasör-düzeninden-geçiş) izlenir.
 
 Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tuttuğu her şeyin **tek** listesidir; yol veya klasör değişirse önce burası güncellenir.
 
 | Yol | İçerik | Sınıf | Yeni cihazda |
 |---|---|---|---|
-| `data/media/` | **Ses ve video dosyalarının tek klasörü.** Elle bırakılan kayıtlar (Meet `.mp4`, iPhone `.m4a`/`.qta`, …) ve programın yazdığı WAV'lar birlikte durur; dosya seçiciler burada açılır. Dışarıdan `--transcribe` ile verilen dosya buraya taşınır, zaten buradaysa yerinde kalır. | Değerli, git dışı | Kopyalanır |
-| `data/raw/` | **Programın tek Markdown çıktısı:** Whisper'ın düzeltilmemiş ham transkriptleri. Her akış (toplantı, dök, Meet) buraya yazar. | Değerli, git dışı | Kopyalanır |
-| `data/transcripts/` | **Elle düzeltilmiş transkriptler.** `data/raw/` içindeki dosya aynı adla buraya kopyalanır ve düzeltme burada yapılır. Program bu klasöre yazmaz, yalnız oluşturur. | Değerli, git dışı | Kopyalanır |
+| `.local/data/media/` | **Ses ve video dosyalarının tek klasörü.** Elle bırakılan kayıtlar (Meet `.mp4`, iPhone `.m4a`/`.qta`, …) ve programın yazdığı WAV'lar birlikte durur; dosya seçiciler burada açılır. Dışarıdan `--transcribe` ile verilen dosya buraya taşınır, zaten buradaysa yerinde kalır. | Değerli, git dışı | Kopyalanır |
+| `.local/data/raw/` | **Programın tek Markdown çıktısı:** Whisper'ın düzeltilmemiş ham transkriptleri. Her akış (toplantı, dök, Meet) buraya yazar. | Değerli, git dışı | Kopyalanır |
+| `.local/data/transcripts/` | **Elle düzeltilmiş transkriptler.** `.local/data/raw/` içindeki dosya aynı adla buraya kopyalanır ve düzeltme burada yapılır. Program bu klasöre yazmaz, yalnız oluşturur. | Değerli, git dışı | Kopyalanır |
 | `.local/logs/` | Aylık log (`YYYY-MM-<Ay>.log`, örn. `2026-09-Eylul.log`; dikte metni dahil tam içerik, silinmez) ve `dictation.pid` | Makineye özel, git dışı | Kendiliğinden oluşur |
 | `.local/models/` | speechbrain modeli (uyuyan özellik); isteğe bağlı `Qwen3-1.7B-Q8_0.gguf` metin temizleme modeli | Makineye özel, git dışı | Qwen ayrı onayla elle indirilir; uygulama indirmez |
 | `.local/llama/` | Yerel temizlik için llama.cpp `llama-server` çalıştırıcısı ve kitaplıkları | Makineye özel, git dışı | Platforma uygun sürüm elle kurulur |
 | `.local/llama-macos-dist/`, `.local/llama-b11852-bin-macos-arm64.tar.gz` | Apple Silicon için resmi b11852 çalıştırıcısı ve arşivi; Mac'te `.local/llama` bu dağıtıma bağlıdır. Qwen modeli Windows'taki onaylı kopyadan taşınır. | Makineye özel, git dışı | Mac dağıtımı kurulmalı; Windows ikilisi kullanılamaz |
 | `.local/llama-cuda/` | Aynı Qwen modeli için onaylı llama.cpp b11852 CUDA 13.4 çalıştırıcısı ve çalışma zamanı; CPU yedeği `.local/llama/` altındadır | Makineye özel, git dışı | Platforma uygun onaylı kurulum gerekir |
-| `.local/cleanup-temp/` | Önceki süreç-başına temizlik sürümünün geçici girdi klasörü; kalıcı model akışı kullanmaz, eski çökmeden kalan dosya bulunabilir | Makineye özel, git dışı | Taşımak gerekmez |
 | `.local/metrics/dictation.jsonl` | Yalnız dikte süreleri, uzunluklar ve durum; dikte metni, pencere/pane adı içermez | Makineye özel, git dışı | Kendiliğinden oluşur |
 | `.local/diagnostics/YYYY-MM-DD.jsonl` | Yiğit'in onayıyla masaüstü/Vault dikte ve Enter tanısı: kullanım yolu, bildirilen cihaz türü, tarayıcı ve istek kimliği; kaynak pencere/pane/sohbet kimliği, kullanılan bağlam ve model promptları, ham/filtreli/aday/seçilmiş metin, hedef bilgisi, süreler ve kod sürüm özeti. Ses veya API anahtarı içermez. | Kişisel içerik taşıyabilir, git dışı | Yeni kullanımda oluşur; eski olaylar geriye dönük tamamlanmaz |
-| `.local/trackpad/` | Deneysel Mac trackpad modülü (`libvdtrackpad.dylib`) ve algılayıcı testi; VoiceDictation sürecine yüklenir. Önceki ayrı uygulamanın kullanılmayan dosyaları da kalabilir. Sayaçlar mevcut aylık loga yazılır. | Makineye özel, git dışı | `bash scripts/build-mac-trackpad.sh`; [prototip kılavuzu](dev/mac-trackpad/README.md) |
-| `.local/llama-b11852-bin-win-cuda-13.4-x64.zip`, `.local/cudart-llama-bin-win-cuda-13.4-x64.zip`, `.local/llama-cuda-download.json` | Onaylı resmi CUDA çalıştırıcısı/çalışma zamanı arşivleri ve doğrulanmış indirme/hash kaydı | Makineye özel, git dışı | Yeniden kurulumda oluşturulabilir |
+| `.local/trackpad/` | Deneysel Mac trackpad modülü (`libvdtrackpad.dylib`) ve algılayıcı testi; VoiceDictation sürecine yüklenir. Önceki ayrı uygulamanın kullanılmayan dosyaları da kalabilir. Sayaçlar mevcut aylık loga yazılır. | Makineye özel, git dışı | `bash dev/scripts/build-mac-trackpad.sh`; [prototip kılavuzu](dev/mac-trackpad/README.md) |
+| `.local/llama-cuda-download.json` | Onaylı CUDA kurulumunun indirme/hash kaydı; kurulum ZIP dosyaları temizlendi | Makineye özel, git dışı | Yeniden kurulumda oluşturulabilir |
 | `.local/cleanup-gpu-evaluation.json` | GPU temizlik sentetik kalite/gecikme ölçüm kaydı; çalışma için gerekmez | Makineye özel, git dışı | Gerektiğinde yeniden üretilir |
 | `.local/cleanup-v3-evaluation.json` | Yerel temizlik için sentetik kalite/gecikme ölçüm kaydı; çalışma için gerekmez | Makineye özel, git dışı | Gerektiğinde yeniden üretilir |
-| `.local/rejected-prototypes/` | Geri çekilen canlı dikte/terminal deneylerinin eski test arşivi; aktif akış kullanmaz | Makineye özel, git dışı | Taşımak gerekmez |
-| `.local/llama-b11852.zip`, `.local/model-download.json` | Onaylı kurulumun arşivi ve model sürüm/hash kaydı | Makineye özel, git dışı | Yeniden kurulumda oluşturulabilir |
+| `.local/model-download.json` | Onaylı model kurulumunun sürüm/hash kaydı; eski kurulum ZIP dosyası temizlendi | Makineye özel, git dışı | Yeniden kurulumda oluşturulabilir |
 | `.local/file-queue/` | `dev/file_queue.py` iş kuyruğu (daemon'a bağlı değil) | Makineye özel, git dışı | Kendiliğinden oluşur |
-| `venv/` | Python ortamı | Platforma özel, git dışı | `scripts/setup.*` ile kurulur |
-| `.env` | İsteğe bağlı ortam değişkenleri (aşağıda); bugün kullanılmıyor | Makineye özel, git dışı | Gerekirse elle oluşturulur |
+| `.local/venv/` | Python ortamı | Platforma özel, git dışı | `dev/scripts/setup.*` ile kurulur |
+| `.local/__pycache__/`, `.local/test-tmp/` | Başlatıcıların Python önbelleği ve testlerin geçici çalışma alanı | Yeniden üretilir, git dışı | Kendiliğinden oluşur |
+| `.local/VoiceDictation.app` | Mac'te üretilen uygulama başlatıcısı; kaynak `dev/scripts/VoiceDictation.applescript` | Makineye özel, git dışı | `bash dev/scripts/build-mac-app.sh` ile üretilir |
+| `.local/environment-before-move.json` | Windows ortam geçişinden önceki Python/paket sürüm envanteri | Makineye özel, git dışı | Geçiş doğrulama kaydı, çalışırken kullanılmaz |
+| `.local/.env` | İsteğe bağlı ortam değişkenleri (aşağıda); bugün kullanılmıyor | Makineye özel, git dışı | Gerekirse elle oluşturulur |
 | `~/.cache/huggingface/hub/` | Whisper turbo modeli (Windows: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, macOS: `mlx-community/whisper-turbo`). Önbellek başka projelerle ortaktır; buradaki diğer modeller silinmez. | Repo dışı | İlk açılışta iner |
 | Sistem temp → `voicedictation_live/` | Toplantı sırasında canlı `LIVE.md` ve geçici WAV | Repo dışı, geçici | Kendiliğinden oluşur, kayıt bitince silinir |
-| Windows Startup → `VoiceDictation.lnk` | `scripts\start.vbs` kısayolu | Repo dışı | `scripts\setup.bat` oluşturur |
-| macOS Login Items → `VoiceDictation` | `scripts/VoiceDictation.app` | Repo dışı | Elle eklenir ([kurulum](docs/kurulum.md)) |
+| Windows Startup → `VoiceDictation.lnk` | `dev\scripts\start.vbs` kısayolu | Repo dışı | `dev\scripts\setup.bat` oluşturur |
+| macOS Login Items → `VoiceDictation` | `.local/VoiceDictation.app` | Repo dışı | Elle eklenir ([kurulum](docs/kurulum.md)) |
 
-**Yeni cihaza taşıma özeti:** Yalnız `data/` kopyalanır. Geri kalan her şey kurulumla ya da ilk çalıştırmada yeniden oluşur. Cihazlar arasında veri eşitlemesi yoktur.
+**Yeni cihaza taşıma özeti:** Yalnız `.local/data/` kopyalanır. Geri kalan her şey kurulumla ya da ilk çalıştırmada yeniden oluşur. Cihazlar arasında veri eşitlemesi yoktur.
 
-`data/` ile `.local/` klasörleri program ilk açıldığında oluşur. Programı kullanmak git durumunu değiştirmez.
+`.local/data/` ile `.local/` klasörleri program ilk açıldığında oluşur. Programı kullanmak git durumunu değiştirmez.
 
 Yerel temizlik model ve çalıştırıcı mevcutsa açık başlar; Ayarlar ve Windows'taki Bağlam kaynağı seçimleri yalnız o çalıştırma boyunca geçerlidir. Yeni ayar dosyası yazılmaz. Herdr'a metin gönderilmez; son metin işlem bittiğinde odaktaki alana yapıştırılır. Konuşurken veya çözümleme sürerken odağı değiştirmek yapıştırma yerini değiştirir.
 Kullanım ve sınırlar [nasıl çalışır](docs/nasil-calisir.md#dikte), kaynak/çıktı akışı [mimari şemasında](docs/mimari.md) anlatılır.
 
 ### Ortam değişkenleri
 
-`.env` (repo kökünde, `KEY=VALUE` satırları) veya sistem ortamından okunur. Hepsi isteğe bağlıdır.
+`.local/.env` (`KEY=VALUE` satırları) veya sistem ortamından okunur. Hepsi isteğe bağlıdır.
 
 | Değişken | Etkisi |
 |---|---|
-| `VOICEDICTATION_DATA_DIR` | Veri kökünü değiştirir; `media/`, `raw/` ve `transcripts/` bu klasörün altında oluşur. Varsayılan: `data/`. |
+| `VOICEDICTATION_DATA_DIR` | Veri kökünü değiştirir; `media/`, `raw/` ve `transcripts/` bu klasörün altında oluşur. Varsayılan: `.local/data/`. |
 | `VOICEDICTATION_EDITOR` | Toplantı transkriptini açan editör (`notepad++`, `obsidian`, `subl` …). `none` ise dosya yolu yalnız panoya kopyalanır. Varsayılan sıra: VS Code → sistem varsayılanı → pano. |
 | `VOICEDICTATION_QUEUE_DIR` | `dev/file_queue.py` kuyruk kökü. Varsayılan: `.local/file-queue/`. |
 

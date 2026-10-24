@@ -2,31 +2,29 @@
 
 Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGELOG.md](CHANGELOG.md) dosyasına yazılır.
 
-- [ ] Windows commit/push sonrasında Mac reposunu `dev/` düzenine eşitle; mevcut yerel değişiklikleri koruyarak karşılaştır, testleri ve trackpad derlemesini yeni yolla çalıştır. Mevcut imzalı `.app` kökteki uyumluluk başlatıcısını kullanmayı sürdürür.
+- [ ] Mac reposunu yeni `dev/` ve `.local/` düzenine eşitle; yerel değişiklikleri ve verileri koru. `.local/venv/` ortamını kur, `.local/VoiceDictation.app` başlatıcısını yeni kaynaktan üret, Login Items ve gerekirse izinleri yenile. Testler, trackpad ve gerçek dikte kabulünden sonra eski ortamı kaldır. Windows geçişi tamamlandı.
 
 ## Mac'te ilk oturum
 
-24 Ekim 2026 güncellemesi: depo güncellendi; Python 3.14.4 bağımlılık denetimi, modül yükleme,
-derleme ve 151 otomatik test Mac'te geçti. Aşağıdaki gerçek mikrofon/kısayol/izin ve dosya akışı
-kabul listesi bu otomatik kontrollerden ayrıdır; tamamı doğrulanmış sayılmaz.
+24 Ekim 2026: klasör birleştirmesinden önce Python 3.14.4, modül yükleme, derleme ve 182 otomatik test Mac'te geçti. Yeni yerleşim yalnız Windows'ta doğrulandı. Aşağıdaki gerçek kullanım kabul listesi otomatik kontrollerden ayrıdır.
 
-**Ajan:** Mac'te açılan ilk oturumda bu listeyi Yiğit'e öner. Son Mac doğrulaması 26 Nisan 2026'da yapıldı. O tarihten sonraki bütün değişiklikler yalnız Windows'ta doğrulandı: Mayıs'taki halüsinasyon paketleri, ad penceresi, toplantı WAV'ı ve 16 Eylül'deki yapı sadeleştirmesi.
+**Ajan:** Mac'te çalışmaya başlamadan önce [klasör geçişi](kurulum.md#eski-klasör-düzeninden-geçiş) bölümünü izle; eski ortamı yeni yerleşim doğrulanana kadar koru.
 
-- [ ] `git pull`, ardından `./scripts/setup.sh` çalıştır. `requirements.txt` artık `rumps` ve `mlx-whisper` paketlerini de kuruyor. macOS bağımlılık çözümü Windows'tan yalnız yaklaşık denendi; kurulumun temiz bir venv'de hatasız bittiğini doğrula. Sonra `venv/bin/python -m py_compile dictation.py dev/dictation.py`.
-- [ ] İsteğe bağlı: Windows'taki `data/` klasörünü kopyala (cihazlar arası eşitleme yok).
-- [ ] `scripts/VoiceDictation.app` uygulamasını `path to me` betiğiyle yeniden derle, imzala, Login Items'a yeniden ekle ve dört izni doğrula ([kurulum.md](kurulum.md)). Repodaki mevcut `.app` içinde eski, sabit bir repo yolu var.
+- [ ] `git pull`, ardından `./dev/scripts/setup.sh` çalıştır. `dev/requirements.txt` artık `rumps` ve `mlx-whisper` paketlerini de kuruyor. macOS bağımlılık çözümü Windows'tan yalnız yaklaşık denendi; kurulumun temiz bir venv'de hatasız bittiğini doğrula. Sonra `.local/venv/bin/python -m py_compile dev/dictation.py`.
+- [ ] İsteğe bağlı: Windows'taki `.local/data/` klasörünü kopyala (cihazlar arası eşitleme yok).
+- [ ] `.local/VoiceDictation.app` uygulamasını `dev/scripts/build-mac-app.sh` ile üret; Login Items ve macOS izinlerini doğrula ([kurulum.md](kurulum.md)). Derlenmiş uygulama artık Git dışındadır.
 - [ ] Daemon'ı `.app` ile başlat: menü çubuğu simgesi açılıyor mu, Caps Lock x2 ile dikte ve yapıştırma çalışıyor mu?
-- [ ] `data/media/`, `data/raw/`, `data/transcripts/` ve `.local/logs/<YYYY-MM-Ay>.log` repo altında oluşuyor mu?
-- [ ] "Ses dosyasını dök" ve "Meet Dictation" dosya seçicileri `data/media/` klasöründe açılıyor mu (osascript `default location`)?
+- [ ] `.local/data/media/`, `.local/data/raw/`, `.local/data/transcripts/` ve `.local/logs/<YYYY-MM-Ay>.log` repo altında oluşuyor mu?
+- [ ] "Ses dosyasını dök" ve "Meet Dictation" dosya seçicileri `.local/data/media/` klasöründe açılıyor mu (osascript `default location`)?
 - [ ] Halüsinasyon paketi 2 (B1–B4) testleri:
   - 2–3 dakikalık, uzaktan mikrofonlu ve bilerek sessizlik bırakılmış bir toplantı kaydı: son transkriptte "Altyazı M.K." benzeri tekrar olmamalı.
   - "Eee Eee Eee": tek örneğe inmeli.
   - "Evet evet evet katılıyorum": korunmalı.
 - [ ] Toplantı kaydı:
   - Durdurunca osascript ad penceresi açılıyor mu?
-  - WAV `data/media/` altına yazılıyor mu?
+  - WAV `.local/data/media/` altına yazılıyor mu?
   - `LIVE.md` temp klasöründe oluşup kayıt bitince siliniyor mu?
-- [ ] `--transcribe` ile `.qta` ve `.m4a`: `data/media/` dışından verilen dosya oraya taşınıyor mu (içindeyse yerinde kalıyor mu), transkript `data/raw/` altına yazılıyor mu, Kaynak satırı göreli mi? iCloud'dan gelen dosyada taşıma izni sorunu çıkıyor mu?
+- [ ] `--transcribe` ile `.qta` ve `.m4a`: `.local/data/media/` dışından verilen dosya oraya taşınıyor mu (içindeyse yerinde kalıyor mu), transkript `.local/data/raw/` altına yazılıyor mu, Kaynak satırı göreli mi? iCloud'dan gelen dosyada taşıma izni sorunu çıkıyor mu?
 - [ ] Aynı adla ikinci kayıt zaman eki alıyor mu (üstüne yazma olmamalı)?
 - [ ] Sonuçları [CHANGELOG.md](CHANGELOG.md) dosyasına yaz, bu bölümü kapat.
 
@@ -55,7 +53,7 @@ kabul listesi bu otomatik kontrollerden ayrıdır; tamamı doğrulanmış sayıl
 - [ ] Wake word değişikliğini diske kaydet (şu an yeniden başlatınca varsayılana dönüyor).
 - [ ] Yeni wake word'ler için Whisper yazım varyasyonu kalıplarını kendiliğinden genişlet.
 
-- [ ] Test kapsamını genişlet: wake word kalıpları, `extract_message`, `_drop_low_confidence_segments` ve gerçek callback sıralaması. Kuyruk, iptal/yapıştırma, bağlam ve yerel temizlik regresyonları mevcut (`venv\Scripts\python -m unittest discover -s tests`).
+- [ ] Test kapsamını genişlet: wake word kalıpları, `extract_message`, `_drop_low_confidence_segments` ve gerçek callback sıralaması. Kuyruk, iptal/yapıştırma, bağlam ve yerel temizlik regresyonları mevcut (`.local\venv\Scripts\python -m unittest discover -s dev/tests`).
 - [ ] Durum makinesi geçişleri için thread güvenliği regresyon testi.
 
 - [ ] Hedef pencere seçimi: son metni o an odaktaki alan yerine seçilen bir pencereye yazma gelecekte ayrı özellik olarak değerlendirilebilir; mevcut davranış son odaktaki alana yapıştırmadır.
@@ -66,10 +64,10 @@ kabul listesi bu otomatik kontrollerden ayrıdır; tamamı doğrulanmış sayıl
 
 ## Gelecek
 
-- [ ] Konuşmacı ayırmayı isteğe bağlı geri aç: tray öğesi, `--diarize` veya konuşmacı sayısı penceresi seçeneklerinden biri seçilecek. Önce Meet kayıtlarında bütün metnin tek konuşmacıya atanması çözülmeli (22 Mayıs 2026). Bilinen konuşmacı sayısıyla kısa örnekte gömme/küme sayısı, mesafe matrisi ve eşik kararı incelenecek; kosinüs/dinamik eşik, gerekirse konuşmacı değişim sınırı denenecek. Referans: `data/media/2026-05-01_Sonar-2-Dogu-teknik-toplanti.mp4` (~34 MB, 16 dakika, iki konuşmacı). Kod uyuyor, paketler requirements içinde yorum satırı, model `.local/models/` altında.
+- [ ] Konuşmacı ayırmayı isteğe bağlı geri aç: tray öğesi, `--diarize` veya konuşmacı sayısı penceresi seçeneklerinden biri seçilecek. Önce Meet kayıtlarında bütün metnin tek konuşmacıya atanması çözülmeli (22 Mayıs 2026). Bilinen konuşmacı sayısıyla kısa örnekte gömme/küme sayısı, mesafe matrisi ve eşik kararı incelenecek; kosinüs/dinamik eşik, gerekirse konuşmacı değişim sınırı denenecek. Referans: `.local/data/media/2026-05-01_Sonar-2-Dogu-teknik-toplanti.mp4` (~34 MB, 16 dakika, iki konuşmacı). Kod uyuyor, paketler requirements içinde yorum satırı, model `.local/models/` altında.
 - [ ] **iPhone'da her uygulamada dikte (Yiğit fikri, 24 Ekim 2026):** Bir iOS Kestirmesi sesi kaydeder, tailnet üzerinden Windows'taki uzak dikte ucuna gönderir, dönen metni panoya koyar; Yiğit istediği uygulamaya yapıştırır. HTTPS gerekmez. Uç, Vault'tan dikte için kurulan aynı Windows sunucusudur; Kestirme için ayrı kimlik/erişim kararı gerekir.
 - [ ] **`file_queue` daemon bağlantısı:** Modül ve testleri hazır, ama `dev/dictation.py` modülü içe aktarmıyor. Bağlanınca kuyruk dış istemcilerin ses dosyalarını daemon'ın açık modeliyle işler.
 - [ ] **`--calibrate` akışı:** Yöntem [calibration/README.md](calibration/README.md) dosyasında anlatılıyor, akış henüz yazılmadı. Kapsamı: okuma kaydı, `jiwer` ile karşılaştırma ve önerilen düzeltme tablosu.
-- [ ] **Yedek filtresi (ayrı onay):** `Yazilim` yedeğinin rclone filtresine `- /VoiceDictation/.local/` ekle. `data/` yedekte kalmalı.
+- [ ] **Yedek filtresi (ayrı onay):** `Yazilim` yedeğinin rclone filtresine `- /VoiceDictation/.local/` ekle. `.local/data/` yedekte kalmalı.
 - [ ] **Sonar belgeleri:** Sonar projesindeki eski Drive kayıt klasörü referanslarını yeni yerle (`VoiceDictation/data/media/`) güncelle. Bu iş Sonar oturumunda yapılır.
 - [ ] **HF önbelleği (ayrı onay):** Kullanılmayan `medium` ve `small` Whisper modelleri (~1,9 GB) silinebilir. `large-v3`, iFonzo ses aracının kullanıp kullanmadığı doğrulanmadan silinmez.

@@ -1,5 +1,17 @@
 # CHANGELOG — VoiceDictation
 
+## 24 Ekim 2026 — İki ağaçta sade yerleşim
+
+- Yiğit'in seçimiyle bütün geliştirme dosyaları `dev/` altında birleştirildi: uygulama, yerel C modülü, `scripts/`, `tests/`, `requirements.txt`. Kökteki geçiş başlatıcısı kaldırıldı; giriş `python -m dev.dictation`.
+- Yerel veri ve ortam `.local/data/`, `.local/venv/` altına taşındı; `.env` yolu `.local/.env`. Windows'ta 71 veri dosyasının ad/boyut envanteri ve 66 paket sürümü korundu; ortam ikilileri, aktivasyon ve 24 paket komutu yeni yola göre üretildi. Bağımlılıklar ve Whisper CUDA aygıtı doğrulandı.
+- Windows Startup kısayolu yeni VBS yoluna güncellendi, daemon yeni ortamla açıldı; sahip olunan Qwen sunucusu sağlıklı. Başlatıcıların Python önbelleği `.local/__pycache__/` altına yönlendirildi.
+- Mac `.app` ikilisi Git'ten çıkarıldı; AppleScript kaynağı ve üzerine yazmayan derleme betiği `dev/scripts/` altında. Mac kurulumu ve izin geçişi henüz yapılmadı. Mevcut yedek filtresi yeni veri yolunu dışlamıyor; bu görevde yedek filtresi veya uzak yedek değiştirilmedi.
+
+## 24 Ekim 2026 — Eski yerel artıkların temizliği
+
+- Windows'ta kurulmuş çalıştırıcıların üç ZIP arşivi (yaklaşık 580 MiB), geri çekilmiş önizleme testleri, tamamlanan tarayıcı/köprü deneme dosyaları ve Python önbellekleri Geri Dönüşüm Kutusu'na taşındı. Çalışan modeller, veri, tanı logları ve kurulum hash kayıtları korundu. Disk alanı Geri Dönüşüm Kutusu boşaltılınca açılır.
+- Test geçici klasörünün kaynak taşınmasıyla yanlışlıkla `dev/.local/` altında oluşması düzeltildi; testler repo kökündeki `.local/test-tmp/` yolunu kullanır.
+
 ## 24 Ekim 2026 — Python kaynakları dev altında
 
 - Uygulama ve yardımcı Python modülleri `dev/` paketine taşındı. Kökteki küçük `dictation.py` başlatıcısı mevcut Windows/Mac başlatıcılarını ve CLI kullanımını korur; imzalı Mac uygulaması değişmez.

@@ -18,9 +18,9 @@ from unittest.mock import Mock, patch
 import numpy as np
 
 
-SOURCE = Path(__file__).resolve().parents[1] / "dev/dictation.py"
+SOURCE = Path(__file__).resolve().parents[2] / "dev/dictation.py"
 TREE = ast.parse(SOURCE.read_text(encoding="utf-8"))
-TEMP_DIR = SOURCE.parent / ".local" / "test-tmp"
+TEMP_DIR = Path(__file__).resolve().parents[2] / ".local" / "test-tmp"
 TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 

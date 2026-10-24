@@ -12,7 +12,7 @@ from dev.diagnostics import DiagnosticWriter
 from test_dictation import load
 from test_cleanup_v3 import load_cleanup
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 class DiagnosticTests(unittest.TestCase):
@@ -66,7 +66,7 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(logged['whisper_filtered']['text'], 'Synthetic text.')
 
     def test_comparison_separates_build_and_machine_and_context(self):
-        spec = importlib.util.spec_from_file_location('compare', ROOT / 'scripts/compare-dictation.py')
+        spec = importlib.util.spec_from_file_location('compare', ROOT / 'dev/scripts/compare-dictation.py')
         module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
         rows = []
         for machine, build in [('local', 'v1'), ('remote', 'v1'), ('local', 'v2')]:

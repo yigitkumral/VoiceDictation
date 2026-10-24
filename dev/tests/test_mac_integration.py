@@ -17,7 +17,7 @@ class MacIntegrationTests(unittest.TestCase):
         lib.vd_trackpad_start.return_value = 0
         event = threading.Event()
         on_tap = Mock(side_effect=event.set)
-        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[1] / '.local') as tmp:
+        with tempfile.TemporaryDirectory(dir=Path(__file__).resolve().parents[2] / '.local') as tmp:
             path = Path(tmp) / 'synthetic.dylib'; path.touch()
             with patch('dev.mac_trackpad.ctypes.CDLL', return_value=lib):
                 trackpad = Trackpad(path, on_tap, logging.getLogger('test'))

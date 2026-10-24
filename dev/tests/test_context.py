@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 
-SOURCE = Path(__file__).resolve().parents[1] / "dev/dictation.py"
+SOURCE = Path(__file__).resolve().parents[2] / "dev/dictation.py"
 
 
 def load(*names):

@@ -9,6 +9,6 @@
 | `mac_trackpad.py`, `mac-trackpad/` | Aynı süreçte çalışan Mac üç parmak algılayıcısı |
 | `file_queue.py` | Henüz daemon'a bağlı olmayan dosya kuyruğu |
 
-Repo kökünden `venv/Scripts/python dictation.py` (Windows) veya `venv/bin/python dictation.py` (Mac) ile başlatılır. Kökteki giriş dosyası bu paketi çalıştırır; kaynakları doğrudan dosya olarak çalıştırmak gerekmez. Modül girişi de `python -m dev.dictation` biçimindedir.
+Repo kökünden `.local/venv/Scripts/python -m dev.dictation` (Windows) veya `.local/venv/bin/python -m dev.dictation` (Mac) ile başlatılır. Kökte ayrı giriş dosyası yoktur. Normal kullanımda `scripts/` altındaki başlatıcılar Python önbelleğini de `.local/__pycache__/` altına yönlendirir.
 
-Veri ve modeller bu klasöre yazılmaz; repo kökündeki `data/` ve `.local/` kullanılır. İşletim komutları `scripts/`, testler `tests/` altındadır.
+Veri, modeller, Python ortamı ve yerel çalışma çıktıları repo kökündeki `.local/` altındadır. Bu geliştirme ağacında işletim komutları `scripts/`, testler `tests/`, bağımlılıklar `requirements.txt` içindedir. Test komutu: `.local/venv/Scripts/python -B -m unittest discover -s dev/tests` (Mac'te `Scripts/python` yerine `bin/python`).

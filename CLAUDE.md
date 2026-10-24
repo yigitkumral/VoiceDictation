@@ -9,18 +9,18 @@ sırlar ve kişisel adresler Git'e girmez. Ortak skill'ler projeye kopyalanmaz. 
 
 ## 1. Mac'te ilk oturum
 
-Mac'te açılan ilk oturumda, ilk yanıtta şunu hatırlat: son Mac doğrulaması 26 Nisan 2026'da yapıldı, sonraki bütün değişiklikler yalnız Windows'ta doğrulandı. Yiğit'e [docs/TODO.md](docs/TODO.md) içindeki "Mac'te ilk oturum" listesini öner.
+Son Mac doğrulaması 24 Ekim 2026'da, klasör birleştirmesinden önce yapıldı. Yeni `dev/` ve `.local/` yerleşimi Windows'ta doğrulandı; Mac'e geçişte [docs/kurulum.md](docs/kurulum.md) ve [docs/TODO.md](docs/TODO.md) listesini izle. Çalışan eski Mac ortamını doğrudan taşıma; yeni ortam ve başlatıcı doğrulanana kadar koru.
 
 ## 2. Kurallar
 
 - **Commit:** Commit'ten önce Yiğit'in onayını al. `master` dalına yalnız Yiğit push eder; başka bir katkıcı adına çalışıyorsan `feature/<konu>` dalı aç ve PR gönder.
 - **Kullanım değişmez:** F13 / Caps Lock x2, "Diktasyon" wake word, tray menüsü, `--transcribe` ve `--aggressive` bayrakları, transkript biçimi. Bunları değiştiren iş yeni özelliktir; ayrı onay ister.
 - **Dikte davranışı:** 24 Ekim 2026 son kararı: F13 bitişinde tam sesle tek Whisper çözümlemesi, isteğe bağlı yerel temizlik ve o anda odaktaki alana pano üzerinden tek yapıştırma. Dikte/wake word bitişinde otomatik Enter yoktur. F13'e ilk basışta sessiz aday kayıt başlar; bırakıştan sonra 250 ms içinde ikinci basış gelirse aday atılır ve Enter gönderilir, aksi halde başlangıç tonu çalar. Kayıt durdurma anlıktır; işleme sırasında Enter yoktur. Mac Caps Lock değişmez; onaylı trackpad prototipi için Mac'te ayrıca aynı F13 yolu açılmıştır. `dev/mac_trackpad.py` ve `dev/mac-trackpad/` yerel modülü aynı daemon sürecinde çalışır; modül varsa açık başlar ve Ayarlar menüsünden kapatılır. Ayrı TP uygulaması kullanılmaz. Özel Apple API'si kullanılır; ses ve fiziksel hareket kabulü sürer. Canlı dikte önizlemesi ve terminal taslağı/rewrite geri çekildi. **Bağlam kaynağı** salt okunur ipucudur; masaüstünde teslimat hedefi değildir. Konuşma yalnız doğrulanmış makine/pane/terminal/agent_session kaynağından, user/assistant rol filtresiyle okunur; başka oturum veya en yeni dosya tahmini yapılmaz. Ayrıntılı tanı kullanıcı onayıyla `.local/diagnostics/` altında tutulur; ayrıntılar `docs/mimari.md` ve `docs/nasil-calisir.md` içindedir.
-- **Veri gizliliği:** `data/` altındaki transkript ve ses dosyalarından, `.local/logs/` içindeki loglardan yalnız ad, boyut ve sayı bilgisini oku. Yiğit istemedikçe içeriklerini okuma veya raporlama.
-- **Veri akışı:** Program yalnız `data/media/` (ses + video, girdi ve arşiv aynı klasör) ve `data/raw/` (ham Whisper MD) klasörlerine yazar. `data/transcripts/` elle düzeltilen kopyaların yeridir; oraya yazan kod eklenmez.
-- **Daemon:** Çalışıyor olabilir. Yalnız Yiğit'in bilgisiyle durdur (tray → Çıkış). Daemon açıkken `dev/dictation.py`'yi ikinci kez başlatma. `--transcribe` zaten reddedilir (PID kilidi): aynı GPU'da iki model çakışır. Kod değişikliğini `venv\Scripts\python -m py_compile dictation.py dev/dictation.py` ile denetle.
-- **Git temizliği:** Programı kullanmak git durumunu değiştirmez. Çalışma çıktıları yalnız `data/` (değerli) veya `.local/` (yeniden üretilir) altına yazılır; ikisi de ignore'ludur. Yeni bir çıktı türü de bu iki klasörden birine gider.
-- **Yollar tek yerde:** Tüm yollar `dev/dictation.py` başındaki yol bloğundadır (`BASE_DIR`, `DATA_DIR`, `MEDIA_DIR`, `RAW_DIR`, `TRANSCRIPTS_DIR`, `LOCAL_DIR`, `_LOG_DIR`, `MODELS_DIR`, `CLEANUP_MODEL`, `CLEANUP_SERVER_BIN`, `CLEANUP_CUDA_SERVER_BIN`, `TIMING_FILE`; eski `CLEANUP_BIN` ve `CLEANUP_TEMP_DIR` kullanılmadan durur). Repo dışına veri yazan kod ekleme.
+- **Veri gizliliği:** `.local/data/` altındaki transkript ve ses dosyalarından, `.local/logs/` içindeki loglardan yalnız ad, boyut ve sayı bilgisini oku. Yiğit istemedikçe içeriklerini okuma veya raporlama.
+- **Veri akışı:** Program yalnız `.local/data/media/` (ses + video, girdi ve arşiv aynı klasör) ve `.local/data/raw/` (ham Whisper MD) klasörlerine yazar. `.local/data/transcripts/` elle düzeltilen kopyaların yeridir; oraya yazan kod eklenmez.
+- **Daemon:** Çalışıyor olabilir. Yalnız Yiğit'in bilgisiyle durdur (tray → Çıkış). Daemon açıkken `dev/dictation.py`'yi ikinci kez başlatma. `--transcribe` zaten reddedilir (PID kilidi): aynı GPU'da iki model çakışır. Kod değişikliğini `.local\venv\Scripts\python -m py_compile dev/dictation.py` ile denetle.
+- **Git temizliği:** Programı kullanmak git durumunu değiştirmez. Bütün yerel dosyalar Git dışı `.local/` altındadır. `.local/data/` değerli kayıtları içerir; `.local/` bütünüyle silinebilir önbellek değildir. Yeni çalışma çıktısı bu ağaca gider.
+- **Yollar tek yerde:** Tüm yollar `dev/dictation.py` başındaki yol bloğundadır (`BASE_DIR`, `SOURCE_DIR`, `DATA_DIR`, `MEDIA_DIR`, `RAW_DIR`, `TRANSCRIPTS_DIR`, `LOCAL_DIR`, `_LOG_DIR`, `MODELS_DIR`, `CLEANUP_MODEL`, `CLEANUP_SERVER_BIN`, `CLEANUP_CUDA_SERVER_BIN`, `TIMING_FILE`). `.env` yalnız `.local/.env` konumundan yüklenir. Repo dışına veri yazan kod ekleme.
 - **Belge bakımı:** Yol, klasör, menü veya CLI değiştiren commit, aynı commit içinde README'deki "Yerel dosyalar" tablosunu ve [docs/nasil-calisir.md](docs/nasil-calisir.md) dosyasını günceller. Teslimden önce şu komut boş dönmeli:
 
   ```bash
@@ -33,11 +33,11 @@ Mac'te açılan ilk oturumda, ilk yanıtta şunu hatırlat: son Mac doğrulamas�
 
 ## 3. Mimari özeti
 
-- **Modüller:** Ana uygulama `dev/dictation.py`; `dev/context_bridge.py` yalnız tam oturum ID/yol çözümleme ve rol/sınır filtresi; `dev/context_source.py` yerel/SSH kaynak doğrulama ve RAM önbelleğidir. `dev/remote_dictation.py` Vault (iPhone/iPad) uzak dikte ucudur: yalnız `127.0.0.1:5190`, yapıştırmasız, metni yanıtla döndürür. `dev/diagnostics.py`, `DIAGNOSTIC_DIR` altında izinli ayrıntılı kayıtları arka planda yazar; `scripts/compare-dictation.py` karşılaştırır. Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN` (mutex korumalı). Ayrı mod ekseni: dikte ↔ toplantı (lecture).
+- **Modüller:** Ana uygulama `dev/dictation.py`; `dev/context_bridge.py` yalnız tam oturum ID/yol çözümleme ve rol/sınır filtresi; `dev/context_source.py` yerel/SSH kaynak doğrulama ve RAM önbelleğidir. `dev/remote_dictation.py` Vault (iPhone/iPad) uzak dikte ucudur: yalnız `127.0.0.1:5190`, yapıştırmasız, metni yanıtla döndürür. `dev/diagnostics.py`, `DIAGNOSTIC_DIR` altında izinli ayrıntılı kayıtları arka planda yazar; `dev/scripts/compare-dictation.py` karşılaştırır. Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN` (mutex korumalı). Ayrı mod ekseni: dikte ↔ toplantı (lecture).
 - **Ses yolu:** sounddevice → numpy tamponu → tek Whisper → isteğe bağlı yerel temizlik → pano → pynput ile o an odaktaki alana yapıştır. Dikte bitişinde otomatik Enter ve Herdr teslimatı yoktur; Windows boşta F13 çift basış ayrı Enter hareketidir.
 - **STT:** Windows'ta faster-whisper (CUDA, yoksa CPU), macOS'ta mlx-whisper (Silero VAD ön filtresiyle). Model: turbo. Dikte `beam=3`, toplantı ve dosya transkripti `beam=5`.
 - **Arayüz:** Windows'ta pystray tepsi simgesi, macOS'ta rumps menü çubuğu. Durum renkleri: yeşil hazır, kırmızı kayıt, sarı işleniyor, mor toplantı.
-- **Kapalı kodlar:** Konuşmacı ayırma (speechbrain) kodu duruyor ama tray'den çağrılmıyor. `dev/file_queue.py` dış istemci kuyruğudur, daemon'a bağlı değil. Testler: `venv\Scripts\python -m unittest discover -s tests`.
+- **Kapalı kodlar:** Konuşmacı ayırma (speechbrain) kodu duruyor ama tray'den çağrılmıyor. `dev/file_queue.py` dış istemci kuyruğudur, daemon'a bağlı değil. Testler: `.local\venv\Scripts\python -m unittest discover -s dev/tests`.
 
 ## 4. Belge haritası
 

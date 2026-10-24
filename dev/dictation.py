@@ -13,20 +13,20 @@ Cross-platform: Windows + macOS
 Kullanim:
     cd VoiceDictation
     # Windows:
-    ./venv/Scripts/python dictation.py
+    ./.local/venv/Scripts/python -m dev.dictation
     # macOS:
-    ./venv/bin/python dictation.py
+    ./.local/venv/bin/python -m dev.dictation
 
 Cikis: Tray menusu / Menu bar -> Cikis
 
-Dosyalar (16 Eylul 2026 duzeni, hepsi repo koku altinda, git disi):
-    data/media/        elle birakilan ses/video (mp4 dahil) + programin yazdigi WAV;
+Dosyalar (24 Ekim 2026 duzeni, hepsi repo koku altinda, git disi):
+    .local/data/media/        elle birakilan ses/video (mp4 dahil) + programin yazdigi WAV;
                        dosya seciciler burada acilir, program buraya tasir/yazar
-    data/raw/          Whisper'in ham MD transkriptleri — programin tek MD ciktisi
-    data/transcripts/  elle duzeltilmis MD transkriptler; program yalnizca klasoru olusturur
+    .local/data/raw/          Whisper'in ham MD transkriptleri — programin tek MD ciktisi
+    .local/data/transcripts/  elle duzeltilmis MD transkriptler; program yalnizca klasoru olusturur
     .local/logs/       aylik log (YYYY-MM-<Ay>.log) + dictation.pid
     .local/models/     speechbrain (uyuyan diarize)
-    data/ kokunu degistirmek icin: VOICEDICTATION_DATA_DIR (ortam degiskeni veya .env).
+    .local/data/ kokunu degistirmek icin: VOICEDICTATION_DATA_DIR (ortam degiskeni veya .env).
     Repo disi: Whisper modeli HF onbelleginde, LIVE.md ve gecici WAV OS temp'te.
 """
 
@@ -56,7 +56,7 @@ IS_WIN = platform.system() == "Windows"
 
 def _load_env_file():
     """.env dosyasini yukle (basit KEY=VALUE parser, harici dep yok)."""
-    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".local", ".env")
     if not os.path.isfile(env_path):
         return
     try:
@@ -76,22 +76,20 @@ def _load_env_file():
 
 _load_env_file()
 
-# --- YOLLAR: her sey repo koku altinda (16 Eylul 2026 duzeni) ---
+# --- YOLLAR: kaynak dev/, yerel dosyalar .local/ (24 Ekim 2026) ---
 SOURCE_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(SOURCE_DIR)
+LOCAL_DIR = os.path.join(BASE_DIR, ".local")
 DATA_DIR = os.path.abspath(os.path.expanduser(
-    os.environ.get("VOICEDICTATION_DATA_DIR") or os.path.join(BASE_DIR, "data")))  # git disi, degerli
+    os.environ.get("VOICEDICTATION_DATA_DIR") or os.path.join(LOCAL_DIR, "data")))  # git disi, degerli
 MEDIA_DIR = os.path.join(DATA_DIR, "media")              # elle birakilan ses/video + yazilan WAV
 RAW_DIR = os.path.join(DATA_DIR, "raw")                  # Whisper ham MD (programin tek MD ciktisi)
 TRANSCRIPTS_DIR = os.path.join(DATA_DIR, "transcripts")  # elle duzeltilmis MD (program dokunmaz)
-LOCAL_DIR = os.path.join(BASE_DIR, ".local")             # git disi, makineye ozel, yeniden uretilir
 _LOG_DIR = os.path.join(LOCAL_DIR, "logs")
 MODELS_DIR = os.path.join(LOCAL_DIR, "models")           # speechbrain (diarize, uyuyan)
 CLEANUP_MODEL = os.path.join(MODELS_DIR, "Qwen3-1.7B-Q8_0.gguf")
-CLEANUP_BIN = os.path.join(LOCAL_DIR, "llama", "llama-completion.exe" if IS_WIN else "llama-completion")
 CLEANUP_SERVER_BIN = os.path.join(LOCAL_DIR, "llama", "llama-server.exe" if IS_WIN else "llama-server")
 CLEANUP_CUDA_SERVER_BIN = os.path.join(LOCAL_DIR, "llama-cuda", "llama-server.exe" if IS_WIN else "llama-server")
-CLEANUP_TEMP_DIR = os.path.join(LOCAL_DIR, "cleanup-temp")
 TIMING_FILE = os.path.join(LOCAL_DIR, "metrics", "dictation.jsonl")
 DIAGNOSTIC_DIR = os.path.join(LOCAL_DIR, "diagnostics")
 TRACKPAD_LIBRARY = os.path.join(LOCAL_DIR, "trackpad", "libvdtrackpad.dylib")
@@ -211,7 +209,7 @@ log.addHandler(_ch)
 
 # CUDA DLL'lerini PATH'e ekle (Windows + venv icin gerekli)
 if IS_WIN:
-    _nvidia_dir = os.path.join(BASE_DIR, "venv", "Lib", "site-packages", "nvidia")
+    _nvidia_dir = os.path.join(LOCAL_DIR, "venv", "Lib", "site-packages", "nvidia")
     if os.path.isdir(_nvidia_dir):
         for _pkg in os.listdir(_nvidia_dir):
             _dll_dir = os.path.join(_nvidia_dir, _pkg, "bin")
@@ -277,9 +275,9 @@ DEVICE, COMPUTE_TYPE = _detect_device()
 SAMPLE_RATE = 16000
 CHANNELS = 1
 
-# Cikti dizinleri dosyanin basindaki YOLLAR blogunda (data/media, data/raw).
+# Cikti dizinleri dosyanin basindaki YOLLAR blogunda (.local/data/media, .local/data/raw).
 # Hicbir dosya silinmez: lecture sesi WAV'a dumplenir, --transcribe ile gelen dosya
-# (data/media disindaysa) TASINIR. Duzeltme data/transcripts'te elle yapilir.
+# (.local/data/media disindaysa) TASINIR. Duzeltme .local/data/transcripts'te elle yapilir.
 
 # Sessizlik algilama
 SILENCE_THRESHOLD = 0.008
@@ -1379,16 +1377,16 @@ def quick_transcribe(audio_data, beam_size=3, context="", valid=None):
 # --- LECTURE / FILE TRANSCRIBE ---
 
 def _get_raw_dir():
-    """Whisper ham MD'lerinin yazildigi klasor (data/raw). Yazilamazsa OSError.
+    """Whisper ham MD'lerinin yazildigi klasor (.local/data/raw). Yazilamazsa OSError.
 
-    Programin tek MD hedefi burasi. Elle duzeltme data/transcripts altinda yapilir;
+    Programin tek MD hedefi burasi. Elle duzeltme .local/data/transcripts altinda yapilir;
     program o klasore yazmaz."""
     os.makedirs(RAW_DIR, exist_ok=True)
     return RAW_DIR
 
 
 def _get_media_dir():
-    """Ses/video klasoru (data/media). Dosya seciciler burada acilir, WAV buraya yazilir,
+    """Ses/video klasoru (.local/data/media). Dosya seciciler burada acilir, WAV buraya yazilir,
     disaridan gelen kaynak buraya tasinir. Girdi ve cikti ayni klasor. Yazilamazsa OSError."""
     os.makedirs(MEDIA_DIR, exist_ok=True)
     return MEDIA_DIR
@@ -1635,7 +1633,7 @@ def _load_voice_encoder():
         except ImportError:
             raise RuntimeError(
                 "speechbrain kurulu degil. Kurmak icin:\n"
-                "  venv\\Scripts\\pip.exe install speechbrain scikit-learn"
+                "  .local\venv\\Scripts\\pip.exe install speechbrain scikit-learn"
             )
 
     # PyTorch CUDA olarak kurulmamis ise CPU'ya dus (uyari ile)
@@ -1907,11 +1905,11 @@ def _apply_speaker_names(segments, speaker_names):
 
 
 def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
-    """Dis ses/video dosyasini transkripte et: MD'yi data/raw/'a yaz, kaynagi data/media/'ya TASI.
+    """Dis ses/video dosyasini transkripte et: MD'yi .local/data/raw/'a yaz, kaynagi .local/data/media/'ya TASI.
 
-    Tek MD ciktisi; kaynak dosya data/media'ya tasinir (silinmez), zaten oradaysa yerinde kalir
+    Tek MD ciktisi; kaynak dosya .local/data/media'ya tasinir (silinmez), zaten oradaysa yerinde kalir
     — girdi ve cikti klasoru ayni. Ayni isim varsa ikisi de zaman eki alir (ustune yazma yok).
-    output_dir verilirse MD oraya yazilir (kaynak tasimasi yine data/media).
+    output_dir verilirse MD oraya yazilir (kaynak tasimasi yine .local/data/media).
     Donus: olusan .md yolu (basarisizsa None).
     """
     if not os.path.isfile(audio_path):
@@ -1931,12 +1929,12 @@ def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
     title = header_title or "Ses Dosyasi Transkripti"
     base_name = os.path.splitext(os.path.basename(audio_path))[0]
 
-    # 1) Kaynagi data/media'ya tasi (zaten icinde degilse). MD'de "Kaynak" yeni yolu gosterir.
+    # 1) Kaynagi .local/data/media'ya tasi (zaten icinde degilse). MD'de "Kaynak" yeni yolu gosterir.
     media_dir = _get_media_dir()
     src_norm = os.path.normcase(os.path.abspath(audio_path))
     media_norm = os.path.normcase(os.path.abspath(media_dir))
     if src_norm.startswith(media_norm + os.sep):
-        final_audio_path = audio_path  # zaten data/media altinda, tasima yok
+        final_audio_path = audio_path  # zaten .local/data/media altinda, tasima yok
     else:
         stem, ext = os.path.splitext(os.path.basename(audio_path))
         dst = _unique_path(media_dir, stem, ext)
@@ -1949,7 +1947,7 @@ def transcribe_file_to_markdown(audio_path, output_dir=None, header_title=None):
             log.error(f"[FILE] Kaynak tasinamadi ({type(e).__name__}: {e}); orijinal yerinde kaldi.")
             final_audio_path = audio_path
 
-    # 2) MD'yi data/raw/'a yaz (tek kopya, ayni isim varsa zaman eki).
+    # 2) MD'yi .local/data/raw/'a yaz (tek kopya, ayni isim varsa zaman eki).
     target_dir = output_dir or _get_raw_dir()
     md_path = _unique_path(target_dir, base_name, ".md")
     try:
@@ -2141,7 +2139,7 @@ def _live_transcribe_loop(md_path):
 
 
 def _get_live_temp_dir():
-    """LIVE.md icin gecici dizin (data/'ya yazilmaz, kayit bitince silinir).
+    """LIVE.md icin gecici dizin (.local/data/'ya yazilmaz, kayit bitince silinir).
     Windows: %LOCALAPPDATA%\\Temp\\voicedictation_live, Mac: $TMPDIR/voicedictation_live."""
     import tempfile
     path = os.path.join(tempfile.gettempdir(), "voicedictation_live")
@@ -2151,7 +2149,7 @@ def _get_live_temp_dir():
 
 def start_lecture_recording():
     """Tray menusunden cagrilir: lecture kaydi baslat. LIVE.md gecici dizine acilir
-    (data/'ya yazilmaz, kayit bitince silinir). Final pass WAV+MD data/ altina yazilir."""
+    (.local/data/'ya yazilmaz, kayit bitince silinir). Final pass WAV+MD .local/data/ altina yazilir."""
     global lecture_active, lecture_start_time, lecture_live_md_path
     global lecture_live_speech_detected, lecture_live_last_speech_time
     with recording_lock, lecture_lock:
@@ -2160,7 +2158,7 @@ def start_lecture_recording():
             return False
         try:
             ts = time.strftime("%Y-%m-%d_%H-%M-%S")
-            # LIVE.md gecici dizine — kullanici canli izleyebilir ama data/'ya yazilmaz
+            # LIVE.md gecici dizine — kullanici canli izleyebilir ama .local/data/'ya yazilmaz
             lecture_live_md_path = os.path.join(_get_live_temp_dir(), f"{ts}_LIVE.md")
             _init_live_md(lecture_live_md_path, "(canli izleme — bu LIVE dosyasi kayit bitince SILINIR)")
             # Buffer / VAD reset
@@ -2178,7 +2176,7 @@ def start_lecture_recording():
             return False
 
     sound_recording()
-    log.info("[LECTURE] Toplanti kaydi basladi (canli LIVE gecici, kayit bitince WAV+MD data/ altina yazilir)")
+    log.info("[LECTURE] Toplanti kaydi basladi (canli LIVE gecici, kayit bitince WAV+MD .local/data/ altina yazilir)")
     log.info(f"[LECTURE] Canli (gecici) MD: {lecture_live_md_path}")
 
     # Live transcribe thread'i baslat
@@ -2243,7 +2241,7 @@ def stop_lecture_recording():
             audio_data = np.concatenate(chunks_local, axis=0).flatten()
             chunks_local = None
 
-            # WAV dump -> data/media/<isim>.wav (kalici, silinmez; ayni isim varsa zaman eki)
+            # WAV dump -> .local/data/media/<isim>.wav (kalici, silinmez; ayni isim varsa zaman eki)
             try:
                 wav_path = _unique_path(_get_media_dir(), final_base, ".wav")
                 _save_wav(audio_data, wav_path)
@@ -2374,7 +2372,7 @@ def _prompt_lecture_filename_macos(default_name):
 
 
 def _pick_audio_file_macos():
-    """macOS native AppleScript file picker (osascript), data/media'da acilir. tkinter rumps ile
+    """macOS native AppleScript file picker (osascript), .local/data/media'da acilir. tkinter rumps ile
     main-thread cakismasi yapip GIL deadlock'a girdigi icin kullanilmiyor."""
     import subprocess
     media = _get_media_dir().replace("\\", "\\\\").replace('"', '\\"')
@@ -2446,19 +2444,19 @@ def _pick_file_and_transcribe():
 
 # ---------- PLAIN MEET DICTATION (file-pick + WAV + transcribe, NO diarization) ----------
 # Konusmaci ayirma (eski `_pick_file_and_meet_dictate`) opt-in ek ozellige alindi. Default
-# tray davranisi PLAIN dictation — video/ses dosyasi (tipik olarak kullanicinin data/media'ya
-# biraktigi toplanti kaydi) secilince ses tarafi cikartilir, `data/media/<isim>.wav` olarak
-# diske yazilir, transkript `data/raw/<isim>.md`'ye. **Orijinal dosya (video dahil) dokunulmaz**
-# — bulundugu yerde kalir; data/media'yi kullanici elle yonetir. Eski diarize pipeline
+# tray davranisi PLAIN dictation — video/ses dosyasi (tipik olarak kullanicinin .local/data/media'ya
+# biraktigi toplanti kaydi) secilince ses tarafi cikartilir, `.local/data/media/<isim>.wav` olarak
+# diske yazilir, transkript `.local/data/raw/<isim>.md`'ye. **Orijinal dosya (video dahil) dokunulmaz**
+# — bulundugu yerde kalir; .local/data/media'yi kullanici elle yonetir. Eski diarize pipeline
 # (`_pick_file_and_meet_dictate` + helper'lari) kodda korunuyor; ileride opt-in flag ile
 # geri acilacak.
 
 def _pick_file_and_meet_dictate_plain():
     """Tray '🎥 Meet Dictation...' callback'i. Diarize YOK.
 
-    Akis: dosya sec (data/media'da acilir) -> isim sor -> ses decode (mp4/webm/vs. cikarilir)
-    -> data/media/<isim>.wav -> Whisper transkript (beam=5, _finalize_segments otomatik)
-    -> data/raw/<isim>.md. Orijinal dosya dokunulmadan yerinde kalir.
+    Akis: dosya sec (.local/data/media'da acilir) -> isim sor -> ses decode (mp4/webm/vs. cikarilir)
+    -> .local/data/media/<isim>.wav -> Whisper transkript (beam=5, _finalize_segments otomatik)
+    -> .local/data/raw/<isim>.md. Orijinal dosya dokunulmadan yerinde kalir.
     """
     try:
         # 1) Dosya sec
@@ -2529,7 +2527,7 @@ def _pick_file_and_meet_dictate_plain():
             )
             return
 
-        # 4) WAV yaz (data/media/<isim>.wav, isim cakisirsa timestamp suffix)
+        # 4) WAV yaz (.local/data/media/<isim>.wav, isim cakisirsa timestamp suffix)
         try:
             wav_path = _unique_path(_get_media_dir(), final_name, ".wav")
             _save_wav(audio, wav_path)
@@ -2555,7 +2553,7 @@ def _pick_file_and_meet_dictate_plain():
             _show_meet_error("Whisper transkripti bos — konusma algilanamadi.")
             return
 
-        # 6) MD yaz (data/raw/<isim>.md, isim cakisirsa timestamp suffix)
+        # 6) MD yaz (.local/data/raw/<isim>.md, isim cakisirsa timestamp suffix)
         try:
             md_path = _unique_path(_get_raw_dir(), final_name, ".md")
             _write_lecture_markdown(
@@ -3238,7 +3236,7 @@ def _pick_file_and_meet_dictate():
         # 7) İsimleri segmentlere uygula
         segments_with_speakers = _apply_speaker_names(segments, speaker_names)
 
-        # 8) Markdown yaz: tek kopya data/raw/<isim>_meet.md (kaynagin yanina yazilmaz;
+        # 8) Markdown yaz: tek kopya .local/data/raw/<isim>_meet.md (kaynagin yanina yazilmaz;
         #    isim cakisirsa timestamp suffix)
         base_name = os.path.splitext(os.path.basename(path))[0]
         try:
@@ -3384,7 +3382,7 @@ def audio_callback(indata, frames, time_info, status):
     level = np.abs(indata).mean()
 
     # Lecture mode: iki paralel buffer
-    #   1) full-duration chunks → final pass + data/media/<isim>.wav diske
+    #   1) full-duration chunks → final pass + .local/data/media/<isim>.wav diske
     #   2) live buffer → cumle bazli VAD flush, gecici LIVE.md (kayit bitince silinir)
     if lecture_active:
         global lecture_live_speech_detected, lecture_live_last_speech_time
@@ -4911,7 +4909,7 @@ def _run_headless_transcribe(file_path, aggressive=False):
 def main():
     global audio_stream, conversation_cache, diagnostic_writer, remote_cache
 
-    # data/{media,raw,transcripts} + .local/{logs,models} gorunur olsun (--transcribe dahil)
+    # .local/data/{media,raw,transcripts} + .local/{logs,models} gorunur olsun (--transcribe dahil)
     _ensure_dirs()
 
     import argparse

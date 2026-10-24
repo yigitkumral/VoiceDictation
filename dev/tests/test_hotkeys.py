@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import Mock
 
 
-SOURCE = Path(__file__).resolve().parents[1] / "dev/dictation.py"
+SOURCE = Path(__file__).resolve().parents[2] / "dev/dictation.py"
 
 
 class FakeTimer:
