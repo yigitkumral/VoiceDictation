@@ -4,7 +4,7 @@ Bu belge VoiceDictation'ı kurmayı ve taşımayı anlatır. Normal kod güncell
 
 ## Eski klasör düzeninden geçiş
 
-Windows geçişi bu çalışma makinesinde tamamlandı. Mac'te henüz uygulanmadı; yalnız `git pull` yapıp eski `.app` ile başlatmak yeterli değildir.
+Windows ve Mac dosya/ortam geçişi tamamlandı (24–25 Ekim 2026). Başka eski kurulumlarda yalnız `git pull` yapıp eski `.app` ile başlatmak yeterli değildir; aşağıdaki adımlar uygulanır. Mac'in gerçek kullanım kabulü TODO dosyasında takip edilir.
 
 1. Daemon'ı normal menüsünden kapat; ona ait model sürecinin de kapandığını doğrula. Git'teki yerel değişiklikleri karşılaştırıp koru.
 2. Repo kökündeki eski `data/` klasörünü `.local/data/` altına taşı. Hedef zaten varsa birleştirme veya üzerine yazma yapma; önce dosya envanterlerini karşılaştır. Kopyalama sürüyorsa bitmesini bekle. `.env` varsa `.local/.env` konumuna taşı.

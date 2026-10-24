@@ -10,6 +10,8 @@ Geliştirme dosyaları tek `dev/` ağacındadır: Python/C kaynakları, `dev/scr
 
 Kurulum arşivleri çalışırken kullanılmaz; Windows'taki eski ZIP dosyaları ve tamamlanmış deneme artıkları temizlendi. Modeller, çalıştırıcılar ve tanı logları `.local/` altında korunur. Python önbelleği gerektiğinde yeniden oluşabilir; test geçici dosyaları `.local/test-tmp/` altındadır.
 
+Mac'te menüden Çıkış, Cocoa uygulamayı sonlandırmadan önce trackpad'i, tanı yazıcısını, sahip olunan Qwen sürecini ve PID kaydını kapatır. Böylece her yeniden açılışta eski model süreçleri bellekte birikmez. Klasör geçişinin geri dönüş kayıtları `.local/migration-YYYYMMDD/` altında tutulur.
+
 ```mermaid
 flowchart LR
     Mic[Mikrofon] --> D[Dikte]

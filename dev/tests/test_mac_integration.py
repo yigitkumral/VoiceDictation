@@ -11,6 +11,28 @@ from test_dictation import load
 
 
 class MacIntegrationTests(unittest.TestCase):
+    def test_mac_quit_closes_owned_resources_before_cocoa_terminates(self):
+        ns = load('_quit_menubar')
+        order = []
+        ns.update(should_quit=threading.Event(),
+                  mac_trackpad=SimpleNamespace(close=lambda: order.append('trackpad')),
+                  diagnostic_writer=SimpleNamespace(close=lambda: order.append('diagnostics')),
+                  _stop_cleanup_server=lambda: order.append('model'),
+                  _remove_daemon_pid=lambda: order.append('pid'))
+        app = SimpleNamespace(quit_application=lambda: order.append('quit'))
+        ns['_quit_menubar'](app)
+        self.assertTrue(ns['should_quit'].is_set())
+        self.assertEqual(order, ['trackpad', 'diagnostics', 'model', 'pid', 'quit'])
+
+    def test_mac_quit_still_stops_model_if_trackpad_close_fails(self):
+        ns = load('_quit_menubar')
+        stop, remove, quit_app = Mock(), Mock(), Mock()
+        ns.update(should_quit=threading.Event(),
+                  mac_trackpad=SimpleNamespace(close=Mock(side_effect=RuntimeError('synthetic'))),
+                  diagnostic_writer=None, _stop_cleanup_server=stop, _remove_daemon_pid=remove)
+        ns['_quit_menubar'](SimpleNamespace(quit_application=quit_app))
+        stop.assert_called_once(); remove.assert_called_once(); quit_app.assert_called_once()
+
     def test_native_callback_dispatch_disable_and_close(self):
         lib = SimpleNamespace(**{name: Mock() for name in (
             'vd_trackpad_start', 'vd_trackpad_enable', 'vd_trackpad_stop', 'vd_trackpad_counts', 'vd_trackpad_rejections')})

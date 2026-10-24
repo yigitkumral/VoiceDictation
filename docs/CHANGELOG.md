@@ -1,5 +1,12 @@
 # CHANGELOG — VoiceDictation
 
+## 25 Ekim 2026 — Mac klasör geçişi
+
+- Mac reposu `dev/` ve `.local/` düzenine geçirildi. 71 veri dosyasının ad/boyut envanteri ve 55 paket sürümü korundu; 27 paket komutu yeni ortama göre yeniden üretildi. Önceki yerel değişiklikler Git stash'te, eski ortam ve imzalı uygulama `.local/migration-20261025/` altında korundu.
+- Mac'te 187 Python testi ve 12 yerel trackpad senaryosu geçti. Yeni AppleScript uygulaması derlendi ve imzası doğrulandı; Login Items yeni `.local/VoiceDictation.app` yoluna güncellendi. Eksik `CFBundleIdentifier` anahtarını oluşturacak şekilde derleme betiği düzeltildi.
+- Önceki kapanışlardan kalan dört sahipsiz, yalnız bu projeye ait Qwen süreci sonlandırıldı. Cocoa çıkışından önce trackpad, tanı yazıcısı, model sunucusu ve PID kaydı açıkça kapatılıyor; hata durumunda diğer kaynakların kapanmasını sınayan test eklendi.
+- Kullanıcı yeni mikrofon iznini verdi; uygulama Hazır durumuna geldi. Yeni başlatıcının Erişilebilirlik/Giriş İzleme izinleri ve gerçek dikte denemesi ayrıca doğrulanacak.
+
 ## 24 Ekim 2026 — İki ağaçta sade yerleşim
 
 - Yiğit'in seçimiyle bütün geliştirme dosyaları `dev/` altında birleştirildi: uygulama, yerel C modülü, `scripts/`, `tests/`, `requirements.txt`. Kökteki geçiş başlatıcısı kaldırıldı; giriş `python -m dev.dictation`.

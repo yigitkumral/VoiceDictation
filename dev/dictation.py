@@ -641,6 +641,22 @@ def _refresh_herdr_targets(notify=True):
             _gui.update_menu()
 
 
+def _quit_menubar(rumps):
+    """Cocoa terminate Python finally/atexit'i atlayabilir; kaynaklari once kapat."""
+    should_quit.set()
+    actions = [("model", _stop_cleanup_server), ("pid", _remove_daemon_pid)]
+    if mac_trackpad is not None:
+        actions.insert(0, ("trackpad", mac_trackpad.close))
+    if diagnostic_writer is not None:
+        actions.insert(1, ("diagnostics", diagnostic_writer.close))
+    for name, close in actions:
+        try:
+            close()
+        except Exception as exc:
+            log.warning("[CIKIS] %s kapatilamadi: %s", name, type(exc).__name__)
+    rumps.quit_application()
+
+
 def _start_menubar_gui():
     """macOS menu bar uygulamasi (rumps) — tam ekranda da gorunur."""
     import rumps
@@ -788,9 +804,7 @@ def _start_menubar_gui():
             _do_reset()
 
         def on_quit(self, _):
-            should_quit.set()
-            mac_trackpad.close()
-            rumps.quit_application()
+            _quit_menubar(rumps)
 
     VDMenuBar().run()
 

@@ -102,6 +102,7 @@ Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tutt
 | `.local/__pycache__/`, `.local/test-tmp/` | Başlatıcıların Python önbelleği ve testlerin geçici çalışma alanı | Yeniden üretilir, git dışı | Kendiliğinden oluşur |
 | `.local/VoiceDictation.app` | Mac'te üretilen uygulama başlatıcısı; kaynak `dev/scripts/VoiceDictation.applescript` | Makineye özel, git dışı | `bash dev/scripts/build-mac-app.sh` ile üretilir |
 | `.local/environment-before-move.json` | Windows ortam geçişinden önceki Python/paket sürüm envanteri | Makineye özel, git dışı | Geçiş doğrulama kaydı, çalışırken kullanılmaz |
+| `.local/migration-YYYYMMDD/` | Mac geçiş envanteri, eski ortam/başlatıcı ve geri dönüş kayıtları; günlük çalışmada kullanılmaz | Makineye özel, git dışı | Kullanım kabulü tamamlanana kadar korunur |
 | `.local/.env` | İsteğe bağlı ortam değişkenleri (aşağıda); bugün kullanılmıyor | Makineye özel, git dışı | Gerekirse elle oluşturulur |
 | `~/.cache/huggingface/hub/` | Whisper turbo modeli (Windows: `mobiuslabsgmbh/faster-whisper-large-v3-turbo`, macOS: `mlx-community/whisper-turbo`). Önbellek başka projelerle ortaktır; buradaki diğer modeller silinmez. | Repo dışı | İlk açılışta iner |
 | Sistem temp → `voicedictation_live/` | Toplantı sırasında canlı `LIVE.md` ve geçici WAV | Repo dışı, geçici | Kendiliğinden oluşur, kayıt bitince silinir |

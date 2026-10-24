@@ -9,7 +9,7 @@ sırlar ve kişisel adresler Git'e girmez. Ortak skill'ler projeye kopyalanmaz. 
 
 ## 1. Mac'te ilk oturum
 
-Son Mac doğrulaması 24 Ekim 2026'da, klasör birleştirmesinden önce yapıldı. Yeni `dev/` ve `.local/` yerleşimi Windows'ta doğrulandı; Mac'e geçişte [docs/kurulum.md](docs/kurulum.md) ve [docs/TODO.md](docs/TODO.md) listesini izle. Çalışan eski Mac ortamını doğrudan taşıma; yeni ortam ve başlatıcı doğrulanana kadar koru.
+Son Mac doğrulaması 25 Ekim 2026: yeni `dev/` ve `.local/` yerleşiminde 187 Python testi ve 12 trackpad senaryosu geçti. Mikrofon izni verildi; yeni başlatıcının klavye izinleri ve gerçek kullanım kabulü [docs/TODO.md](docs/TODO.md) içinde takip edilir. Önceki ortam `.local/migration-20261025/` altında kabul tamamlanana kadar korunur.
 
 ## 2. Kurallar
 

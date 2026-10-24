@@ -2,11 +2,11 @@
 
 Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGELOG.md](CHANGELOG.md) dosyasına yazılır.
 
-- [ ] Mac reposunu yeni `dev/` ve `.local/` düzenine eşitle; yerel değişiklikleri ve verileri koru. `.local/venv/` ortamını kur, `.local/VoiceDictation.app` başlatıcısını yeni kaynaktan üret, Login Items ve gerekirse izinleri yenile. Testler, trackpad ve gerçek dikte kabulünden sonra eski ortamı kaldır. Windows geçişi tamamlandı.
+- [ ] Mac yeni başlatıcısının Erişilebilirlik/Giriş İzleme izinlerini ve gerçek üç parmak → kayıt → yapıştırma akışını doğrula. Klasör, ortam ve Login Items geçişi tamamlandı; eski ortam `.local/migration-20261025/` altında kullanım kabulüne kadar korunuyor.
 
 ## Mac'te ilk oturum
 
-24 Ekim 2026: klasör birleştirmesinden önce Python 3.14.4, modül yükleme, derleme ve 182 otomatik test Mac'te geçti. Yeni yerleşim yalnız Windows'ta doğrulandı. Aşağıdaki gerçek kullanım kabul listesi otomatik kontrollerden ayrıdır.
+25 Ekim 2026: yeni yerleşimde Python 3.14.4, bağımlılıklar, 187 otomatik test ve 12 trackpad senaryosu Mac'te geçti. Yeni uygulamanın mikrofon izni verildi. Aşağıdaki gerçek kullanım kabul listesi otomatik kontrollerden ayrıdır.
 
 **Ajan:** Mac'te çalışmaya başlamadan önce [klasör geçişi](kurulum.md#eski-klasör-düzeninden-geçiş) bölümünü izle; eski ortamı yeni yerleşim doğrulanana kadar koru.
 
