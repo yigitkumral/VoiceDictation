@@ -1,5 +1,12 @@
 # CHANGELOG — VoiceDictation
 
+## 24 Ekim 2026 — Mac dağıtımı ve doğrulama
+
+- Apple Silicon Mac deposu güncellendi; Python 3.14.4 bağımlılıkları, derleme ve 151 test doğrulandı. Temizlik sunucusu testindeki Windows'a özgü `CREATE_NO_WINDOW` beklentisi platforma göre ayrıldı.
+- Onaylı Qwen3-1.7B-Q8_0 modeli Windows'tan kopyalandı, SHA-256 eşitliği doğrulandı. Resmi llama.cpp b11852 macOS arm64 dağıtımı yalnız `.local/` altında kuruldu; Mac'te Qwen CPU, Whisper MLX kullanıyor.
+- Eski daemon menüden kapatıldı, mevcut imzalı `.app` değiştirilmeden yeniden açıldı. Hazır menü durumu ve hatasız başlangıç görüldü.
+- Sentetik Türkçe ses (5,16 sn): Whisper 435 ms, Qwen 358 ms, toplam 794 ms. Qwen adayı koruma denetiminde reddedildi, ham metin korundu; model istekleri ve sonuç tanı kaydına yazıldı. Gerçek Caps Lock/mikrofon/yapıştırma kabulü kullanıcı denemesine bırakıldı.
+
 ## 24 Ekim 2026 — Vault ve cihaz bazında ayrıntılı tanı
 
 - Vault diktesi de bağlam/model girdileri, aday/son metin ve hedef pane ile tanıya bağlandı.

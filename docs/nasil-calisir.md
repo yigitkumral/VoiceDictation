@@ -300,6 +300,11 @@ speechbrain ECAPA ile konuşmacı ayırma kodu `dictation.py` içinde duruyor, a
 
 ### Kullanım kaynağı ve cihaz bazında tanı
 
+Mac'te aynı tanı ve bağlam kodu kullanılır; Whisper Apple Silicon MLX yolundadır.
+Qwen temizliği `.local/llama/llama-server` ve aynı GGUF model mevcutsa açılır.
+Mevcut çalıştırıcı seçimi Mac'te CPU kullanır; Windows CUDA performansı Mac için varsayılmaz.
+Caps Lock kullanımı değişmez; Windows F13 çift basış özelliği Mac'e taşınmaz.
+
 Masaüstü diktesi `channel=desktop`, Vault diktesi `channel=vault` olarak ayrılır.
 Vault köprüsü `/dikte` isteğinde `X-Vault-Device-Type` (iphone/ipad/android/desktop/unknown),
 `X-Vault-Client-Id` (tarayıcı profilinde saklanan rastgele kimlik), `X-Vault-Request-Id`

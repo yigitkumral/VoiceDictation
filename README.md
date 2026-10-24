@@ -69,6 +69,7 @@ Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tutt
 | `.local/logs/` | Aylık log (`YYYY-MM-<Ay>.log`, örn. `2026-09-Eylul.log`; dikte metni dahil tam içerik, silinmez) ve `dictation.pid` | Makineye özel, git dışı | Kendiliğinden oluşur |
 | `.local/models/` | speechbrain modeli (uyuyan özellik); isteğe bağlı `Qwen3-1.7B-Q8_0.gguf` metin temizleme modeli | Makineye özel, git dışı | Qwen ayrı onayla elle indirilir; uygulama indirmez |
 | `.local/llama/` | Yerel temizlik için llama.cpp `llama-server` çalıştırıcısı ve kitaplıkları | Makineye özel, git dışı | Platforma uygun sürüm elle kurulur |
+| `.local/llama-macos-dist/`, `.local/llama-b11852-bin-macos-arm64.tar.gz` | Apple Silicon için resmi b11852 çalıştırıcısı ve arşivi; Mac'te `.local/llama` bu dağıtıma bağlıdır. Qwen modeli Windows'taki onaylı kopyadan taşınır. | Makineye özel, git dışı | Mac dağıtımı kurulmalı; Windows ikilisi kullanılamaz |
 | `.local/llama-cuda/` | Aynı Qwen modeli için onaylı llama.cpp b11852 CUDA 13.4 çalıştırıcısı ve çalışma zamanı; CPU yedeği `.local/llama/` altındadır | Makineye özel, git dışı | Platforma uygun onaylı kurulum gerekir |
 | `.local/cleanup-temp/` | Önceki süreç-başına temizlik sürümünün geçici girdi klasörü; kalıcı model akışı kullanmaz, eski çökmeden kalan dosya bulunabilir | Makineye özel, git dışı | Taşımak gerekmez |
 | `.local/metrics/dictation.jsonl` | Yalnız dikte süreleri, uzunluklar ve durum; dikte metni, pencere/pane adı içermez | Makineye özel, git dışı | Kendiliğinden oluşur |

@@ -219,7 +219,10 @@ class CleanupServerTests(unittest.TestCase):
                     self.assertIn("--log-disable", command)
                     self.assertEqual(kwargs["stdout"], subprocess.DEVNULL)
                     self.assertEqual(kwargs["stderr"], subprocess.DEVNULL)
-                    self.assertTrue(kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW)
+                    if hasattr(subprocess, "CREATE_NO_WINDOW"):
+                        self.assertTrue(kwargs["creationflags"] & subprocess.CREATE_NO_WINDOW)
+                    else:
+                        self.assertEqual(kwargs["creationflags"], 0)
                     self.assertNotIn("LLAMA_ARG_LOG_FILE", kwargs["env"])
                     self.assertNotIn("LLAMA_ARG_TOOLS", kwargs["env"])
                     self.assertGreaterEqual(len(kwargs["env"]["LLAMA_API_KEY"]), 32)

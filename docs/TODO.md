@@ -4,6 +4,10 @@ Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGE
 
 ## Mac'te ilk oturum
 
+24 Ekim 2026 güncellemesi: depo güncellendi; Python 3.14.4 bağımlılık denetimi, modül yükleme,
+derleme ve 151 otomatik test Mac'te geçti. Aşağıdaki gerçek mikrofon/kısayol/izin ve dosya akışı
+kabul listesi bu otomatik kontrollerden ayrıdır; tamamı doğrulanmış sayılmaz.
+
 **Ajan:** Mac'te açılan ilk oturumda bu listeyi Yiğit'e öner. Son Mac doğrulaması 26 Nisan 2026'da yapıldı. O tarihten sonraki bütün değişiklikler yalnız Windows'ta doğrulandı: Mayıs'taki halüsinasyon paketleri, ad penceresi, toplantı WAV'ı ve 16 Eylül'deki yapı sadeleştirmesi.
 
 - [ ] `git pull`, ardından `./scripts/setup.sh` çalıştır. `requirements.txt` artık `rumps` ve `mlx-whisper` paketlerini de kuruyor. macOS bağımlılık çözümü Windows'tan yalnız yaklaşık denendi; kurulumun temiz bir venv'de hatasız bittiğini doğrula. Sonra `venv/bin/python -m py_compile dictation.py`.
