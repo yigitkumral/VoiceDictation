@@ -10,7 +10,7 @@ import time
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import file_queue as fq  # noqa: E402
+from dev import file_queue as fq  # noqa: E402
 
 JOB_ID = "a" * 64
 SR = 16000

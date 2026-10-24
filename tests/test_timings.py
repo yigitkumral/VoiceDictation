@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class TimingTests(unittest.TestCase):
     def test_whitelist_drops_text_and_records_stage_times(self):
-        node = next(n for n in ast.parse((ROOT / 'dictation.py').read_text(encoding='utf-8')).body
+        node = next(n for n in ast.parse((ROOT / 'dev/dictation.py').read_text(encoding='utf-8')).body
                     if isinstance(n, ast.FunctionDef) and n.name == '_write_timing')
         with tempfile.TemporaryDirectory(dir=ROOT / '.local') as folder:
             destination = Path(folder) / 'metrics' / 'dictation.jsonl'

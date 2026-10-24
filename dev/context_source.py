@@ -224,7 +224,7 @@ class ContextCache:
 
     def _module(self):
         if self._bridge is None:
-            self._bridge = importlib.import_module("context_bridge")
+            self._bridge = importlib.import_module("dev.context_bridge")
         return self._bridge
 
     def _local(self, selection):

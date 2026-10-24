@@ -41,7 +41,7 @@ scripts\setup.bat
 
 Kısayolu elle eklemek için: `Win+R` → `shell:startup` → Yeni → Kısayol → `wscript.exe "<repo>\scripts\start.vbs"`.
 
-`dictation.py` açılışta `venv\Lib\site-packages\nvidia\*\bin` klasörlerini DLL arama yoluna ekler. Bu yüzden venv'in adı ve yeri değişmemeli.
+`dev/dictation.py` açılışta `venv\Lib\site-packages\nvidia\*\bin` klasörlerini DLL arama yoluna ekler. Bu yüzden venv'in adı ve yeri değişmemeli.
 
 ### Başlatma
 
@@ -74,7 +74,7 @@ cd VoiceDictation
 - Ad-hoc imzalı kabuk betiği uygulamasını TCC sessizce reddeder.
 - `osacompile` ile derlenen AppleScript uygulaması Otomasyon izin kategorisinde çalışır.
 
-Uygulama yalnız başlatıcıdır ve her açılışta repodaki `dictation.py`'yi çalıştırır. Betik, `path to me` ile kendi konumunu bulur:
+Uygulama yalnız başlatıcıdır ve her açılışta repodaki `dev/dictation.py`'yi çalıştırır. Betik, `path to me` ile kendi konumunu bulur:
 
 ```applescript
 set appPath to POSIX path of (path to me)

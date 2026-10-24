@@ -2,6 +2,8 @@
 
 Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGELOG.md](CHANGELOG.md) dosyasına yazılır.
 
+- [ ] Windows commit/push sonrasında Mac reposunu `dev/` düzenine eşitle; mevcut yerel değişiklikleri koruyarak karşılaştır, testleri ve trackpad derlemesini yeni yolla çalıştır. Mevcut imzalı `.app` kökteki uyumluluk başlatıcısını kullanmayı sürdürür.
+
 ## Mac'te ilk oturum
 
 24 Ekim 2026 güncellemesi: depo güncellendi; Python 3.14.4 bağımlılık denetimi, modül yükleme,
@@ -10,7 +12,7 @@ kabul listesi bu otomatik kontrollerden ayrıdır; tamamı doğrulanmış sayıl
 
 **Ajan:** Mac'te açılan ilk oturumda bu listeyi Yiğit'e öner. Son Mac doğrulaması 26 Nisan 2026'da yapıldı. O tarihten sonraki bütün değişiklikler yalnız Windows'ta doğrulandı: Mayıs'taki halüsinasyon paketleri, ad penceresi, toplantı WAV'ı ve 16 Eylül'deki yapı sadeleştirmesi.
 
-- [ ] `git pull`, ardından `./scripts/setup.sh` çalıştır. `requirements.txt` artık `rumps` ve `mlx-whisper` paketlerini de kuruyor. macOS bağımlılık çözümü Windows'tan yalnız yaklaşık denendi; kurulumun temiz bir venv'de hatasız bittiğini doğrula. Sonra `venv/bin/python -m py_compile dictation.py`.
+- [ ] `git pull`, ardından `./scripts/setup.sh` çalıştır. `requirements.txt` artık `rumps` ve `mlx-whisper` paketlerini de kuruyor. macOS bağımlılık çözümü Windows'tan yalnız yaklaşık denendi; kurulumun temiz bir venv'de hatasız bittiğini doğrula. Sonra `venv/bin/python -m py_compile dictation.py dev/dictation.py`.
 - [ ] İsteğe bağlı: Windows'taki `data/` klasörünü kopyala (cihazlar arası eşitleme yok).
 - [ ] `scripts/VoiceDictation.app` uygulamasını `path to me` betiğiyle yeniden derle, imzala, Login Items'a yeniden ekle ve dört izni doğrula ([kurulum.md](kurulum.md)). Repodaki mevcut `.app` içinde eski, sabit bir repo yolu var.
 - [ ] Daemon'ı `.app` ile başlat: menü çubuğu simgesi açılıyor mu, Caps Lock x2 ile dikte ve yapıştırma çalışıyor mu?
@@ -29,6 +31,8 @@ kabul listesi bu otomatik kontrollerden ayrıdır; tamamı doğrulanmış sayıl
 - [ ] Sonuçları [CHANGELOG.md](CHANGELOG.md) dosyasına yaz, bu bölümü kapat.
 
 ## Dikte iyileştirmesi — gerçek kullanım kabulü
+
+- [ ] Mac trackpad kalan kabul: aynı sürece alınan, basmayı da kabul eden sürümde ses + kayıt/bitiş/yapıştırma; kaydırma/iki-dört parmak reddi, mevcut sistem hareketleriyle çakışma, çift hareketle Enter ve uyku dönüşü. İlk ayrı TP prototipinin kayıt/bitiş/yapıştırması Yiğit ile doğrulanmıştı. Özel MultitouchSupport API'si her macOS güncellemesinde tekrar sınanmalı.
 
 - [ ] Vault cihaz tanısı: gerçek iPhone/iPad/masaüstü tarayıcı kayıtlarında cihaz türü, aynı profilde sabit istemci kimliği ve her kayıtta yeni istek kimliğini doğrula; Vault teslim sonucu ile backend tanısını aynı istek kimliğiyle karşılaştır. Sentetik HTTP doğrulaması geçti; fiziksel cihaz kabulü ayrı yapılacak.
 
@@ -64,7 +68,7 @@ kabul listesi bu otomatik kontrollerden ayrıdır; tamamı doğrulanmış sayıl
 
 - [ ] Konuşmacı ayırmayı isteğe bağlı geri aç: tray öğesi, `--diarize` veya konuşmacı sayısı penceresi seçeneklerinden biri seçilecek. Önce Meet kayıtlarında bütün metnin tek konuşmacıya atanması çözülmeli (22 Mayıs 2026). Bilinen konuşmacı sayısıyla kısa örnekte gömme/küme sayısı, mesafe matrisi ve eşik kararı incelenecek; kosinüs/dinamik eşik, gerekirse konuşmacı değişim sınırı denenecek. Referans: `data/media/2026-05-01_Sonar-2-Dogu-teknik-toplanti.mp4` (~34 MB, 16 dakika, iki konuşmacı). Kod uyuyor, paketler requirements içinde yorum satırı, model `.local/models/` altında.
 - [ ] **iPhone'da her uygulamada dikte (Yiğit fikri, 24 Ekim 2026):** Bir iOS Kestirmesi sesi kaydeder, tailnet üzerinden Windows'taki uzak dikte ucuna gönderir, dönen metni panoya koyar; Yiğit istediği uygulamaya yapıştırır. HTTPS gerekmez. Uç, Vault'tan dikte için kurulan aynı Windows sunucusudur; Kestirme için ayrı kimlik/erişim kararı gerekir.
-- [ ] **`file_queue` daemon bağlantısı:** Modül ve testleri hazır, ama `dictation.py` modülü içe aktarmıyor. Bağlanınca kuyruk dış istemcilerin ses dosyalarını daemon'ın açık modeliyle işler.
+- [ ] **`file_queue` daemon bağlantısı:** Modül ve testleri hazır, ama `dev/dictation.py` modülü içe aktarmıyor. Bağlanınca kuyruk dış istemcilerin ses dosyalarını daemon'ın açık modeliyle işler.
 - [ ] **`--calibrate` akışı:** Yöntem [calibration/README.md](calibration/README.md) dosyasında anlatılıyor, akış henüz yazılmadı. Kapsamı: okuma kaydı, `jiwer` ile karşılaştırma ve önerilen düzeltme tablosu.
 - [ ] **Yedek filtresi (ayrı onay):** `Yazilim` yedeğinin rclone filtresine `- /VoiceDictation/.local/` ekle. `data/` yedekte kalmalı.
 - [ ] **Sonar belgeleri:** Sonar projesindeki eski Drive kayıt klasörü referanslarını yeni yerle (`VoiceDictation/data/media/`) güncelle. Bu iş Sonar oturumunda yapılır.

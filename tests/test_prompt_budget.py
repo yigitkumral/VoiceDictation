@@ -21,7 +21,7 @@ class PromptBudgetTests(unittest.TestCase):
     def load(self, mac=False):
         ns = dict(re=re, model=SimpleNamespace(hf_tokenizer=ByteTokenizer()), IS_MAC=mac,
                   INITIAL_PROMPT='Sabit teknik terimler.', wake_word_string='Diktasyon')
-        node = next(n for n in ast.parse((ROOT/'dictation.py').read_text(encoding='utf-8')).body
+        node = next(n for n in ast.parse((ROOT/'dev/dictation.py').read_text(encoding='utf-8')).body
                     if isinstance(n, ast.FunctionDef) and n.name == '_whisper_context')
         exec(compile(ast.Module(body=[node], type_ignores=[]), 'dictation.py', 'exec'), ns)
         return ns['_whisper_context']

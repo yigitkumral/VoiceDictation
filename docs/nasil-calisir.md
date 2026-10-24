@@ -4,7 +4,9 @@ Bu belge dört kullanım akışını, tray menüsünü, çıktı biçimini ve tr
 
 ## Genel bakış
 
-Uygulama, arka planda çalışan tek bir süreçtir (`dictation.py`). Mikrofonu sürekli dinler; dört akıştan birini başlatan komutu bekler.
+Uygulama, arka planda çalışan tek bir süreçtir (`dev/dictation.py`). Mikrofonu sürekli dinler; dört akıştan birini başlatan komutu bekler.
+
+Python modülleri `dev/` paketindedir. Kökteki `dictation.py` yalnız bu paketi başlatır; mevcut `.app`, VBS ve komut satırı girişleri korunur. Çalışma dosyaları kaynak klasörüne taşınmaz: `data/`, `.local/`, `.env` ve `venv/` repo kökünde kalır.
 
 ```mermaid
 flowchart LR
@@ -274,7 +276,7 @@ Whisper sessizlikte ve gürültüde halüsinasyon üretebilir. Katmanlar, üreti
 
 ## Ayarlar
 
-Ayarlar `dictation.py` içindeki sabitlerdir; ayar dosyası yoktur. Ortam değişkenleri README'de listelenir.
+Ayarlar `dev/dictation.py` içindeki sabitlerdir; ayar dosyası yoktur. Ortam değişkenleri README'de listelenir.
 
 | Sabit | Değer | Etkisi |
 |---|---|---|
@@ -295,7 +297,7 @@ Ayarlar `dictation.py` içindeki sabitlerdir; ayar dosyası yoktur. Ortam deği�
 
 ## Konuşmacı ayırma (kapalı)
 
-speechbrain ECAPA ile konuşmacı ayırma kodu `dictation.py` içinde duruyor, ama tray'den çağrılmıyor. Gerekirse model `.local/models/` altına iner. Bu yol Meet kayıtlarında konuşmacıları yanlış kümelediği için kapatıldı. Yeniden açma planı [TODO.md](TODO.md) dosyasının "Gelecek" bölümünde.
+speechbrain ECAPA ile konuşmacı ayırma kodu `dev/dictation.py` içinde duruyor, ama tray'den çağrılmıyor. Gerekirse model `.local/models/` altına iner. Bu yol Meet kayıtlarında konuşmacıları yanlış kümelediği için kapatıldı. Yeniden açma planı [TODO.md](TODO.md) dosyasının "Gelecek" bölümünde.
 
 
 ### Kullanım kaynağı ve cihaz bazında tanı
@@ -303,7 +305,15 @@ speechbrain ECAPA ile konuşmacı ayırma kodu `dictation.py` içinde duruyor, a
 Mac'te aynı tanı ve bağlam kodu kullanılır; Whisper Apple Silicon MLX yolundadır.
 Qwen temizliği `.local/llama/llama-server` ve aynı GGUF model mevcutsa açılır.
 Mevcut çalıştırıcı seçimi Mac'te CPU kullanır; Windows CUDA performansı Mac için varsayılmaz.
-Caps Lock kullanımı değişmez; Windows F13 çift basış özelliği Mac'e taşınmaz.
+Caps Lock kullanımı değişmez. Deneysel Mac trackpad modülü aynı VoiceDictation sürecinde
+çalışır; ayrı uygulama veya ek izin yoktur. Üç parmak kısa dokunma/basma içeride F13
+işleyicisini çağırır: tek hareket kayıt açar/kapatır; boşta hızlı çift hareket Enter gönderir.
+Modül kurulmuşsa açık başlar; Ayarlar → Trackpad ile kapatılır. Ayarlar → Bildirim sesini dene
+aynı başlangıç tonunu RAM'den `NSSound` ile çalar; `afplay`/geçici dosya kullanılmaz.
+[Prototip kılavuzu](../dev/mac-trackpad/README.md).
+
+Vault makine etiketleri küçük harfe çevrilir, harf/rakam dışı diziler tireyle değiştirilir:
+`Macbook-Pro` → `macbook-pro`. Aynı kısa ada düşen birden fazla profil varsa bağlam seçilmez.
 
 Masaüstü diktesi `channel=desktop`, Vault diktesi `channel=vault` olarak ayrılır.
 Vault köprüsü `/dikte` isteğinde `X-Vault-Device-Type` (iphone/ipad/android/desktop/unknown),

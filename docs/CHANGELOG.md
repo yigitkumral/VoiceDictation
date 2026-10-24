@@ -1,5 +1,26 @@
 # CHANGELOG — VoiceDictation
 
+## 24 Ekim 2026 — Python kaynakları dev altında
+
+- Uygulama ve yardımcı Python modülleri `dev/` paketine taşındı. Kökteki küçük `dictation.py` başlatıcısı mevcut Windows/Mac başlatıcılarını ve CLI kullanımını korur; imzalı Mac uygulaması değişmez.
+- Mac C kaynakları da `dev/mac-trackpad/` altında toplandı; ayrı `tools/` klasörü kaldırıldı. `scripts/` yalnız işletim komutları olarak korundu. README kaynak, çalışma verisi, bağımlılık ve önbellek ayrımını açıklar.
+- Veri, model, log, `.env` ve sanal ortam yolları repo kökünde kaldı. Tanı sürüm özeti yeni kaynak konumlarını okur. Testler ve güncel belgeler yeni düzene uyarlandı.
+- Başlatıcı yönlendirmesi, veri yolları ve kökteki `.env` yüklemesi için üç regresyon testi eklendi. Mac repo eşitlemesi bu commit sonrası ayrı adımdır.
+
+## 24 Ekim 2026 — Trackpad aynı süreçte, Mac ses düzeltmesi
+
+- Ayrı TP uygulaması kapatıldı; `mac_trackpad.py` + `.local/trackpad/libvdtrackpad.dylib` artık VoiceDictation sürecinde çalışıyor. Üç parmak içeride F13 işleyicisine gider, yeni Erişilebilirlik kimliği veya tuş enjeksiyonu yok. Ayarlar menüsüne Trackpad aç/kapat ve Bildirim sesini dene eklendi.
+- Mac çıkışının sessizde olduğu saptandı; kullanıcı ses istediği için %25 düzey korunarak sessizlik bir kez kaldırıldı. WAV tonları değiştirilmeden NSSound ile RAM'den çalınıyor; ayrı afplay/geçici dosya yok. Gerçek macOS API'si ve worker run loop doğrulandı; başlatma hataları ve zaman aşımı loglanıyor.
+- Fiziksel üç parmak basışı kabul ediliyor; yerleşme penceresi 200 ms, toplam temas 30–600 ms. Kaydırma reddi korunuyor; reddetme nedenleri içeriksiz sayaçlarla 30 saniyede bir loglanıyor. Algılayıcıda 12 sentetik senaryo, Python'da 182 test (Windows'ta bir ortam atlaması) var. Güncel sürümün ses/hareket kabulü kullanıcı denemesinde.
+- Vault makine adları aynı kısa ad kuralıyla karşılaştırılıyor (`Macbook-Pro` → `macbook-pro`); birden fazla profil aynı kısa ada düşerse kaynak seçilmiyor. Windows sunucusu düzeltmeyle yeniden açıldı.
+
+## 24 Ekim 2026 — Mac trackpad prototipi
+
+- Depo içinde Cocoa menü çubuğu yardımcısı: dahili trackpad'de üç parmak kısa dokunuş → isteğe bağlı F13. İlk açılış yalnız gözlem; ağ veya otomatik başlangıç yok. Özel MultitouchSupport API'si kullanılıyor. Yiğit gerçek dokunuşta TP TAP gördüğünü doğruladı; iki dokunuş olay logunda görüldü. F13/izin ve diğer hareketlerle çakışma kabulü ayrı.
+- Saf C algılayıcı 10 sentetik senaryoyla sınandı. Mac F13 yolu mevcut kayıt/çift Enter durum makinesine bağlandı; Caps Lock yolu korunuyor. Mac modifier takibi sağ/sol tuşları ayrı tutuyor.
+- Mac'te 178 Python testi geçti; Windows'ta 177 başarılı, 1 ortam kaynaklı atlama. Mac daemon'ı F13 sürümüyle yeniden açıldı, hazır menü durumu doğrulandı.
+- Gerçek kabul: Yiğit Erişilebilirlik iznini verdi, F13 modu açıldı; üç parmakla kayıt açma/bitiş ve yapıştırma çalıştı. Mac tanısı `pasted`, Whisper 413 ms, Qwen CPU 182 ms, yapıştırma 411 ms, toplam 1,01 sn; bağlam 0 kelime. Çift hareketle Enter, normal sistem hareketleriyle çakışma ve uyku dönüşü henüz fiziksel olarak doğrulanmadı. Prototip açık bırakıldı; yeni açılışta gözlem moduna döner.
+
 ## 24 Ekim 2026 — Mac dağıtımı ve doğrulama
 
 - Apple Silicon Mac deposu güncellendi; Python 3.14.4 bağımlılıkları, derleme ve 151 test doğrulandı. Temizlik sunucusu testindeki Windows'a özgü `CREATE_NO_WINDOW` beklentisi platforma göre ayrıldı.

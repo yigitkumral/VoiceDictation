@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SPEC = importlib.util.spec_from_file_location("context_bridge", ROOT / "context_bridge.py")
+SPEC = importlib.util.spec_from_file_location("context_bridge", ROOT / "dev/context_bridge.py")
 bridge = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(bridge)
 SESSION = "01a16d16-e381-7d01-83b2-7b6b1e873889"

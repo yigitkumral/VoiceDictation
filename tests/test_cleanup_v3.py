@@ -28,7 +28,7 @@ def load_cleanup():
               CLEANUP_CUDA_SERVER_BIN=str(ROOT / ".local/llama-cuda/llama-server.exe"),
               CLEANUP_MODEL=str(ROOT / ".local/models/Qwen3-1.7B-Q8_0.gguf"),
               CLEANUP_TEMP_DIR=str(ROOT / ".local/cleanup-temp"))
-    tree = ast.parse((ROOT / "dictation.py").read_text(encoding="utf-8"))
+    tree = ast.parse((ROOT / "dev/dictation.py").read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and (node.name.startswith("_cleanup_")
                 or node.name in {"_accept_cleanup", "_start_cleanup_server", "_stop_cleanup_server",

@@ -9,7 +9,7 @@ from unittest.mock import Mock
 
 import numpy as np
 
-from remote_dictation import make_handler, pcm_to_float, target_from_query, client_from_headers
+from dev.remote_dictation import make_handler, pcm_to_float, target_from_query, client_from_headers
 from test_dictation import load
 
 
@@ -102,6 +102,17 @@ class ServerTests(unittest.TestCase):
 
 
 class RemoteDictateTests(unittest.TestCase):
+    def test_machine_slug_matches_vault_and_collisions_are_rejected(self):
+        ns = load('_remote_selection')
+        ns.update(_remote_profiles=Mock(return_value={'one': {'id': 'one', 'label': 'Macbook-Pro'}}),
+                  _herdr_json=Mock(return_value={'pane': {'terminal_id': 'term-1'}}))
+        result = ns['_remote_selection']('w1:p1', 'macbook-pro')
+        self.assertEqual(result['machine'], 'one')
+        ns['_herdr_json'].assert_called_once_with(['pane', 'get', 'w1:p1'], 'one')
+        ns['_remote_profiles'].return_value['two'] = {'id': 'two', 'label': 'Macbook Pro'}
+        with self.assertRaises(ValueError):
+            ns['_remote_selection']('w1:p1', 'macbook-pro')
+
     def namespace(self, key):
         stop = threading.Event()
         ns = load("_remote_dictate")

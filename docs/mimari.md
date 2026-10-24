@@ -42,8 +42,8 @@ içindeki sekme değişimi algılanmadığından açık seçim güncellenmelidir
 
 `agent_session`, sağlayıcı (`codex`/`claude`), tür (`id`/`path`), değer ve kaynak alanlarıyla doğrulanmış
 oturum kaydını belirtir. Herdr'ın mevcut oturum başlangıç hook'ları bu alanı verebilir; eski oturumlar
-kayıtsız olabilir. Terminal süreç argv'si tek başına sohbet kimliği sayılmaz. `context_bridge.py`
-yalnız tam ID/yol çözümlemesi yapar; alt ajan, sistem ve araç metinlerini dışlar. `context_source.py`
+kayıtsız olabilir. Terminal süreç argv'si tek başına sohbet kimliği sayılmaz. `dev/context_bridge.py`
+yalnız tam ID/yol çözümlemesi yapar; alt ajan, sistem ve araç metinlerini dışlar. `dev/context_source.py`
 yerel/SSH okumayı kimlik kontrolü ve RAM önbelleğiyle yönetir. Uzak exporter stdin üzerinden çalışır;
 uzak makineye dosya yazmaz veya paket kurmaz. Herdr terminal çıktısı, ilgisiz oturum veya rastgele son
 değişen kayıt okunmaz.
@@ -58,7 +58,7 @@ Qwen ayrı kalıcı yerel alt süreçtir. Mevcut model CUDA0 doğrulanırsa GPU'
 metin korunur. Temizlik en fazla 1200 karakter ve 12 saniye ile sınırlıdır. Normal kapanış yalnız
 uygulamanın sahip olduğu süreci kapatır.
 
-**Uzak dikte (Vault, iPhone/iPad):** `remote_dictation.py` daemon içinde yalnız `127.0.0.1:5190`'da dinler.
+**Uzak dikte (Vault, iPhone/iPad):** `dev/remote_dictation.py` daemon içinde yalnız `127.0.0.1:5190`'da dinler.
 Tek istemcisi iFonzo canlı ajan grafının terminal köprüsüdür (`memory/garden/tools/dikte.cjs`). Tailscale kimliği ve
 HTTPS orada çözülür; uç ayrıca `X-Vault-Dikte` başlığı ve `127.0.0.1` Host'u ister.
 

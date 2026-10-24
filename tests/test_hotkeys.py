@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import Mock
 
 
-SOURCE = Path(__file__).resolve().parents[1] / "dictation.py"
+SOURCE = Path(__file__).resolve().parents[1] / "dev/dictation.py"
 
 
 class FakeTimer:
@@ -366,6 +366,15 @@ class WindowsHotkeyTests(unittest.TestCase):
         self.assertFalse(worker.is_alive())
         self.ns["_announce_recording"].assert_not_called()
         self.ns["paste_controller"].press.assert_called_once_with("enter")
+
+
+class MacF13Tests(WindowsHotkeyTests):
+    """Ayni F13 durum makinesi Mac'te de tum hata/iptal senaryolarindan gecer."""
+    def setUp(self):
+        super().setUp()
+        self.ns.update(IS_MAC=True, HOTKEY_RECORD="caps_lock", DOUBLE_TAP_INTERVAL=.4,
+                       __name__="mac_test_fixture", toggle_recording=Mock(),
+                       sys=SimpleNamespace(modules={"mac_test_fixture": SimpleNamespace(DOUBLE_TAP_INTERVAL=.4)}))
 
 
 class MacHotkeyTests(unittest.TestCase):

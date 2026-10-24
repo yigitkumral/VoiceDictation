@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
 
-from diagnostics import DiagnosticWriter
+from dev.diagnostics import DiagnosticWriter
 from test_dictation import load
 from test_cleanup_v3 import load_cleanup
 
@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class DiagnosticTests(unittest.TestCase):
     def test_writer_keeps_content_and_build_and_survives_bad_record(self):
         with tempfile.TemporaryDirectory(dir=ROOT / '.local') as temp:
-            writer = DiagnosticWriter(temp, [ROOT / 'dictation.py'])
+            writer = DiagnosticWriter(temp, [ROOT / 'dev/dictation.py'])
             self.assertTrue(writer.submit({'bad': object()}))
             self.assertTrue(writer.submit({'trace_id': 'synthetic', 'text': 'Example input'}))
             writer.close()
