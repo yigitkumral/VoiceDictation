@@ -36,14 +36,45 @@ Program yalnız `data/media/` ve `data/raw/` klasörlerine yazar. `data/transcri
 Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN → LISTENING` sırasıyla ilerler. Ses yalnız RAM'de tutulur ve metne çevrildikten sonra silinir.
 
 1. **Başlat:** F13 (Windows) veya Caps Lock x2 (macOS) tuşuna bas ya da "Diktasyon" de. Kayıt sesi çalar, simge kırmızıya döner.
-2. **Konuş:** Sessizlikte kayıt kendiliğinden gönderilmez. 30 saniye boyunca hiç konuşma algılanmazsa kayıt iptal olur.
-3. **Bitir:** Aynı tuşa bas ya da tekrar "Diktasyon" de. Whisper turbo (`beam=3`) metne çevirir, temizlik uygulanır, metin panoya kopyalanır, aktif pencereye yapıştırılır ve Enter gönderilir.
+2. **Konuş:** Geçici metin yaklaşık 2,5 saniyelik aralıklarla güncellenir; model yavaşsa aralık uzar. Windows'ta odağı almayan küçük pencerede, Mac'te menü çubuğunda/menüde gösterilir. Önizleme son 12 saniyelik sesi kullanır; tam kaydın yerine geçmez. Sessizlikte kayıt kendiliğinden gönderilmez. Başlangıçta 30 saniye hiç konuşma algılanmazsa kayıt iptal olur.
+3. **Bitir:** Aynı tuşa bas ya da tekrar "Diktasyon" de. Whisper turbo (`beam=3`) kaydın tamamını yeniden çözer; geçici metin birleştirilmez. Temizlik uygulanır, metin panoya kopyalanır, hedef pencereye yapıştırılır ve Enter gönderilir. Windows'ta başka pencereye, Mac'te başka uygulamaya geçildiyse gönderilmez. Pano/yapıştırma hatasında durum toparlanır.
 4. **Bekleme:** 1,5 saniye sonra dinlemeye döner.
 
 - **Tek nefes:** Wake word açıkken "Diktasyon <mesaj> Diktasyon" dersen mesaj doğrudan gönderilir.
 - **Yalnız wake word:** Mesaj olmadan yalnız "Diktasyon" algılanırsa kayıt iptal edilir.
 - **İptal:** Windows'ta F13'ü 1,25 saniye basılı tut; macOS'ta Caps Lock'a üç kez bas. Tray → ↺ Sıfırla da aynı işi yapar.
+- İptal, sürmekte olan model işleminin sonradan metin göndermesini de engeller. Yapıştırma ile Enter arasında iptal/odak değişimi olursa Enter gönderilmez; daha önce yapıştırılan metin geri alınmaz. Aynı pencere içindeki sekme veya giriş alanı değişimi saptanmaz.
 - **Wake word:** Varsayılan kapalıdır; Tray → ⚙ Ayarlar → Anahtar Kelime Dinleme ile açılır. "Anahtar Kelime: … (değiştir…)" ile başka bir kelime seçilebilir. Değişiklik yalnız RAM'de tutulur, yeniden başlatınca "diktasyon"a döner.
+
+### Bağlam ve önizleme
+
+Kayıt başında Herdr etkin pane'inin etiketi/çalışma klasörü ve Git dalı, Windows VS Code'da başlıktaki
+dosya/proje adları sınırlı yerel terim listesine alınır. Dosya içeriği, terminal çıktısı ve başka pane'ler
+okunmaz. Desteklenmeyen uygulamada veya zaman aşımında sabit kelime listesi kullanılır; pencere adından
+klasör tahmin edilmez. Mac'te Herdr bağlamı desteklenir, VS Code başlık okuması yoktur; gerçek Mac kabulü bekler.
+faster-whisper `hotwords`, MLX `initial_prompt` kullanır. Wake algılamaya ve dosyadan transkripte masaüstü
+bağlamı eklenmez. Herdr sunucusunda o an odakta olan pane esas alınır; çok istemcili kullanımda yerel
+pencere ile sunucu odağı farklı olabilir, bu eşleme gerçek kullanımda doğrulanmalıdır.
+
+⚙ Ayarlar → **Canlı Dikte Önizleme** ile önizleme kapatılabilir. Geçici metin panoya yazılmaz ve
+gönderilmez. Tek Whisper modeli/kilidi kullanılır; durdurulduğunda devam eden geçici tur bitirilir,
+bekleyen eski geçici işler atlanır, son tur çalışır. Önizleme varsayılan açık, seçim kalıcı değildir.
+
+### Yerel metin temizliği
+
+⚙ Ayarlar → **Yerel Metin Temizliği**, varsayılan kapalıdır. Model veya çalıştırıcı yoksa açılamaz.
+Windows kurulumu: Qwen3-1.7B-Q8_0 (Apache-2.0, 1,83 GB), llama.cpp b11852 CPU çalıştırıcısı (MIT).
+Model yalnız son dikteyi işler; toplantı/dosya transkriptlerine uygulanmaz. Uygulama modeli indirmez,
+çalıştırıcı `--offline` ile açılır; GPU Whisper'a bırakılır. Her turda ayrı kısa süreç, dört CPU thread'i,
+Windows'ta düşük öncelik ve 12 saniye süre sınırı vardır. Altı sentetik örnekte yaklaşık 3–7 saniye
+ek süre ölçüldü; bu tüm kayıtlar için performans garantisi değildir.
+
+Kabul filtresi yeni kelime, sayı değişimi, isim/olumsuzluk ve anlamlı tekrar silmeyi reddeder. Silinebilenler
+ses dolguları ve açık “salı, hayır çarşamba” türü gün düzeltmeleridir; daha genel düzeltmeler muhafazakâr
+biçimde özgün metne döner. Anlam koruması mutlak garanti değildir. Boş, şüpheli veya geciken sonuçta
+Whisper metni kullanılır. Model girdisi `.local/cleanup-temp/` içinde kısa süreli tutulur, bitişte silinir;
+çökmede kalabilir. Ham girdi komut satırına veya yeni bir log dosyasına yazılmaz. Mevcut aylık tam metin
+loglama tercihi devam eder. [Kurulum ve kabul kaydı](sessions/2026-10-24-denetim/uygulama.md).
 
 ## Toplantı kaydı
 
@@ -99,6 +130,8 @@ Durum: <Hazır | Kayıt... | İşliyor... | Bekleme | 🟣 Toplantı Kaydı>
                  🎥 Meet Dictation...
 ⚙ Ayarlar     ▸  🗣️ Anahtar Kelime Dinleme: Açık / Kapalı
                  ✏️ Anahtar Kelime: "diktasyon" (değiştir...)
+                 Canlı Dikte Önizleme: Açık / Kapalı
+                 Yerel Metin Temizliği: Açık / Kapalı (model yoksa kullanılamaz)
 ─────────────
 ↺ Sıfırla
 ─────────────

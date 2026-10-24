@@ -6,6 +6,19 @@ Bu dosya tamamlanan önemli işlerin ve kararların kaydıdır; en yeni kayıt e
 
 ---
 
+## 2026-10-24 — Belge düzeni, denetim ve dikte iyileştirmesi
+
+- iFonzo, ShapeEscape ve Atelier'in belge/skill/MCP düzenleri karşılaştırıldı; küçük uygulama için tek TODO ve CHANGELOG korundu.
+- `docs/README.md` belge sorumluluklarını tanımlar; CLAUDE.md ortak kurallar ve skill kaynağına işaret eder.
+- Gelecek fikirleri korunarak TODO sadeleştirildi; üç dikte iyileştirmesi uygulama planı bekleyen işler olarak eklendi.
+- Yiğit'in uygulama onayından sonra reset sonrası gönderim, hedef pencere kontrolü, pano/yapıştırma hata toparlaması ve atomik dosya adı ayırma düzeltildi. Tekrar temizliği Markdown segmentlerine de uygulanır.
+- Dinamik proje/dal/dosya ipucu, tek modelle canlı geçici metin + tam sesle son tur ve varsayılan kapalı yerel metin temizliği eklendi. Menü ve kullanım ayrıntıları `nasil-calisir.md` içindedir.
+- Ayrı indirme onayıyla Qwen3-1.7B-Q8_0 ve llama.cpp CPU çalıştırıcısı `.local/` altına kuruldu, hash'leri doğrulandı. Altı sentetik örnekte koruma/temizlik sınandı (yaklaşık 3–7 saniye).
+- 34 test ve derleme kontrolü geçti; Windows önizleme odağı değiştirmeden açıldı. Canlı mikrofon kalite kıyası ve Mac kabulü açık, daemon yeniden başlatılmadı.
+- MCP, istemci ayarı ve skill değiştirilmedi. [Denetim ve uygulama kaydı](sessions/2026-10-24-denetim/README.md).
+
+---
+
 ## 2026-09-30 — `data/media/` + `data/raw/`: tek medya klasörü, ham çıktı ayrı
 
 Veri düzeni üç klasöre indi. Kullanım (F13, wake word, tray menüsü, `--transcribe`, `--aggressive`, transkript biçimi) değişmedi; değişen yalnız dosyaların nereye gittiği.

@@ -7,6 +7,8 @@ Yerel Whisper modeliyle çalışan, Windows ve macOS'ta kullanılan sesli yazım
 ## Özellikler
 
 - **Anlık dikte:** F13 (Windows) veya Caps Lock x2 (macOS) ile kayıt aç/kapat; metin aktif pencereye yapıştırılıp gönderilir.
+- **Canlı dikte önizlemesi:** Konuşurken geçici metni gösterir, durdurunca tam sesle son çözümlemeyi yapar. Desteklenen etkin uygulamadan proje/dal/dosya adları yerel bağlam ipucu olur.
+- **İsteğe bağlı yerel temizlik:** Ayarlar'dan açılır; varsayılan kapalıdır. Küçük yerel model dolgu ve sınırlı kendi kendini düzeltme temizliği yapar; şüpheli sonuçta özgün metin korunur.
 - **Wake word:** "Diktasyon" diyerek başlat ve bitir (varsayılan kapalı, tray'den açılır).
 - **Toplantı modu:** Uzun kayıtta canlı transkript editörde akar; kayıt bitince sesi WAV olarak saklar ve yüksek kaliteli son transkripti yazar.
 - **Dosyadan transkript:** AAC, MP3, WAV, M4A, iPhone `.qta` ve MP4 gibi video dosyaları dahil; tray'den veya `--transcribe` ile.
@@ -62,7 +64,10 @@ Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tutt
 | `data/raw/` | **Programın tek Markdown çıktısı:** Whisper'ın düzeltilmemiş ham transkriptleri. Her akış (toplantı, dök, Meet) buraya yazar. | Değerli, git dışı | Kopyalanır |
 | `data/transcripts/` | **Elle düzeltilmiş transkriptler.** `data/raw/` içindeki dosya aynı adla buraya kopyalanır ve düzeltme burada yapılır. Program bu klasöre yazmaz, yalnız oluşturur. | Değerli, git dışı | Kopyalanır |
 | `.local/logs/` | Aylık log (`YYYY-MM-<Ay>.log`, örn. `2026-09-Eylul.log`; dikte metni dahil tam içerik, silinmez) ve `dictation.pid` | Makineye özel, git dışı | Kendiliğinden oluşur |
-| `.local/models/` | speechbrain modeli (uyuyan konuşmacı ayırma özelliği) | Makineye özel, git dışı | Gerekirse kendiliğinden iner |
+| `.local/models/` | speechbrain modeli (uyuyan özellik); isteğe bağlı `Qwen3-1.7B-Q8_0.gguf` metin temizleme modeli | Makineye özel, git dışı | Qwen ayrı onayla elle indirilir; uygulama indirmez |
+| `.local/llama/` | İsteğe bağlı yerel temizlik için llama.cpp çalıştırıcısı ve kitaplıkları | Makineye özel, git dışı | Platforma uygun sürüm elle kurulur |
+| `.local/cleanup-temp/` | Temizlik sırasında kısa ömürlü model girdisi (metin); normal bitiş/hata/zaman aşımında silinir, çökmede kalabilir | Makineye özel, git dışı | Kendiliğinden oluşur |
+| `.local/llama-b11852.zip`, `.local/model-download.json` | Onaylı kurulumun arşivi ve model sürüm/hash kaydı | Makineye özel, git dışı | Yeniden kurulumda oluşturulabilir |
 | `.local/file-queue/` | `file_queue.py` iş kuyruğu (daemon'a bağlı değil) | Makineye özel, git dışı | Kendiliğinden oluşur |
 | `venv/` | Python ortamı | Platforma özel, git dışı | `scripts/setup.*` ile kurulur |
 | `.env` | İsteğe bağlı ortam değişkenleri (aşağıda); bugün kullanılmıyor | Makineye özel, git dışı | Gerekirse elle oluşturulur |
@@ -75,6 +80,11 @@ Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tutt
 
 `data/` ile `.local/` klasörleri program ilk açıldığında oluşur. Programı kullanmak git durumunu değiştirmez.
 
+Önizleme açık, yerel temizlik kapalı başlar; Ayarlar seçimleri yalnız o çalıştırma boyunca geçerlidir.
+Windows'ta kayıt sırasında hedef pencere değişirse otomatik gönderim iptal edilir. Aynı uygulamanın
+içindeki başka sekme veya giriş alanına geçiş saptanmaz. macOS'ta hedef kontrolü uygulama düzeyindedir.
+Yeni özelliklerin kullanım ve sınırları [nasıl çalışır](docs/nasil-calisir.md#dikte) belgesindedir.
+
 ### Ortam değişkenleri
 
 `.env` (repo kökünde, `KEY=VALUE` satırları) veya sistem ortamından okunur. Hepsi isteğe bağlıdır.
@@ -86,6 +96,8 @@ Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tutt
 | `VOICEDICTATION_QUEUE_DIR` | `file_queue.py` kuyruk kökü. Varsayılan: `.local/file-queue/`. |
 
 ## Belgeler
+
+Belge sorumlulukları ve bakım düzeni: [docs/README.md](docs/README.md).
 
 | Belge | Görevi |
 |---|---|
