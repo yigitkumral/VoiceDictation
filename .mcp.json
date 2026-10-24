@@ -18,10 +18,6 @@
     "fetch": {
       "command": "python",
       "args": ["-m", "mcp_server_fetch"]
-    },
-    "playwright": {
-      "command": "npx",
-      "args": ["-y", "@playwright/mcp@latest"]
     }
   }
 }

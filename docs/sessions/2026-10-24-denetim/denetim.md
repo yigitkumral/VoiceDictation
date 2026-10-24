@@ -93,7 +93,7 @@ rapora alınmadı ve hepsinin kurgu olduğu doğrulanmadı. Mevcut belgelerde ki
 yollar ve kayıt dosya adları bulunuyor; kişisel veri bulunmadığı iddia edilemez. Gerçek transkript,
 ses ve log içeriği taramaya alınmadı; ikili Mac paketi içerik bakımından doğrulanmadı.
 Geçmiş temizleme veya veri silme yapılmadı. `.mcp.json` izleniyor; sunucu adları context7, filesystem,
-fetch ve playwright. Bunlar geliştirme araçlarıdır, dictation.py tarafından başlatılmaz.
+fetch. Bunlar geliştirme araçlarıdır, dictation.py tarafından başlatılmaz.
 
 ## Doğrulama
 
