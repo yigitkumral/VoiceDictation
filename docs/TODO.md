@@ -34,6 +34,7 @@ Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGE
 - [ ] Herdr bağlam kaynağının seçilen uygun terminal penceresinin hwnd/PID kimliğine bağlandığını doğrula: başka pencere/Chrome'da kullanılmamalı, aynı pencereye dönüşte kullanılmalı. Aynı pencere içi sekme değişimi algılanmaz; kaynak yeniden seçilmeli. Süre telemetrisinde yalnız süre/uzunluk/durum olmalı; tray özeti F13 bitişinden yapıştırmaya toplam süreyle tutarlı olmalı.
 - [ ] Mac'te sade dikte, Caps Lock/reset, o an odaktaki uygulamaya yapıştırma ve isteğe bağlı yerel çalıştırıcı kabulünü tamamla. Windows başlık/Herdr bağlam kaynağı menüsünün Mac karşılığı henüz yok.
 
+- [ ] Vault'tan uzak dikteyi gerçek cihazda doğrula: iPhone ve iPad'de `https://<makine>/` kart terminalinde mikrofon izni, kırmızı yanınca konuşma, metnin Enter'sız gelmesi, Mac pane'inde sohbet bağlamı ve gecikme. Sentetik uçtan uca ölçüm 0,6 sn (6 sn konuşma).
 - [ ] Konuşma bağlamını gerçek kullanımda doğrula: doğru kaynak/oturum, user/assistant filtresi, genel başlıkta açık seçim, oturum değişimi, SSH kesilmesi ve 5 saniyelik RAM önbelleği. Yeni konuşma kopyası/logu oluşmamalı; 160+40 token sınırı ve son odaktaki alana yapıştırma korunmalı. Otomatik kontroller [konuşma bağlamı kaydında](sessions/2026-10-24-conversation-context/README.md).
 
 ## Açık işler
@@ -56,6 +57,7 @@ Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGE
 ## Gelecek
 
 - [ ] Konuşmacı ayırmayı isteğe bağlı geri aç: tray öğesi, `--diarize` veya konuşmacı sayısı penceresi seçeneklerinden biri seçilecek. Önce Meet kayıtlarında bütün metnin tek konuşmacıya atanması çözülmeli (22 Mayıs 2026). Bilinen konuşmacı sayısıyla kısa örnekte gömme/küme sayısı, mesafe matrisi ve eşik kararı incelenecek; kosinüs/dinamik eşik, gerekirse konuşmacı değişim sınırı denenecek. Referans: `data/media/2026-05-01_Sonar-2-Dogu-teknik-toplanti.mp4` (~34 MB, 16 dakika, iki konuşmacı). Kod uyuyor, paketler requirements içinde yorum satırı, model `.local/models/` altında.
+- [ ] **iPhone'da her uygulamada dikte (Yiğit fikri, 24 Ekim 2026):** Bir iOS Kestirmesi sesi kaydeder, tailnet üzerinden Windows'taki uzak dikte ucuna gönderir, dönen metni panoya koyar; Yiğit istediği uygulamaya yapıştırır. HTTPS gerekmez. Uç, Vault'tan dikte için kurulan aynı Windows sunucusudur; Kestirme için ayrı kimlik/erişim kararı gerekir.
 - [ ] **`file_queue` daemon bağlantısı:** Modül ve testleri hazır, ama `dictation.py` modülü içe aktarmıyor. Bağlanınca kuyruk dış istemcilerin ses dosyalarını daemon'ın açık modeliyle işler.
 - [ ] **`--calibrate` akışı:** Yöntem [calibration/README.md](calibration/README.md) dosyasında anlatılıyor, akış henüz yazılmadı. Kapsamı: okuma kaydı, `jiwer` ile karşılaştırma ve önerilen düzeltme tablosu.
 - [ ] **Yedek filtresi (ayrı onay):** `Yazilim` yedeğinin rclone filtresine `- /VoiceDictation/.local/` ekle. `data/` yedekte kalmalı.

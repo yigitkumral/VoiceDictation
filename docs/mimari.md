@@ -58,6 +58,16 @@ Qwen ayrı kalıcı yerel alt süreçtir. Mevcut model CUDA0 doğrulanırsa GPU'
 metin korunur. Temizlik en fazla 1200 karakter ve 12 saniye ile sınırlıdır. Normal kapanış yalnız
 uygulamanın sahip olduğu süreci kapatır.
 
+**Uzak dikte (Vault, iPhone/iPad):** `remote_dictation.py` daemon içinde yalnız `127.0.0.1:5190`'da dinler.
+Tek istemcisi iFonzo canlı ajan grafının terminal köprüsüdür (`memory/garden/tools/dikte.cjs`). Tailscale kimliği ve
+HTTPS orada çözülür; uç ayrıca `X-Vault-Dikte` başlığı ve `127.0.0.1` Host'u ister.
+
+- `POST /hazirla?pane=&makine=` kayıt başında gelir. Pane Herdr'dan doğrulanır, makine etiketi profil kimliğine
+  çevrilir. Sohbet bağlamı ayrı bir `ContextCache`'te en çok 90 sn tazelenir; yerel izleyicinin önbelleği değişmez.
+- `POST /dikte` gövdesi 16 kHz mono 16-bit PCM'dir. Akış aynı `quick_transcribe` ve `_cleanup_text`'tir; pano,
+  yapıştırma ve Enter yoktur, metin yanıtla döner. Ses diske yazılmaz. Ölçüm satırı `source: vault` taşır, aylık log
+  yerel dikteyle aynı politikadadır.
+
 Konuşma bağlamı için yeni transkript veya günlük kopyası oluşturulmaz. `.local/metrics/dictation.jsonl`
 yalnız süre/uzunluk/durum ve izin verilen backend değerini tutar; konuşma, pencere/pane adı içermez.
 Mevcut aylık dikte log politikası ayrıdır. Yerel dosyaların tam listesi

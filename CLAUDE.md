@@ -33,7 +33,7 @@ Mac'te açılan ilk oturumda, ilk yanıtta şunu hatırlat: son Mac doğrulamas�
 
 ## 3. Mimari özeti
 
-- **Modüller:** Ana uygulama `dictation.py`; `context_bridge.py` yalnız tam oturum ID/yol çözümleme ve rol/sınır filtresi; `context_source.py` yerel/SSH kaynak doğrulama ve RAM önbelleğidir. Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN` (mutex korumalı). Ayrı mod ekseni: dikte ↔ toplantı (lecture).
+- **Modüller:** Ana uygulama `dictation.py`; `context_bridge.py` yalnız tam oturum ID/yol çözümleme ve rol/sınır filtresi; `context_source.py` yerel/SSH kaynak doğrulama ve RAM önbelleğidir. `remote_dictation.py` Vault (iPhone/iPad) uzak dikte ucudur: yalnız `127.0.0.1:5190`, yapıştırmasız, metni yanıtla döndürür. Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN` (mutex korumalı). Ayrı mod ekseni: dikte ↔ toplantı (lecture).
 - **Ses yolu:** sounddevice → numpy tamponu → tek Whisper → isteğe bağlı yerel temizlik → pano → pynput ile o an odaktaki alana yapıştır. Dikte bitişinde otomatik Enter ve Herdr teslimatı yoktur; Windows boşta F13 çift basış ayrı Enter hareketidir.
 - **STT:** Windows'ta faster-whisper (CUDA, yoksa CPU), macOS'ta mlx-whisper (Silero VAD ön filtresiyle). Model: turbo. Dikte `beam=3`, toplantı ve dosya transkripti `beam=5`.
 - **Arayüz:** Windows'ta pystray tepsi simgesi, macOS'ta rumps menü çubuğu. Durum renkleri: yeşil hazır, kırmızı kayıt, sarı işleniyor, mor toplantı.

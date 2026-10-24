@@ -469,6 +469,10 @@ herdr_targets = ()
 herdr_profiles = {}
 herdr_selection = None  # Istege bagli baglam kaynagi; yazma hedefi degildir.
 conversation_cache = None
+remote_cache = None  # Vault uzak diktesi icin ayri baglam onbellegi (yerel izleyici onu temizlemez)
+_remote_lock = threading.Lock()
+_remote_state = dict(key=None, selection=None, stop=threading.Event())
+_remote_profiles_cache = (0.0, {})
 context_status = "Bağlam: genel dikte"
 _TERMINAL_APPS = {"herdr", "herdr.exe", "windowsterminal.exe", "wt.exe", "wezterm-gui.exe",
                   "conhost.exe", "openconsole.exe", "cmd.exe", "powershell.exe", "pwsh.exe",
@@ -3914,11 +3918,13 @@ def _write_timing(values):
                "prompt_n", "predicted_n", "context_words"}
     row = {k: round(v, 3) for k, v in values.items()
            if k in numeric and isinstance(v, (int, float)) and v >= 0}
-    statuses = {"pasted", "cancelled", "empty", "error", "disabled", "not_ready", "accepted",
+    statuses = {"pasted", "returned", "cancelled", "empty", "error", "disabled", "not_ready", "accepted",
                 "rejected", "timeout", "busy", "oversize", "unavailable", "skipped"}
     for key in ("status", "cleanup_status"):
         if values.get(key) in statuses:
             row[key] = values[key]
+    if values.get("source") == "vault":
+        row["source"] = "vault"
     if values.get("cleanup_backend") in {"CPU", "CUDA0"}:
         row["cleanup_backend"] = values["cleanup_backend"]
     row["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
@@ -4030,6 +4036,108 @@ def _finish_dictation(record_id, frames, context, target, direct_text=None):
         timings["total_ms"] = (time.perf_counter() - started) * 1000
         _write_timing(timings)
         _finish_recording(record_id)
+
+
+# --- UZAK DIKTE (Vault: iPhone/iPad sesi; remote_dictation.py) ---
+
+def _remote_profiles():
+    """Etkin Herdr makine profilleri (id -> profil), 60 sn onbellek; uzak pane baglami icin."""
+    global _remote_profiles_cache
+    stamp, profiles = _remote_profiles_cache
+    if time.monotonic() - stamp < 60:
+        return profiles
+    env = {k: v for k, v in os.environ.items() if k not in {
+        "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID",
+        "HERDR_SOCKET_PATH", "HERDR_SESSION", "HERDR_CLIENT_SOCKET_PATH"}}
+    try:
+        result = subprocess.run(["herdr", "machine", "list", "--json"], capture_output=True,
+                                text=True, encoding="utf-8", timeout=4, env=env,
+                                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        catalog = json.loads(result.stdout) if not result.returncode else []
+        profiles = {m["id"]: dict(m) for m in catalog if isinstance(m, dict) and m.get("enabled")}
+    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired):
+        profiles = {}
+    _remote_profiles_cache = (time.monotonic(), profiles)
+    return profiles
+
+
+def _remote_selection(pane_id, machine_label):
+    """Vault'un verdigi pane Herdr'dan dogrulanir; makine etiketi profil kimligine cevrilir."""
+    machine = None
+    if machine_label:
+        ids = [p["id"] for p in _remote_profiles().values() if p.get("label") == machine_label]
+        if len(ids) != 1:
+            raise ValueError("makine bulunamadi")
+        machine = ids[0]
+    pane = _herdr_json(["pane", "get", pane_id], machine)["pane"]
+    return dict(machine=machine, pane_id=pane_id, terminal_id=pane["terminal_id"])
+
+
+def _remote_prepare(pane_id, machine_label):
+    """Kayit basinda: pane'in sohbet baglamini dikte gelene kadar (en cok 90 sn) tazele."""
+    stop = threading.Event()
+    with _remote_lock:
+        _remote_state["stop"].set()
+        _remote_state.update(key=(pane_id, machine_label), selection=None, stop=stop)
+
+    def warm():
+        try:
+            selection = _remote_selection(pane_id, machine_label)
+        except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired):
+            return  # baglam istege bagli; dikte genel ipucuyla calisir
+        with _remote_lock:
+            if _remote_state["stop"] is not stop:
+                return
+            _remote_state["selection"] = selection
+        remote_cache.request(selection)  # onbellek bu pane'e gecer; refresh yalniz secili pane'i yeniler
+        deadline = time.monotonic() + 90
+        while not stop.is_set() and not should_quit.is_set() and time.monotonic() < deadline:
+            remote_cache.refresh(selection)
+            stop.wait(1.5)
+
+    if remote_cache is not None:
+        threading.Thread(target=warm, daemon=True, name="dictation-remote-context").start()
+
+
+def _remote_dictate(audio, pane_id, machine_label):
+    """Tek Whisper + istege bagli yerel temizlik; yapistirma yok, metin Vault'a doner."""
+    started = time.perf_counter()
+    timings = dict(status="empty", source="vault", context_wait_ms=0, whisper_ms=0, cleanup_ms=0, paste_ms=0,
+                   audio_seconds=len(audio) / SAMPLE_RATE)
+    context = ""
+    with _remote_lock:
+        selection = _remote_state["selection"] if _remote_state["key"] == (pane_id, machine_label) else None
+        _remote_state["stop"].set()
+    if selection and remote_cache is not None:
+        snapshot = remote_cache.request(selection)
+        if snapshot.get("status") == "conversation":
+            context = dict(snapshot)
+    timings["context_words"] = context.get("words", 0) if context else 0
+    text = ""
+    try:
+        if len(audio) >= SAMPLE_RATE * 0.3:
+            whisper_started = time.perf_counter()
+            text = quick_transcribe(audio, context=context)
+            timings["whisper_ms"] = (time.perf_counter() - whisper_started) * 1000
+        if text:
+            timings["input_chars"] = len(text)
+            cleanup_started = time.perf_counter()
+            text = _cleanup_text(text)
+            timings["cleanup_ms"] = (time.perf_counter() - cleanup_started) * 1000
+            stats = getattr(cleanup_stats, "value", {})
+            timings["cleanup_status"] = stats.get("status", "skipped")
+            timings["cleanup_backend"] = stats.get("backend")
+            timings["output_chars"] = len(text)
+            timings["status"] = "returned"
+            log.info(f"[UZAK] >> {text}")
+    except Exception as e:
+        timings["status"] = "error"
+        text = ""
+        log.error(f"[UZAK] Dikte basarisiz: {type(e).__name__}")
+    finally:
+        timings["total_ms"] = (time.perf_counter() - started) * 1000
+        _write_timing(timings)
+    return text, {k: round(timings[k]) for k in ("whisper_ms", "cleanup_ms", "total_ms", "context_words")}
 
 
 def do_send(msg, expected_id, target):
@@ -4564,7 +4672,7 @@ def _run_headless_transcribe(file_path, aggressive=False):
 
 
 def main():
-    global audio_stream, conversation_cache
+    global audio_stream, conversation_cache, remote_cache
 
     # data/{media,raw,transcripts} + .local/{logs,models} gorunur olsun (--transcribe dahil)
     _ensure_dirs()
@@ -4617,6 +4725,12 @@ def main():
     threading.Thread(target=_context_monitor, daemon=True, name="dictation-context").start()
 
     load_model()
+
+    # Vault (iPhone/iPad) uzak diktesi: yalniz 127.0.0.1, model yuklendikten sonra
+    remote_cache = ContextCache(_herdr_json, profiles=_remote_profiles)
+    atexit.register(remote_cache.close)
+    from remote_dictation import start_server
+    start_server(_remote_dictate, _remote_prepare, log=log)
 
     def start_audio_stream():
         global audio_stream, _last_audio_callback

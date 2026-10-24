@@ -6,6 +6,13 @@ Bu dosya tamamlanan önemli işlerin ve kararların kaydıdır; en yeni kayıt e
 
 ---
 
+## 2026-10-24 — Vault'tan uzak dikte (iPhone/iPad, Windows sunucu)
+
+- Yiğit'in isteğiyle Windows daemon'ı uzak dikte sunucusu oldu. iFonzo canlı ajan grafının (Vault) kart terminalindeki mikrofon düğmesi sesi tailnet üzerinden X3'e yollar. Ses aynı sıcak Whisper modeliyle ve isteğe bağlı yerel temizlikle çözülür; metin Vault'a döner ve terminale Enter olmadan yazılır. Yapıştırma ve pano kullanılmaz.
+- Yeni `remote_dictation.py` yalnız `127.0.0.1:5190`'da dinler. Tek istemcisi Vault'un terminal köprüsüdür; Tailscale kimlik denetimi orada yapılır. `X-Vault-Dikte` başlığı ve Host denetimi tarayıcı sayfalarının uca doğrudan istek atmasını engeller. Ses diske yazılmaz.
+- Kayıt başında Vault pane'i bildirir. Daemon o pane'in sohbet bağlamını ayrı bir RAM önbelleğinde ısıtır, yerel bağlam izleyicisini etkilemez. Ölçüm satırına `status: returned`, `source: vault` eklendi.
+- Ölçüm: 6 sn Türkçe konuşmada telefonun izlediği HTTPS yolundan uçtan uca yanıt 0,6 sn sürdü (Whisper 0,2 sn, temizlik 0,15 sn). `tests/test_remote_dictation.py` eklendi; 148 test geçti.
+
 ## 2026-10-24 — Doğrulanmış konuşma bağlamı ve mimari şema
 
 - Kullanıcı son konuşma bağlamını uygulamayı onayladı. `context_bridge.py` tam ID/yol çözümleme, rol filtresi ve 512 KiB/300 kelime sınırı; `context_source.py` yerel/SSH önce-sonra kimlik doğrulama ve 5 saniyelik RAM önbelleği sağlar. Yeni model, uzak kurulum veya konuşma kopyası yoktur.
