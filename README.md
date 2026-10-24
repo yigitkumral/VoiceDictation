@@ -6,7 +6,7 @@ Yerel Whisper modeliyle çalışan, Windows ve macOS'ta kullanılan sesli yazım
 
 ## Özellikler
 
-- **Tek sefer dikte:** F13 (Windows) veya Caps Lock x2 (macOS) ile kayıt aç/kapat; bitişte tek çözümleme ve tek yapıştırma. Windows'ta boşta F13 çift hızlı basış (350 ms) Enter gönderir; tek basışın kayıt açması bu ayrım için 350 ms bekler, kayıt durdurma anlıktır. İşleme sırasında Enter gönderilmez. Canlı dikte önizlemesi veya terminal taslağı yoktur.
+- **Tek sefer dikte:** F13 (Windows) veya Caps Lock x2 (macOS) ile kayıt aç/kapat; bitişte tek çözümleme ve tek yapıştırma. Windows'ta ilk F13 basıldığı anda ses kaydı başlar. Tuş bırakıldıktan sonra yalnız başlangıç tonu 250 ms bekler; hızlı çift basış gelirse kısa kayıt sessizce atılır ve Enter gönderilir. Tonu beklemeden konuşabilirsin. Kesinleşmiş kaydı durdurma anlıktır; işleme sırasında Enter gönderilmez. Canlı dikte önizlemesi veya terminal taslağı yoktur.
 - **Konuşma bağlamı:** Doğrulanmış Herdr kaynağındaki son kullanıcı/asistan konuşmasından en fazla 300 kelime RAM'de tutulur; Whisper'a en fazla 160 token konuşma + 40 token terim verilir. Tekil tam pencere başlığı eşleşmesi yoksa **Bağlam kaynağı** menüsünden seçim gerekir. Bu seçim yapıştırmayı yönlendirmez; ayrıntılar [mimari şemasında](docs/mimari.md).
 - **Uzak dikte (iPhone/iPad, Windows sunucu):** iFonzo canlı ajan grafının (Vault) kart terminalindeki mikrofon düğmesi sesi tailnet üzerinden bu daemon'a yollar. Ses aynı Whisper ve temizlikle çözülür; metin terminale Enter olmadan yazılır, pano kullanılmaz. Uç yalnız `127.0.0.1:5190`'da dinler, Vault'un köprüsü aracılık eder; ses diske yazılmaz. Ayrıntı [mimari şemasında](docs/mimari.md).
 - **Yerel temizlik:** Model ve çalıştırıcı mevcutsa başlangıçta açıktır, eksikse kapalıdır; tray'den kapatılabilir. Qwen arka plandaki yerel `llama-server` alt sürecinde bellekte tutulur; hazır değilse beklenmeden Whisper metni kullanılır. 1200 karakter ve 12 saniye sınırı, sayı/ad/teknik yazım koruması geçerlidir.
@@ -43,7 +43,7 @@ Uygulama her zaman repodaki güncel `dictation.py`'yi çalıştırır; `git pull
 | İşlem | Windows | macOS |
 |---|---|---|
 | Kaydı başlat / bitir ve metni yaz | F13 | Caps Lock iki kez |
-| Boştayken açıkça Enter gönder | F13 iki hızlı basış (350 ms içinde) | Yok; Caps Lock davranışı değişmez |
+| Boştayken açıkça Enter gönder | F13 iki hızlı basış (250 ms içinde) | Yok; Caps Lock davranışı değişmez |
 | Sesle başlat / bitir | "Diktasyon" | "Diktasyon" |
 | Kaydı iptal et | F13'ü 1,25 sn basılı tut | Caps Lock üç kez |
 | Toplantı kaydı, dosya dökme, Meet Dictation | Tray → 🎤 Toplantı | Menü çubuğu → 🎤 Toplantı |
@@ -72,6 +72,7 @@ Git yalnız kodu ve belgeleri taşır. Aşağıdaki tablo projenin makinede tutt
 | `.local/llama-cuda/` | Aynı Qwen modeli için onaylı llama.cpp b11852 CUDA 13.4 çalıştırıcısı ve çalışma zamanı; CPU yedeği `.local/llama/` altındadır | Makineye özel, git dışı | Platforma uygun onaylı kurulum gerekir |
 | `.local/cleanup-temp/` | Önceki süreç-başına temizlik sürümünün geçici girdi klasörü; kalıcı model akışı kullanmaz, eski çökmeden kalan dosya bulunabilir | Makineye özel, git dışı | Taşımak gerekmez |
 | `.local/metrics/dictation.jsonl` | Yalnız dikte süreleri, uzunluklar ve durum; dikte metni, pencere/pane adı içermez | Makineye özel, git dışı | Kendiliğinden oluşur |
+| `.local/diagnostics/YYYY-MM-DD.jsonl` | Yiğit'in onayıyla masaüstü/Vault dikte ve Enter tanısı: kullanım yolu, bildirilen cihaz türü, tarayıcı ve istek kimliği; kaynak pencere/pane/sohbet kimliği, kullanılan bağlam ve model promptları, ham/filtreli/aday/seçilmiş metin, hedef bilgisi, süreler ve kod sürüm özeti. Ses veya API anahtarı içermez. | Kişisel içerik taşıyabilir, git dışı | Yeni kullanımda oluşur; eski olaylar geriye dönük tamamlanmaz |
 | `.local/llama-b11852-bin-win-cuda-13.4-x64.zip`, `.local/cudart-llama-bin-win-cuda-13.4-x64.zip`, `.local/llama-cuda-download.json` | Onaylı resmi CUDA çalıştırıcısı/çalışma zamanı arşivleri ve doğrulanmış indirme/hash kaydı | Makineye özel, git dışı | Yeniden kurulumda oluşturulabilir |
 | `.local/cleanup-gpu-evaluation.json` | GPU temizlik sentetik kalite/gecikme ölçüm kaydı; çalışma için gerekmez | Makineye özel, git dışı | Gerektiğinde yeniden üretilir |
 | `.local/cleanup-v3-evaluation.json` | Yerel temizlik için sentetik kalite/gecikme ölçüm kaydı; çalışma için gerekmez | Makineye özel, git dışı | Gerektiğinde yeniden üretilir |

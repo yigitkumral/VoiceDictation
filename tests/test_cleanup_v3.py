@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def load_cleanup():
-    ns = dict(re=re, os=os, subprocess=subprocess, tempfile=tempfile, threading=threading, json=json,
+    ns = dict(_diagnostic_event=Mock(), re=re, os=os, subprocess=subprocess, tempfile=tempfile, threading=threading, json=json,
               cleanup_enabled=True, cleanup_lock=threading.Lock(), cleanup_stats=threading.local(),
               should_quit=threading.Event(),
               _cleanup_server=None, _cleanup_server_lock=threading.RLock(), log=Mock(), time=time,

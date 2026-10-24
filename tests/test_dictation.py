@@ -26,7 +26,9 @@ TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
 def load(*names):
     """Modul import'u log/model/klavye olusturdugundan yalniz secilen AST'yi yukle."""
-    ns = dict(os=os, re=re, time=time, threading=threading, json=json, subprocess=subprocess,
+    ns = dict(_diagnostic_event=Mock(), _diagnostic_destination=Mock(),
+              _start_diagnostic=Mock(return_value="a" * 32), _finish_diagnostic=Mock(),
+              MODEL_SIZE="test", DEVICE="test", CLEANUP_MODEL="test.gguf", os=os, re=re, time=time, threading=threading, json=json, subprocess=subprocess,
               tempfile=tempfile, np=np, Enum=Enum, log=Mock(), IS_WIN=True,
               wake_word_string="diktasyon", _cancel_windows_hotkey=Mock())
     for node in TREE.body:
@@ -247,6 +249,24 @@ class RecordingTests(unittest.TestCase):
 
 
 class RecordingWakeTests(unittest.TestCase):
+    def test_provisional_start_captures_without_sound_or_decoder_worker(self):
+        ns = load("State", "StateMachine", "do_start_recording", "_announce_recording")
+        source = {"window": None}
+        ns.update(sm=ns["StateMachine"](), lecture_active=False, _recording_id=0,
+                  recording_lock=threading.RLock(), listen_lock=threading.Lock(),
+                  audio_lock=threading.Lock(), listen_frames=["recent audio"], audio_frames=[],
+                  _capture_context_source=Mock(return_value=source), sound_recording=Mock(),
+                  stop_word_checker=Mock())
+        with patch.object(threading, "Thread") as worker:
+            self.assertTrue(ns["do_start_recording"](provisional=True))
+            self.assertEqual(ns["sm"].state, ns["State"].RECORDING)
+            self.assertEqual(ns["audio_frames"], ["recent audio"])
+            ns["sound_recording"].assert_not_called()
+            worker.assert_not_called()
+            ns["_announce_recording"](ns["_recording_id"], source)
+            ns["sound_recording"].assert_called_once()
+            worker.assert_called_once_with(target=ns["stop_word_checker"], args=(1, source), daemon=True)
+
     def setup_loop(self):
         ns = load("State", "StateMachine", "_recording_valid", "stop_word_checker")
         ns.update(_recording_id=7, _capture_context=Mock(return_value="project"),

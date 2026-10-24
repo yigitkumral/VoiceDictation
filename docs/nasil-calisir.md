@@ -33,6 +33,26 @@ Program yalnız `data/media/` ve `data/raw/` klasörlerine yazar. `data/transcri
 
 ## Dikte
 
+### Ayrıntılı tanı ve karşılaştırma
+
+Yiğit'in isteğiyle her tamamlanan/işlemeye alınan dikte `.local/diagnostics/YYYY-MM-DD.jsonl` içine ortak `trace_id` ile kaydedilir. Bu dosya **metin içerir**: başlangıç penceresi ve seçilmiş pane, doğrulanmış sohbet kimliği ve bağlam durumu, kullanılan bağlam, Whisper'a gerçekten gönderilen prompt/hotwords, ham ve filtrelenmiş cevap, Qwen'e gönderilen tam prompt ve aday cevap, seçilen metin ve pano içeriği. Model çalışmazsa ilgili istek/cevap bölümü oluşmaz; sebep durum alanlarında görünür. Tek-nefes wake akışında önceden çözülmüş metin kullanıldığı `direct_text` ile belirtilir; önceki dinleme çözümlemesi bu dikte kaydına bağlanmaz.
+
+Ctrl+V öncesi/sonrası odaktaki pencere kaydedilir. Hedef pane yalnız tekil tam başlık eşleşmesi varsa aday olarak gösterilir; manuel **bağlam kaynağı** hedef pane sayılmaz. Pencere içi imleç/sekme veya uygulamanın metni kabul ettiği kesin bilinmez; `keyboard_event_only` bunu belirtir. Açık çift F13 Enter ayrıca `operation: enter` olayıdır; hangi metni gönderdiği varsayılmaz. Kayıt başlamadan elenen tuşlar ve resetle işlemeye geçmeden iptal edilen sesler için tam dikte kaydı oluşmaz.
+
+Kimlikler, metin ve süreler günlük dosyada yereldir; ham ses, yetkilendirme başlıkları ve API anahtarları eklenmez. Eski içeriksiz süre dosyası korunur ve `trace_id` ile eşleşir; bağlam yokken `context_words: 0` açıkça yazılır. Yazma sınırlı bir arka plan kuyruğundadır; kuyruk taşması ve dosya hatası sayaçları `writer_health` alanındadır. Dikteyi disk yazımı için bekletmez. Her uygulama açılışı `run_id`, çalışan kaynak kod özeti `build` ile ayrılır; dosyalar kendiliğinden silinmez.
+
+Son 100 olayı kaynak makine/pane, kod sürümü ve bağlam durumuna göre, konuşma metnini ekrana dökmeden karşılaştır:
+
+```powershell
+venv\Scripts\python scripts\compare-dictation.py --last 100
+```
+
+Özet; örnek sayısı, temizlik kabul/ret durumları ve ses uzunluğu, metin uzunluğu, bağlam kelimeleri, toplam/Whisper/temizlik/yapıştırma sürelerinin ortanca ve en yüksek değerlerini verir. Farklı uzunluk ve ses koşullarındaki kayıtların hızları doğrudan eşdeğer sayılmaz. Yalnız yeni kayıtlar bu ayrıntıları taşır.
+
+Görsel anlatım: [etkileşimli HTML şeması](dikte-akisi.html). Model promptları, kaynak sınırları ve GPU/RAM ayrımı açılır bölümlerde gösterilir.
+
+Başlangıç ve metin yapıştırılınca çalan tamamlanma sesleri eski tonları ve eski Windows çalma yolunu kullanır. Kaydı durdurma anında ek bir ton yoktur. Bağlam durumu Windows'ta sağ alttaki VoiceDictation simgesinin sağ tık menüsünde ve simgenin üzerine gelince açıklama balonunda görünür; bağlam değişince yenilenir.
+
 Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN → LISTENING` sırasıyla ilerler. Ses yalnız RAM'de tutulur ve metne çevrildikten sonra silinir.
 
 1. **Başlat:** F13 (Windows) veya Caps Lock x2 (macOS) tuşuna bas ya da açıkken "Diktasyon" de. Kayıt sesi çalar, simge kırmızıya döner. Bağlam ipucu için o andaki pencere başlığı veya seçilmiş salt okunur Herdr kaynağı alınır.
@@ -40,9 +60,12 @@ Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN → LISTENIN
 3. **Bitir:** Aynı tuşa bas ya da tekrar "Diktasyon" de. Whisper turbo (`beam=3`) kaydın tamamını bir kez çözer. Yerel temizlik açıksa uygulandıktan sonra metin panoya alınır ve **işlem bittiğinde odaktaki alana** bir kez yapıştırılır. Kayıt başındaki pencereye veya Herdr pane'ine kilitlenmez. **Enter gönderilmez; metni kontrol edip Enter'a sen basarsın.**
 4. **Bekleme:** 1,5 saniye sonra dinlemeye döner.
 
-- **Windows F13 tek/çift basış:** Boşta tek basış kayıt açmak için 350 ms bekler; bu aralıkta ikinci hızlı
-  basış gelirse kayıt başlamadan odaktaki alana Enter gönderilir. Bu kullanıcının açık gönderme hareketidir;
-  dikte bitişinin otomatik parçası değildir. Kayıt sırasında basış beklemeden kaydı durdurur. İşleme
+- **Windows F13 tek/çift basış:** Boşta ilk tuşa basıldığı anda ses RAM'e kaydedilir. Tuş bırakıldıktan
+  sonra yalnız başlangıç tonu 250 ms bekler. Hızlı çift basışta kısa kayıt, ton/çözümleme/yapıştırma
+  olmadan atılır; aynı pencere doğrulanırsa bir Enter gönderilir. İkinci basış gelmezse eski başlangıç
+  tonu çalar, bağlam/wake kontrolü başlar; ton öncesindeki ses korunur. Tonu beklemeden konuşulabilir.
+  Bu kullanıcının açık gönderme hareketidir; dikte bitişinin otomatik parçası değildir.
+  Kesinleşmiş kayıt sırasında basış beklemeden kaydı durdurur. İşleme
   sırasında F13 Enter göndermez. Mac Caps Lock çift/üç basış davranışı değişmez.
 - **Tek nefes:** Wake word açıkken "Diktasyon <mesaj> Diktasyon" dersen metin aynı pano/yapıştırma yolunu kullanır; Enter gönderilmez.
 - **Yalnız wake word:** Mesaj olmadan yalnız "Diktasyon" algılanırsa kayıt iptal edilir.
@@ -273,3 +296,24 @@ Ayarlar `dictation.py` içindeki sabitlerdir; ayar dosyası yoktur. Ortam deği�
 ## Konuşmacı ayırma (kapalı)
 
 speechbrain ECAPA ile konuşmacı ayırma kodu `dictation.py` içinde duruyor, ama tray'den çağrılmıyor. Gerekirse model `.local/models/` altına iner. Bu yol Meet kayıtlarında konuşmacıları yanlış kümelediği için kapatıldı. Yeniden açma planı [TODO.md](TODO.md) dosyasının "Gelecek" bölümünde.
+
+
+### Kullanım kaynağı ve cihaz bazında tanı
+
+Masaüstü diktesi `channel=desktop`, Vault diktesi `channel=vault` olarak ayrılır.
+Vault köprüsü `/dikte` isteğinde `X-Vault-Device-Type` (iphone/ipad/android/desktop/unknown),
+`X-Vault-Client-Id` (tarayıcı profilinde saklanan rastgele kimlik), `X-Vault-Request-Id`
+(her kayıt için yeni kimlik) başlıklarını iletir. Kimlikler 8–64 ASCII harf/rakam/tire/alt çizgiyle
+sınırlıdır; eksik/geçersiz değer kaydedilmez, cihaz tahmin edilmez. Ham User-Agent ve IP tutulmaz.
+Cihaz türü istemci beyanıdır; fiziksel cihaz veya ekran başında bulunma doğrulaması değildir.
+Aynı cihazda farklı tarayıcı profilleri farklı kimliktir; site verisi silinirse kimlik yenilenir.
+Masaüstü yolu `local-desktop` olarak gruplandırılır; bu, birden fazla bilgisayar için küresel kimlik değildir.
+
+Vault işlemleri de ayrıntılı tanıya girer: doğrulanmış kaynak seçimi, istenen hedef pane/makine,
+bağlamın bulunma durumu ve kullanılan içerik, Whisper'a giden gerçek prompt/hotwords,
+ham/filtrelenmiş metin, Qwen prompt/yanıtı ve seçilen son metin. `trace_id` süre kaydıyla eşleşir;
+istemcinin `request_id` değeri Vault tarafındaki yükleme/terminal teslim kaydıyla eşleştirme içindir.
+`returned` yalnız backend'in metni ürettiğini belirtir; HTTP teslimi veya terminale yazma kanıtı değildir.
+`total_ms` sunucu çözümleme/temizlik süresidir, yükleme ve terminale yazma dahil değildir.
+Karşılaştırma betiği kullanım yolu, cihaz türü ve istemci kimliğini de ayrı gruplar.
+Eski kayıtlarda olmayan cihaz/kimlik bilgisi geriye dönük doldurulmaz.

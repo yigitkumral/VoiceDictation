@@ -92,6 +92,7 @@ CLEANUP_SERVER_BIN = os.path.join(LOCAL_DIR, "llama", "llama-server.exe" if IS_W
 CLEANUP_CUDA_SERVER_BIN = os.path.join(LOCAL_DIR, "llama-cuda", "llama-server.exe" if IS_WIN else "llama-server")
 CLEANUP_TEMP_DIR = os.path.join(LOCAL_DIR, "cleanup-temp")
 TIMING_FILE = os.path.join(LOCAL_DIR, "metrics", "dictation.jsonl")
+DIAGNOSTIC_DIR = os.path.join(LOCAL_DIR, "diagnostics")
 
 
 def _ensure_dirs():
@@ -419,6 +420,7 @@ def paste_only(valid=lambda: True):
         time.sleep(0.3)
         if not valid():
             return False
+        _diagnostic_destination("paste_before")
         paste_controller.press(MODIFIER)
         pressed.append(MODIFIER)
         paste_controller.press(PASTE_KEY)
@@ -427,6 +429,7 @@ def paste_only(valid=lambda: True):
         pressed.remove(PASTE_KEY)
         paste_controller.release(MODIFIER)
         pressed.remove(MODIFIER)
+        _diagnostic_destination("paste_after")
         return True
     finally:
         for key in reversed(pressed):
@@ -463,6 +466,8 @@ cleanup_enabled = (os.path.isfile(CLEANUP_MODEL)
                    and (os.path.isfile(CLEANUP_SERVER_BIN) or os.path.isfile(CLEANUP_CUDA_SERVER_BIN)))
 cleanup_lock = threading.Lock()
 cleanup_stats = threading.local()
+diagnostic_state = threading.local()
+diagnostic_writer = None
 _cleanup_server_lock = threading.RLock()
 _cleanup_server = None
 herdr_targets = ()
@@ -489,7 +494,7 @@ LONG_PRESS_RESET = 1.25  # 1.25 saniye basili tutma = reset (Windows F13)
 # macOS Caps Lock toggle key oldugu icin long-press calismaz; triple-tap kullanilir.
 _hotkey_tap_count = 0  # macOS triple-tap sayaci
 _pending_toggle_timer = None  # macOS: 2. tap sonrasi geciktirilmis toggle (3. tap iptal edebilsin)
-F13_DOUBLE_TAP_INTERVAL = 0.35
+F13_DOUBLE_TAP_INTERVAL = 0.25
 _f13_lock = threading.RLock()
 _f13_modifiers_down = set()
 _f13_gesture = dict(generation=0, press_generation=0, down=False, pending=None,
@@ -922,10 +927,12 @@ def _start_tray_gui():
     def update_loop():
         last_state = None
         last_lecture = False
+        last_context = None
         while not should_quit.is_set():
             state = sm.state
             cur_lecture = lecture_active
-            if state != last_state or cur_lecture != last_lecture:
+            cur_context = context_status
+            if state != last_state or cur_lecture != last_lecture or cur_context != last_context:
                 if cur_lecture:
                     color = _LECTURE_COLOR
                     label = "Toplantı Kaydı"
@@ -933,13 +940,14 @@ def _start_tray_gui():
                     color = _state_colors.get(state, (136, 136, 136))
                     label = _state_labels.get(state, "?")
                 icon.icon = make_icon(color)
-                icon.title = f"VD: {label}"
+                icon.title = f"VD: {label}\n{cur_context}"[:127]
                 try:
                     icon.update_menu()
                 except Exception:
                     pass
                 last_state = state
                 last_lecture = cur_lecture
+                last_context = cur_context
             time.sleep(0.3)
         icon.stop()
 
@@ -1285,6 +1293,7 @@ def quick_transcribe(audio_data, beam_size=3, context="", valid=None):
     path greedy decoding kullanir."""
     # Sessiz audio'yu transcribe etme (halusinasyon onleme)
     if not _has_speech(audio_data):
+        _diagnostic_event("whisper_skipped", reason="no_speech")
         return ""
 
     try:
@@ -1292,6 +1301,9 @@ def quick_transcribe(audio_data, beam_size=3, context="", valid=None):
             if valid is not None and not valid():
                 return ""
             initial, hints = _whisper_context(context)
+            _diagnostic_event("whisper_request", model=MODEL_SIZE, device=DEVICE,
+                              initial_prompt=(hints + "\n" + initial).strip() if IS_MAC else initial,
+                              hotwords=None if IS_MAC else hints, language="tr", beam_size=beam_size)
             if IS_MAC and USE_MLX:
                 # MLX: beam_size gecme — mlx-whisper henuz desteklemiyor.
                 # condition_on_previous_text=False: dictation kisa kayitlarda bile halusinasyon
@@ -1313,8 +1325,10 @@ def quick_transcribe(audio_data, beam_size=3, context="", valid=None):
                     condition_on_previous_text=False,
                 )
                 text = " ".join(seg.text.strip() for seg in segments)
+            _diagnostic_event("whisper_response", raw_text=text)
     except Exception as e:
         log.error(f"[HATA] quick_transcribe basarisiz: {type(e).__name__}: {e}", exc_info=True)
+        _diagnostic_event("whisper_error", error_type=type(e).__name__)
         return ""
 
     cleaned = _clean_transcription(text)
@@ -1326,8 +1340,10 @@ def quick_transcribe(audio_data, beam_size=3, context="", valid=None):
         # B4: 3+ ardarda 'Eee/Hım' filler tekrarini tekillestir. aggressive=False -> gercek cevap korunur.
         cleaned = _dedupe_repeated_segments(cleaned, aggressive=False)
     if not cleaned:
+        _diagnostic_event("whisper_filtered", text="")
         log.debug(f"[FILTRE] Halusinasyon filtrelendi ({len(text.split())} kelime): {text[:80]}...")
         return ""
+    _diagnostic_event("whisper_filtered", text=cleaned)
     if cleaned != text:
         log.debug(f"[TEMIZLIK] '{text[:40]}...' -> '{cleaned[:40]}...'")
     return cleaned
@@ -3505,15 +3521,21 @@ def _capture_context(source):
         return ""
     window = source.get("window") if isinstance(source, dict) else source
     selection = source.get("herdr") if isinstance(source, dict) else None
+    detail = dict(status="no_pane_match" if window and window[3] in _TERMINAL_APPS else "non_terminal")
+    if isinstance(source, dict):
+        source["context_diagnostic"] = detail
     values = []
     if selection:
         try:
             pane = _herdr_json(["pane", "get", selection["pane_id"]], selection["machine"])["pane"]
+            detail.update(status="no_session", agent=pane.get("agent"), agent_session=pane.get("agent_session"))
             if pane.get("terminal_id") != selection["terminal_id"]:
+                detail["status"] = "terminal_changed"
                 return ""
             if conversation_cache is not None:
                 verified = dict(selection, agent=pane.get("agent"), agent_session=pane.get("agent_session"))
                 snapshot = dict(conversation_cache.request(verified))
+                detail["status"] = snapshot.get("status", "unknown")
                 if snapshot.get("status") == "conversation":
                     return snapshot
             cwd = pane.get("foreground_cwd") or pane.get("cwd") or ""
@@ -3529,7 +3551,7 @@ def _capture_context(source):
                 # Herdr'in istege bagli metadata token'i varsa uzak dal icin kullan.
                 values.append((pane.get("tokens") or {}).get("git_branch", "").replace("/", " "))
         except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired):
-            pass
+            detail["status"] = "source_error"
     elif window and window[3] in {
             "herdr.exe", "herdr", "code.exe", "code", "windowsterminal.exe", "wt.exe",
             "wezterm-gui.exe", "conhost.exe", "openconsole.exe", "cmd.exe", "powershell.exe",
@@ -3835,10 +3857,14 @@ def _cleanup_text(text):
         cleanup_stats.value = {"status": "busy"}
         return baseline
     try:
-        result = _cleanup_request(server, "/completion", dict(prompt=_cleanup_prompt(baseline),
+        payload = dict(prompt=_cleanup_prompt(baseline),
                                   n_predict=min(768, max(128, len(baseline) // 2 + 64)),
                                   temperature=0, seed=1, stream=False,
-                                  cache_prompt=True, id_slot=0, stop=["<|im_end|>"]), timeout=12)
+                                  cache_prompt=True, id_slot=0, stop=["<|im_end|>"])
+        _diagnostic_event("qwen_request", model=os.path.basename(CLEANUP_MODEL),
+                          backend=server.get("backend"), **payload)
+        result = _cleanup_request(server, "/completion", payload, timeout=12)
+        _diagnostic_event("qwen_response", text=result.get("content"), timings=result.get("timings"))
         stats = {"status": "rejected"}
         if server.get("backend") in {"CPU", "CUDA0"}:
             stats["backend"] = server["backend"]
@@ -3886,7 +3912,7 @@ def _recording_valid(record_id, state=None):
             and (state is None or sm.state == state))
 
 
-def do_start_recording():
+def do_start_recording(provisional=False):
     global speech_detected, last_speech_time, _recording_id
     global _recording_source, _recording_context
     with recording_lock:
@@ -3904,10 +3930,68 @@ def do_start_recording():
             audio_frames.extend(carry_over)
         speech_detected = bool(carry_over)
         last_speech_time = time.time()
-    sound_recording()
     log.info("[REC] KAYIT BASLADI")
-    threading.Thread(target=stop_word_checker, args=(record_id, _recording_source), daemon=True).start()
+    if not provisional:
+        _announce_recording(record_id, _recording_source)
     return True
+
+
+def _announce_recording(record_id, source):
+    # Tek basma kesinlesince ton ve baglam/wake kontrolu baslar; ses zaten tamponda.
+    sound_recording()
+    threading.Thread(target=stop_word_checker, args=(record_id, source), daemon=True).start()
+
+
+def _diagnostic_event(stage, **values):
+    trace = getattr(diagnostic_state, "trace", None)
+    if trace is not None:
+        trace["stages"][stage] = values
+
+
+def _diagnostic_window(window):
+    if not window:
+        return None
+    return dict(hwnd=window[0], pid=window[1], title=window[2], app=window[3])
+
+
+def _diagnostic_destination(stage):
+    if getattr(diagnostic_state, "trace", None) is None:
+        return
+    try:
+        window = _foreground_window()
+        # Manuel baglam secimi teslim hedefini kanitlamaz; yalniz tam baslik eslesmesi.
+        matches = [p for p in herdr_targets if window and p.get("title") == window[2] and p.get("title")]
+        _diagnostic_event(stage, window=_diagnostic_window(window),
+                          pane=dict(matches[0]) if len(matches) == 1 else None,
+                          pane_evidence="exact_title" if len(matches) == 1 else "unknown",
+                          delivery_evidence="keyboard_event_only")
+    except Exception:
+        _diagnostic_event(stage, window=None, pane=None, pane_evidence="unavailable")
+
+
+def _start_diagnostic(record_id, source, operation="dictation"):
+    import uuid
+    source = source if isinstance(source, dict) else {}
+    trace = dict(trace_id=uuid.uuid4().hex, record_id=record_id, operation=operation,
+                 timestamp=time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                 source=dict(window=_diagnostic_window(source.get("window")),
+                             selection=dict(source["herdr"]) if source.get("herdr") else None,
+                             client=dict(source.get("client") or {
+                                 "channel": "desktop", "device_type": "desktop",
+                                 "client_id": "local-desktop", "evidence": "local_process"})), stages={})
+    diagnostic_state.trace = trace
+    return trace["trace_id"]
+
+
+def _finish_diagnostic(timings):
+    trace = getattr(diagnostic_state, "trace", None)
+    diagnostic_state.trace = None
+    if trace is None or diagnostic_writer is None:
+        return
+    trace["timings"] = dict(timings)
+    trace["writer_health"] = dict(dropped=diagnostic_writer.dropped, errors=diagnostic_writer.errors)
+    if not diagnostic_writer.submit(trace):
+        log.warning("[TANI] Kayit kuyruga alinamadi; dikte devam ediyor.")
 
 
 def _write_timing(values):
@@ -3928,6 +4012,9 @@ def _write_timing(values):
     if values.get("cleanup_backend") in {"CPU", "CUDA0"}:
         row["cleanup_backend"] = values["cleanup_backend"]
     row["timestamp"] = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    trace_id = values.get("trace_id")
+    if isinstance(trace_id, str) and len(trace_id) == 32 and all(c in "0123456789abcdef" for c in trace_id):
+        row["trace_id"] = trace_id
     summary = (f"Son: {row.get('total_ms', 0)/1000:.1f} sn | "
                f"Ses {row.get('whisper_ms', 0)/1000:.1f} | "
                f"Düzenleme {row.get('cleanup_ms', 0)/1000:.1f} | "
@@ -3950,6 +4037,7 @@ def _send_final(msg, record_id, source=None, timings=None):
     if not valid():
         return "cancelled"
     timings["input_chars"] = len(msg)
+    _diagnostic_event("cleanup_input", text=msg)
     started = time.perf_counter()
     msg = _cleanup_text(msg)
     timings["cleanup_ms"] = (time.perf_counter() - started) * 1000
@@ -3960,10 +4048,12 @@ def _send_final(msg, record_id, source=None, timings=None):
         if key in stats:
             timings[key] = stats[key]
     timings["output_chars"] = len(msg)
+    _diagnostic_event("cleanup_selected", text=msg, status=stats.get("status", "skipped"))
     if not valid():
         return "cancelled"
     started = time.perf_counter()
     pyperclip.copy(msg)
+    _diagnostic_event("clipboard", text=msg)
     if paste_only(valid):
         timings["paste_ms"] = (time.perf_counter() - started) * 1000
         log.info(f"[OK] >> {msg}")
@@ -3996,6 +4086,7 @@ def _finish_recording(record_id):
 def _finish_dictation(record_id, frames, context, target, direct_text=None):
     started = target.get("stopped_at", time.perf_counter()) if isinstance(target, dict) else time.perf_counter()
     timings = dict(status="cancelled", context_wait_ms=0, whisper_ms=0, cleanup_ms=0, paste_ms=0)
+    timings["trace_id"] = _start_diagnostic(record_id, target)
     try:
         if not _recording_valid(record_id, State.PROCESSING):
             return
@@ -4009,6 +4100,12 @@ def _finish_dictation(record_id, frames, context, target, direct_text=None):
             timings["context_wait_ms"] = (time.perf_counter() - context_started) * 1000
         if isinstance(context, dict):
             timings["context_words"] = context.get("words", 0)
+        else:
+            timings["context_words"] = 0
+        _diagnostic_event("context", used=context,
+                          kind="conversation" if isinstance(context, dict) and context.get("status") == "conversation" else "general",
+                          reason=(dict(target.get("context_diagnostic", {})) if isinstance(target, dict) else {}),
+                          ready_at_deadline=locals().get("context_ready"), direct_text=direct_text is not None)
         if direct_text is None:
             if not frames:
                 return
@@ -4035,6 +4132,7 @@ def _finish_dictation(record_id, frames, context, target, direct_text=None):
     finally:
         timings["total_ms"] = (time.perf_counter() - started) * 1000
         _write_timing(timings)
+        _finish_diagnostic(timings)
         _finish_recording(record_id)
 
 
@@ -4099,28 +4197,38 @@ def _remote_prepare(pane_id, machine_label):
         threading.Thread(target=warm, daemon=True, name="dictation-remote-context").start()
 
 
-def _remote_dictate(audio, pane_id, machine_label):
+def _remote_dictate(audio, pane_id, machine_label, client=None):
     """Tek Whisper + istege bagli yerel temizlik; yapistirma yok, metin Vault'a doner."""
     started = time.perf_counter()
     timings = dict(status="empty", source="vault", context_wait_ms=0, whisper_ms=0, cleanup_ms=0, paste_ms=0,
                    audio_seconds=len(audio) / SAMPLE_RATE)
     context = ""
+    snapshot = dict(status="not_prepared")
     with _remote_lock:
         selection = _remote_state["selection"] if _remote_state["key"] == (pane_id, machine_label) else None
         _remote_state["stop"].set()
-    if selection and remote_cache is not None:
-        snapshot = remote_cache.request(selection)
-        if snapshot.get("status") == "conversation":
-            context = dict(snapshot)
-    timings["context_words"] = context.get("words", 0) if context else 0
+    timings["trace_id"] = _start_diagnostic(None, {
+        "herdr": selection,
+        "client": client or {"channel": "vault", "device_type": "unknown"}})
     text = ""
     try:
+        if selection and remote_cache is not None:
+            snapshot = remote_cache.request(selection)
+            if snapshot.get("status") == "conversation":
+                context = dict(snapshot)
+        timings["context_words"] = context.get("words", 0) if context else 0
+        _diagnostic_event("remote_target", pane_id=pane_id, machine=machine_label,
+                          delivery_evidence="requested_target_only")
+        _diagnostic_event("context", used=context,
+                          kind="conversation" if context else "general",
+                          reason={"status": snapshot.get("status", "unknown")})
         if len(audio) >= SAMPLE_RATE * 0.3:
             whisper_started = time.perf_counter()
             text = quick_transcribe(audio, context=context)
             timings["whisper_ms"] = (time.perf_counter() - whisper_started) * 1000
         if text:
             timings["input_chars"] = len(text)
+            _diagnostic_event("cleanup_input", text=text)
             cleanup_started = time.perf_counter()
             text = _cleanup_text(text)
             timings["cleanup_ms"] = (time.perf_counter() - cleanup_started) * 1000
@@ -4129,14 +4237,18 @@ def _remote_dictate(audio, pane_id, machine_label):
             timings["cleanup_backend"] = stats.get("backend")
             timings["output_chars"] = len(text)
             timings["status"] = "returned"
+            _diagnostic_event("cleanup_selected", text=text, status=stats.get("status", "skipped"))
+            _diagnostic_event("remote_result", text=text, delivery_evidence="backend_result_only")
             log.info(f"[UZAK] >> {text}")
     except Exception as e:
         timings["status"] = "error"
         text = ""
         log.error(f"[UZAK] Dikte basarisiz: {type(e).__name__}")
     finally:
+        timings.setdefault("context_words", 0)
         timings["total_ms"] = (time.perf_counter() - started) * 1000
         _write_timing(timings)
+        _finish_diagnostic(timings)
     return text, {k: round(timings[k]) for k in ("whisper_ms", "cleanup_ms", "total_ms", "context_words")}
 
 
@@ -4328,7 +4440,8 @@ def _cancel_windows_hotkey():
     """Reset/cikis eski zamanlayicilardan kayit veya Enter uretemez."""
     if IS_MAC:
         return
-    with _f13_lock:
+    with recording_lock, _f13_lock:
+        _discard_windows_recording()
         gesture = _f13_gesture
         gesture["generation"] += 1
         gesture["press_generation"] += 1
@@ -4337,6 +4450,25 @@ def _cancel_windows_hotkey():
                 gesture[name].cancel()
                 gesture[name] = None
         gesture.update(down=False, pending=None, press_state=None, blocked_until=0.0)
+
+
+def _discard_windows_recording():
+    """Cift F13 adayinin sesini sonuc/ton uretmeden at; baska kayda dokunma."""
+    global _recording_id, speech_detected, _recording_source, _recording_context
+    candidate = _f13_gesture.pop("provisional_id", None)
+    if candidate == _recording_id and sm.state == State.RECORDING:
+        _recording_id += 1
+        with audio_lock:
+            audio_frames.clear()
+        _recording_source, _recording_context = None, ""
+        speech_detected = False
+        sm.force(State.LISTENING)
+
+
+def _confirm_windows_recording():
+    candidate = _f13_gesture.pop("provisional_id", None)
+    if candidate == _recording_id and sm.state == State.RECORDING and not should_quit.is_set():
+        _announce_recording(candidate, _recording_source)
 
 
 def _windows_modifier(key):
@@ -4360,8 +4492,12 @@ def _send_enter(window):
             or window is None or current is None or current[:2] != window[:2]):
         return False
     _suppress_hotkey = True
+    _start_diagnostic(None, {"window": current}, operation="enter")
+    outcome = "enter_error"
     try:
+        _diagnostic_destination("enter_before")
         paste_controller.press(pynput_kb.Key.enter)
+        outcome = "enter_key_sent"
         return True
     except Exception:
         log.warning("[HOTKEY] Enter teslimi belirsiz; tekrar denenmedi.")
@@ -4372,6 +4508,7 @@ def _send_enter(window):
         except Exception:
             pass
         _suppress_hotkey = False
+        _finish_diagnostic(dict(status=outcome))
 
 
 def _windows_single_tap(generation):
@@ -4384,9 +4521,10 @@ def _windows_single_tap(generation):
         gesture.update(timer=None, pending=None)
         if (not _suppress_hotkey and not lecture_active
                 and current_modifiers == HOTKEY_RECORD_MODIFIERS
-                and pending["state"] == State.LISTENING and sm.state == State.LISTENING
                 and pending["record_id"] == _recording_id):
-            do_start_recording()
+            _confirm_windows_recording()
+        else:
+            _discard_windows_recording()
 
 
 def _windows_long_press(generation):
@@ -4401,7 +4539,7 @@ def _windows_long_press(generation):
 
 
 def _windows_hotkey_press():
-    with _f13_lock:
+    with recording_lock, _f13_lock:
         gesture = _f13_gesture
         if gesture["down"]:
             return  # Fiziksel tus tekrarini yeni dokunma sayma.
@@ -4409,13 +4547,22 @@ def _windows_hotkey_press():
                 or current_modifiers != HOTKEY_RECORD_MODIFIERS):
             _cancel_windows_hotkey()
             return
-        # Ikinci basma tek-dokunma zamanlayicisini hemen keser; basili tutarken kayit acilmaz.
+        now = time.monotonic()
+        pending = gesture["pending"]
+        # Timer geciktiyse bile aralik disindaki basma cift basma sayilmaz.
+        if pending is not None and now - pending["released"] > F13_DOUBLE_TAP_INTERVAL:
+            _windows_single_tap(gesture["generation"])
+        # Ikinci basma tonu erteler; ilk basmada ses kaydi zaten baslamistir.
         if gesture["timer"] is not None:
             gesture["timer"].cancel()
             gesture["timer"] = None
         gesture["generation"] += 1
         gesture["press_generation"] += 1
-        gesture.update(down=True, press_state=sm.state, pressed_at=time.monotonic())
+        state = sm.state
+        gesture.update(down=True, press_state=state, pressed_at=now, first_press=False)
+        if (state == State.LISTENING and gesture["pending"] is None
+                and now > gesture["blocked_until"] and do_start_recording(provisional=True)):
+            gesture.update(provisional_id=_recording_id, first_press=True)
         timer = threading.Timer(LONG_PRESS_RESET, _windows_long_press,
                                 args=(gesture["press_generation"],))
         timer.daemon = True
@@ -4446,6 +4593,33 @@ def _windows_hotkey_release():
             return
         state = sm.state
         pressed_state = gesture["press_state"]
+        if gesture.pop("first_press", False):
+            if gesture.get("provisional_id") != _recording_id or state != State.RECORDING:
+                _discard_windows_recording()
+                return
+            gesture["pending"] = dict(released=now, window=_foreground_window(),
+                                      state=State.LISTENING, record_id=_recording_id)
+            timer = threading.Timer(F13_DOUBLE_TAP_INTERVAL, _windows_single_tap,
+                                    args=(gesture["generation"],))
+            timer.daemon = True
+            gesture["timer"] = timer
+            timer.start()
+            return
+        pending = gesture["pending"]
+        if pending is not None and gesture.get("provisional_id") is not None:
+            gesture["pending"] = None
+            window = _foreground_window()
+            if now - pending["released"] <= F13_DOUBLE_TAP_INTERVAL:
+                valid = (pending["record_id"] == _recording_id and state == State.RECORDING
+                         and window is not None and pending["window"] is not None
+                         and window[:2] == pending["window"][:2])
+                _discard_windows_recording()
+                if valid:
+                    _send_enter(window)
+            else:
+                # Ikinci basma uzadi: Enter yok, ilk kayit kesintisiz devam eder.
+                _confirm_windows_recording()
+            return
         if pressed_state == State.RECORDING or state == State.RECORDING:
             gesture["pending"] = None
             gesture["blocked_until"] = now + F13_DOUBLE_TAP_INTERVAL
@@ -4672,7 +4846,7 @@ def _run_headless_transcribe(file_path, aggressive=False):
 
 
 def main():
-    global audio_stream, conversation_cache, remote_cache
+    global audio_stream, conversation_cache, diagnostic_writer, remote_cache
 
     # data/{media,raw,transcripts} + .local/{logs,models} gorunur olsun (--transcribe dahil)
     _ensure_dirs()
@@ -4718,6 +4892,16 @@ def main():
     import atexit
     atexit.register(_remove_daemon_pid)
     atexit.register(_stop_cleanup_server)
+    from diagnostics import DiagnosticWriter
+    try:
+        diagnostic_writer = DiagnosticWriter(DIAGNOSTIC_DIR, [__file__,
+            os.path.join(BASE_DIR, "context_bridge.py"), os.path.join(BASE_DIR, "context_source.py"),
+            os.path.join(BASE_DIR, "diagnostics.py"), os.path.join(BASE_DIR, "remote_dictation.py")])
+        atexit.register(diagnostic_writer.close)
+        diagnostic_writer.submit(dict(operation="startup", phase="diagnostics_started",
+                                      timestamp=time.strftime("%Y-%m-%dT%H:%M:%S%z")))
+    except OSError:
+        log.warning("[TANI] Tani kaydi baslatilamadi; dikte devam ediyor.")
     _start_cleanup_server()
     from context_source import ContextCache
     conversation_cache = ContextCache(_herdr_json, profiles=lambda: herdr_profiles)

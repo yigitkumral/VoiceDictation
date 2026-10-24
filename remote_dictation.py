@@ -24,6 +24,20 @@ _PANE = re.compile(r"w[0-9A-Za-z]+:p[0-9A-Za-z]+")
 _MACHINE = re.compile(r"[a-z0-9-]{1,40}")
 
 
+def client_from_headers(headers):
+    """Koprunun bildirdigi sinirli istemci bilgisi; UA/IP veya cihaz tahmini yok."""
+    device = headers.get("X-Vault-Device-Type", "unknown")
+    if device not in {"iphone", "ipad", "android", "desktop", "unknown"}:
+        device = "unknown"
+    result = dict(channel="vault", device_type=device, evidence="client_reported")
+    for header, key in (("X-Vault-Client-Id", "client_id"),
+                        ("X-Vault-Request-Id", "request_id")):
+        value = headers.get(header, "")
+        if re.fullmatch(r"[A-Za-z0-9_-]{8,64}", value):
+            result[key] = value
+    return result
+
+
 def pcm_to_float(raw):
     """16-bit PCM -> sounddevice ile ayni bicim (float32, -1..+1)."""
     if not raw or len(raw) % 2:
@@ -78,7 +92,7 @@ def make_handler(dictate, prepare, port):
                 audio = pcm_to_float(self.rfile.read(length))
             except ValueError:
                 return self._reply(400, {"hata": "ses biçimi geçersiz"})
-            text, timings = dictate(audio, pane, machine)
+            text, timings = dictate(audio, pane, machine, client=client_from_headers(self.headers))
             self._reply(200, {"metin": text, "sureler": timings})
 
     return Handler

@@ -1,5 +1,13 @@
 # CHANGELOG — VoiceDictation
 
+## 24 Ekim 2026 — Vault ve cihaz bazında ayrıntılı tanı
+
+- Vault diktesi de bağlam/model girdileri, aday/son metin ve hedef pane ile tanıya bağlandı.
+- Masaüstü/Vault yolu; sınırlı istemci cihaz türü, profil kimliği ve istek kimliği ayrı tutuluyor.
+- Karşılaştırma kullanım yolu ve istemciye göre ayrılıyor; backend sonucu terminal teslimi sayılmıyor.
+- Ham User-Agent/IP veya ses kaydı eklenmedi; eski istemciler başlıklar olmadan çalışmaya devam ediyor.
+- Doğrulama: 151 test, 150 başarılı ve 1 ortam kaynaklı atlama; derleme kontrolü geçti. Daemon yeniden başlatıldı, Qwen sağlık kontrolü başarılı. Vault'un sentetik HTTPS isteği backend kaydıyla aynı istek kimliğinde eşleşti: bildirilen iPad/istemci kimliği, model promptları ve 80 karakterlik sonuç; backend 417 ms. Vault tarafı aynı istek için terminal teslimi bildirdi. Fiziksel cihaz kabulü ayrı.
+
 Bu dosya tamamlanan önemli işlerin ve kararların kaydıdır; en yeni kayıt en üstte durur. Ayrıntı için commit kimliği verilir, tam geçmiş `git log` çıktısındadır. Açık işler [TODO.md](TODO.md) dosyasındadır.
 
 > 16 Eylül 2026'dan önceki kayıtlarda geçen yollar tarihçedir: Drive `Records/`, `RawRecords/`, `calibration/`, `logs/`, `docs/auto-start.md`. Güncel yerler README'deki [Yerel dosyalar](../README.md#yerel-dosyalar) tablosundadır.
@@ -12,6 +20,22 @@ Bu dosya tamamlanan önemli işlerin ve kararların kaydıdır; en yeni kayıt e
 - Yeni `remote_dictation.py` yalnız `127.0.0.1:5190`'da dinler. Tek istemcisi Vault'un terminal köprüsüdür; Tailscale kimlik denetimi orada yapılır. `X-Vault-Dikte` başlığı ve Host denetimi tarayıcı sayfalarının uca doğrudan istek atmasını engeller. Ses diske yazılmaz.
 - Kayıt başında Vault pane'i bildirir. Daemon o pane'in sohbet bağlamını ayrı bir RAM önbelleğinde ısıtır, yerel bağlam izleyicisini etkilemez. Ölçüm satırına `status: returned`, `source: vault` eklendi.
 - Ölçüm: 6 sn Türkçe konuşmada telefonun izlediği HTTPS yolundan uçtan uca yanıt 0,6 sn sürdü (Whisper 0,2 sn, temizlik 0,15 sn). `tests/test_remote_dictation.py` eklendi; 148 test geçti.
+
+## 2026-10-24 — Pane ve model aşamalarıyla ayrıntılı tanı
+
+- Yiğit'in açık isteğiyle günlük `.local/diagnostics/` kayıtları eklendi. Dikte başına kaynak/sohbet, gerçek model promptları, ham/filtreli/aday/seçilmiş metin ve pano/yapıştırma penceresi ortak kimlikle ilişkilendirilir. Açık Enter ayrı olaydır; pencere içindeki hedef veya gönderilen metin tahmin edilmez.
+- İçeriksiz süreler aynı dosyada kalır; `trace_id` ile tanı kaydına bağlanır, bağlam yoksa sıfır kelime yazılır. Kod özeti ve uygulama açılışı kimliği eski/yeni sürümleri ayırır. Yazma arka plandadır; ham ses ve anahtar kaydı eklenmedi.
+- `scripts/compare-dictation.py --last 100` kaynak pane/makine, sürüm ve bağlam durumuna göre metin dökmeden süre/sonuç özeti verir. Yalnız yeni kullanım izlenir; eski loglar geriye dönük tamamlanmaz.
+- Derleme ve 143 test tamamlandı: 142 başarılı, bir Windows symlink testi atlandı. Tanı yazıcısı, dosya/serileştirme hatası, iş parçacığı ayrımı, gerçek prompt ile kayıt eşitliği, reddedilen Qwen adayının korunması ve gruplama sentetik verilerle sınandı.
+
+## 2026-10-24 — Dikte sesleri ve ayrıntılı HTML anlatımı
+
+- İlk F13 basıldığı anda geçici ses kaydı başlar; kayıt artık çift basış aralığını beklemez. Tuş bırakıldıktan sonraki 250 ms yalnız başlangıç tonunu ve bağlam/wake işçisini erteler. Hızlı çift basışta geçici ses sessizce atılır; doğrulanmış aynı pencereye tek Enter gönderilir. Uzayan ikinci basış kaydı sürdürür; uzun basış/reset/odak değişimi ve eski timer yarışları sınandı. Önceki tonlar değişmedi.
+- Yiğit ses farkını beğenmediği için ek durdurma tonu, Sistem Sesleri kanalı ve ses kilidi geri alındı. Başlangıç/tamamlanma tonları ve çalma yolu önceki sürümle aynı. Windows tray bağlam durumu artık durum makinesi değişmese de yenilenir ve simge açıklamasında gösterilir.
+- [HTML şeması](dikte-akisi.html): dört kullanım adımı, yerel/SSH/tarayıcı/kaynak-yok senaryoları, koddan çıkarılan tam promptlar, 300 kelime → 160+40 token sınırı, kaynak ve bellek kullanımı. Ölçümler anlık/sentetik olarak etiketli; canlı telemetri değildir.
+- Ses denemesindeki ek test kaldırıldı; geri alınan ses davranışı eski sürümle karşılaştırılarak doğrulandı. HTML'nin tarayıcı kontrolü aşağıdadır.
+- Anında kayıt / gecikmiş ton akışında derleme başarılı; 138 testten 137 geçti, Windows symlink yetkisine bağlı bir test atlandı. Gerçek mikrofon ve işitsel kabul kullanıcı denemesini bekliyor.
+- Uygulama normal kapatılıp bağımsız yeniden başlatıldı; tray ve CUDA sunucusu hazır. iFonzo HTML'yi Chrome'da açtı: dört adım, dört senaryo ve üç açılır bölüm çalışıyor, 375 px genişlikte sayfa taşmıyor. Yerel sunucu yalnız 127.0.0.1:8793 üzerinde; işitsel kontrol Yiğit ekran başına döndüğünde yapılacak.
 
 ## 2026-10-24 — Doğrulanmış konuşma bağlamı ve mimari şema
 

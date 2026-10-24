@@ -41,6 +41,7 @@ class WindowsHotkeyTests(unittest.TestCase):
                      "alt_l", "alt_r", "alt_gr", "cmd", "cmd_l", "cmd_r", "shift", "shift_l", "shift_r")
         keys = SimpleNamespace(**{key: key for key in key_names})
         ns = self.ns = dict(Enum=Enum, log=Mock(), IS_MAC=False,
+                            _start_diagnostic=Mock(), _finish_diagnostic=Mock(), _diagnostic_destination=Mock(),
                             threading=SimpleNamespace(Timer=FakeTimer),
                             time=SimpleNamespace(time=lambda: self.now, monotonic=lambda: self.now),
                             pynput_kb=SimpleNamespace(Key=keys), paste_controller=Mock(),
@@ -49,14 +50,16 @@ class WindowsHotkeyTests(unittest.TestCase):
                             _reset_cooldown_until=0, _recording_id=1,
                             _last_hotkey_tap=0, _hotkey_press_start=0, _long_press_timer=None,
                             _long_press_fired=False, _hotkey_tap_count=0, _pending_toggle_timer=None,
-                            LONG_PRESS_RESET=1.25, F13_DOUBLE_TAP_INTERVAL=.35,
+                            LONG_PRESS_RESET=1.25, F13_DOUBLE_TAP_INTERVAL=.25,
                             recording_lock=threading.RLock(), _f13_lock=threading.RLock(),
                             _f13_modifiers_down=set(),
                             _f13_gesture=dict(generation=0, press_generation=0, down=False, pending=None,
                                               timer=None, hold_timer=None, press_state=None, blocked_until=0),
                             audio_lock=threading.Lock(), listen_lock=threading.Lock(),
-                            audio_frames=[], listen_frames=[], sound_error=Mock())
+                            audio_frames=[], listen_frames=[], sound_error=Mock(), _recording_source=None,
+                            _announce_recording=Mock())
         names = {"State", "StateMachine", "_cancel_windows_hotkey", "_windows_modifier", "_send_enter", "_windows_single_tap",
+                 "_discard_windows_recording", "_confirm_windows_recording",
                  "_windows_long_press", "_windows_hotkey_press", "_windows_hotkey_release", "_do_reset",
                  "_long_press_trigger", "on_press", "on_release", "_delayed_toggle"}
         for node in ast.parse(SOURCE.read_text(encoding="utf-8")).body:
@@ -67,9 +70,10 @@ class WindowsHotkeyTests(unittest.TestCase):
         ns["sm"] = ns["StateMachine"]()
         self.window = (10, 20, "Input", "editor.exe")
         ns["_foreground_window"] = Mock(side_effect=lambda: self.window)
-        def start():
+        def start(provisional=False):
             ns["_recording_id"] += 1
             ns["sm"].force(ns["State"].RECORDING)
+            ns["audio_frames"][:] = ["captured from first press"]
             return True
         ns["do_start_recording"] = Mock(side_effect=start)
         ns["do_stop_and_send"] = Mock(side_effect=lambda: ns["sm"].force(ns["State"].PROCESSING))
@@ -86,17 +90,22 @@ class WindowsHotkeyTests(unittest.TestCase):
     def no_enter(self):
         self.ns["paste_controller"].press.assert_not_called()
 
-    def test_single_release_delays_recording_by_350ms(self):
-        self.tap()
-        self.ns["do_start_recording"].assert_not_called()
+    def test_first_press_records_immediately_and_tone_waits_250ms(self):
+        self.ns["on_press"]("f13")
+        self.ns["do_start_recording"].assert_called_once_with(provisional=True)
+        self.assertEqual(self.ns["sm"].state, self.ns["State"].RECORDING)
+        self.ns["_announce_recording"].assert_not_called()
+        self.now += .02
+        self.ns["on_release"]("f13")
         timer = self.timer("_windows_single_tap")
-        self.assertEqual(timer.interval, .35)
-        self.now += .35
+        self.assertEqual(timer.interval, .25)
+        self.now += .25
         timer.fire()
+        self.ns["_announce_recording"].assert_called_once()
         self.ns["do_start_recording"].assert_called_once()
         self.no_enter()
 
-    def test_double_short_release_sends_one_enter_without_starting_recording(self):
+    def test_double_short_release_discards_silent_recording_and_sends_one_enter(self):
         self.tap()
         pending = self.timer("_windows_single_tap")
         self.tap(.1)
@@ -104,7 +113,10 @@ class WindowsHotkeyTests(unittest.TestCase):
         pending.fire(force=True)
         self.ns["paste_controller"].press.assert_called_once_with("enter")
         self.ns["paste_controller"].release.assert_called_once_with("enter")
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
+        self.ns["do_stop_and_send"].assert_not_called()
+        self.assertEqual(self.ns["sm"].state, self.ns["State"].LISTENING)
+        self.assertEqual(self.ns["audio_frames"], [])
 
     def test_second_hold_cancels_start_and_long_hold_resets(self):
         self.tap()
@@ -112,15 +124,31 @@ class WindowsHotkeyTests(unittest.TestCase):
         self.now += .1
         self.ns["on_press"]("f13")
         pending.fire(force=True)
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
         self.timer("_windows_long_press").fire()
         self.ns["sound_error"].assert_called_once()
         self.ns["on_release"]("f13")
         pending.fire(force=True)
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
         self.no_enter()
 
-    def test_long_second_press_past_double_interval_becomes_a_new_single(self):
+    def test_late_timer_cannot_extend_double_tap_window(self):
+        self.tap()
+        old = self.timer("_windows_single_tap")
+        self.tap(.4)
+        old.fire(force=True)
+        self.ns["_announce_recording"].assert_called_once()
+        self.ns["do_stop_and_send"].assert_called_once()
+        self.no_enter()
+
+    def test_confirmation_keeps_audio_captured_before_tone(self):
+        self.tap()
+        self.ns["audio_frames"].append("first spoken word")
+        self.timer("_windows_single_tap").fire()
+        self.assertEqual(self.ns["audio_frames"], ["captured from first press", "first spoken word"])
+        self.ns["_announce_recording"].assert_called_once()
+
+    def test_long_second_press_past_double_interval_confirms_existing_recording(self):
         self.tap()
         old = self.timer("_windows_single_tap")
         self.now += .1
@@ -129,9 +157,10 @@ class WindowsHotkeyTests(unittest.TestCase):
         self.ns["on_release"]("f13")
         old.fire(force=True)
         self.no_enter()
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_called_once()
         self.timer("_windows_single_tap").fire()
         self.ns["do_start_recording"].assert_called_once()
+        self.ns["_announce_recording"].assert_called_once()
 
     def test_delayed_hold_timer_cannot_turn_long_release_into_enter(self):
         self.tap()
@@ -142,7 +171,7 @@ class WindowsHotkeyTests(unittest.TestCase):
         for timer in list(self.timers):
             timer.fire(force=True)
         self.no_enter()
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
 
     def test_recording_stop_is_immediate_and_following_tap_never_sends_enter(self):
         for transition in ("PROCESSING", "COOLDOWN", "LISTENING"):
@@ -190,7 +219,7 @@ class WindowsHotkeyTests(unittest.TestCase):
         for timer in list(self.timers):
             timer.fire(force=True)
         self.no_enter()
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
 
     def test_focus_is_rechecked_immediately_before_enter(self):
         self.ns["_foreground_window"].side_effect = [self.window, self.window, (11, 21, "Other", "other.exe")]
@@ -221,7 +250,7 @@ class WindowsHotkeyTests(unittest.TestCase):
                 pending.fire(force=True)
                 self.tap(.1)
                 self.no_enter()
-                self.ns["do_start_recording"].assert_not_called()
+                self.ns["_announce_recording"].assert_not_called()
                 self.ns["on_release"](key)
 
     def test_held_modifier_prevents_gesture(self):
@@ -261,7 +290,7 @@ class WindowsHotkeyTests(unittest.TestCase):
         self.ns["_do_reset"]()
         for timer in (pending, hold):
             timer.fire(force=True)
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
         self.ns["sound_error"].assert_called_once()
         self.no_enter()
 
@@ -281,7 +310,7 @@ class WindowsHotkeyTests(unittest.TestCase):
         self.ns["_cancel_windows_hotkey"]()
         for timer in list(self.timers):
             timer.fire(force=True)
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
         self.ns["sound_error"].assert_not_called()
         self.no_enter()
 
@@ -289,11 +318,11 @@ class WindowsHotkeyTests(unittest.TestCase):
         self.tap()
         self.ns["_recording_id"] += 1
         self.timer("_windows_single_tap").fire()
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
         self.tap(1)
         self.ns["sm"].force(self.ns["State"].PROCESSING)
         self.timer("_windows_single_tap").fire()
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
 
     def test_key_repeat_and_unpaired_release_are_not_new_taps(self):
         self.ns["on_release"]("f13")
@@ -335,7 +364,7 @@ class WindowsHotkeyTests(unittest.TestCase):
             self.tap(.1)
         worker.join(2)
         self.assertFalse(worker.is_alive())
-        self.ns["do_start_recording"].assert_not_called()
+        self.ns["_announce_recording"].assert_not_called()
         self.ns["paste_controller"].press.assert_called_once_with("enter")
 
 
