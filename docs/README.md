@@ -7,6 +7,7 @@ VoiceDictation için tek TODO ve CHANGELOG tutulur; büyük projelerin sprint ve
 - [TODO.md](TODO.md): açık işler ve ertelenen fikirler.
 - [CHANGELOG.md](CHANGELOG.md): tamamlanan işler ve kararlar, en yeni üstte.
 - [nasil-calisir.md](nasil-calisir.md): güncel davranış, modlar ve çıktı biçimi.
+- [mimari.md](mimari.md): konuşma kaynağı, Whisper/Qwen ve son odaktaki alana yapıştırma şeması.
 - [kurulum.md](kurulum.md): platform kurulumu, izinler ve cihaz taşıma.
 - [calibration/](calibration/README.md): okuma metni ve ölçüm yöntemi.
 - [sessions/](sessions/README.md): kapsamlı incelemelerin plan, karar ve kanıtları; rutin değişiklik için klasör gerekmez.

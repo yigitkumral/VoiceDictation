@@ -12,7 +12,7 @@ flowchart LR
     Mic --> T[Toplantı kaydı]
     Media[data/media/] --> F[Ses dosyasını dök]
     Media --> M[Meet Dictation]
-    D --> P[Pano + yapıştır + Enter]
+    D --> P[Normal pencere: pano + yapıştır]
     T -->|WAV| Media
     T --> R[data/raw/]
     F -->|dosya zaten burada| Media
@@ -26,7 +26,7 @@ Program yalnız `data/media/` ve `data/raw/` klasörlerine yazar. `data/transcri
 
 | Akış | Başlatma | Kalıcı çıktı | Kaynak dosyaya ne olur |
 |---|---|---|---|
-| Dikte | F13 / Caps Lock x2 / "Diktasyon" | Yok (metin aktif pencereye gider) | — |
+| Dikte | F13 / Caps Lock x2 / "Diktasyon" | Yok (son metin hedefe yazılır; Enter gönderilmez) | — |
 | Toplantı kaydı | Tray → 🎤 Toplantı → Başlat | `data/media/<ad>.wav` + `data/raw/<ad>.md` | — |
 | Ses dosyasını dök | Tray → 📁 veya `--transcribe FILE` | `data/raw/<dosya adı>.md` | `data/media/` içindeyse **yerinde kalır**; dışındaysa oraya **taşınır** |
 | Meet Dictation | Tray → 🎥 | `data/media/<ad>.wav` + `data/raw/<ad>.md` | **Dokunulmaz**, yerinde kalır |
@@ -35,46 +35,110 @@ Program yalnız `data/media/` ve `data/raw/` klasörlerine yazar. `data/transcri
 
 Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN → LISTENING` sırasıyla ilerler. Ses yalnız RAM'de tutulur ve metne çevrildikten sonra silinir.
 
-1. **Başlat:** F13 (Windows) veya Caps Lock x2 (macOS) tuşuna bas ya da "Diktasyon" de. Kayıt sesi çalar, simge kırmızıya döner.
-2. **Konuş:** Geçici metin yaklaşık 2,5 saniyelik aralıklarla güncellenir; model yavaşsa aralık uzar. Windows'ta odağı almayan küçük pencerede, Mac'te menü çubuğunda/menüde gösterilir. Önizleme son 12 saniyelik sesi kullanır; tam kaydın yerine geçmez. Sessizlikte kayıt kendiliğinden gönderilmez. Başlangıçta 30 saniye hiç konuşma algılanmazsa kayıt iptal olur.
-3. **Bitir:** Aynı tuşa bas ya da tekrar "Diktasyon" de. Whisper turbo (`beam=3`) kaydın tamamını yeniden çözer; geçici metin birleştirilmez. Temizlik uygulanır, metin panoya kopyalanır, hedef pencereye yapıştırılır ve Enter gönderilir. Windows'ta başka pencereye, Mac'te başka uygulamaya geçildiyse gönderilmez. Pano/yapıştırma hatasında durum toparlanır.
+1. **Başlat:** F13 (Windows) veya Caps Lock x2 (macOS) tuşuna bas ya da açıkken "Diktasyon" de. Kayıt sesi çalar, simge kırmızıya döner. Bağlam ipucu için o andaki pencere başlığı veya seçilmiş salt okunur Herdr kaynağı alınır.
+2. **Konuş:** Ses birikir. Geçici çözümleme, canlı dikte önizlemesi ve terminale canlı taslak yazımı yoktur. Sessizlikte kayıt kendiliğinden gönderilmez. Başlangıçta 30 saniye hiç konuşma algılanmazsa kayıt iptal olur.
+3. **Bitir:** Aynı tuşa bas ya da tekrar "Diktasyon" de. Whisper turbo (`beam=3`) kaydın tamamını bir kez çözer. Yerel temizlik açıksa uygulandıktan sonra metin panoya alınır ve **işlem bittiğinde odaktaki alana** bir kez yapıştırılır. Kayıt başındaki pencereye veya Herdr pane'ine kilitlenmez. **Enter gönderilmez; metni kontrol edip Enter'a sen basarsın.**
 4. **Bekleme:** 1,5 saniye sonra dinlemeye döner.
 
-- **Tek nefes:** Wake word açıkken "Diktasyon <mesaj> Diktasyon" dersen mesaj doğrudan gönderilir.
+- **Windows F13 tek/çift basış:** Boşta tek basış kayıt açmak için 350 ms bekler; bu aralıkta ikinci hızlı
+  basış gelirse kayıt başlamadan odaktaki alana Enter gönderilir. Bu kullanıcının açık gönderme hareketidir;
+  dikte bitişinin otomatik parçası değildir. Kayıt sırasında basış beklemeden kaydı durdurur. İşleme
+  sırasında F13 Enter göndermez. Mac Caps Lock çift/üç basış davranışı değişmez.
+- **Tek nefes:** Wake word açıkken "Diktasyon <mesaj> Diktasyon" dersen metin aynı pano/yapıştırma yolunu kullanır; Enter gönderilmez.
 - **Yalnız wake word:** Mesaj olmadan yalnız "Diktasyon" algılanırsa kayıt iptal edilir.
-- **İptal:** Windows'ta F13'ü 1,25 saniye basılı tut; macOS'ta Caps Lock'a üç kez bas. Tray → ↺ Sıfırla da aynı işi yapar.
-- İptal, sürmekte olan model işleminin sonradan metin göndermesini de engeller. Yapıştırma ile Enter arasında iptal/odak değişimi olursa Enter gönderilmez; daha önce yapıştırılan metin geri alınmaz. Aynı pencere içindeki sekme veya giriş alanı değişimi saptanmaz.
-- **Wake word:** Varsayılan kapalıdır; Tray → ⚙ Ayarlar → Anahtar Kelime Dinleme ile açılır. "Anahtar Kelime: … (değiştir…)" ile başka bir kelime seçilebilir. Değişiklik yalnız RAM'de tutulur, yeniden başlatınca "diktasyon"a döner.
+- **İptal:** Windows'ta F13'ü 1,25 saniye basılı tut; macOS'ta Caps Lock'a üç kez bas. Tray → ↺ Sıfırla da aynı işi yapar. İptal, sürmekte olan model işleminin sonradan yazmasını engeller; daha önce yapıştırılmış metin geri alınmaz.
+- **Wake word:** Varsayılan kapalıdır; Tray → ⚙ Ayarlar → Anahtar Kelime Dinleme ile açılır. "Anahtar Kelime: … (değiştir…)" ile değiştirilebilir. Seçim RAM'dedir, yeniden başlatınca "diktasyon"a döner.
+- Odağı kayıt veya çözümleme sırasında değiştirirsen metin son odaktaki alana gider. Herdr seçimi bir teslimat adresi değildir; doğrudan Herdr yazımı ve terminal komutları kullanılmaz.
 
-### Bağlam ve önizleme
+### Bağlam ipuçları ve kayıtlı konuşma
 
-Kayıt başında Herdr etkin pane'inin etiketi/çalışma klasörü ve Git dalı, Windows VS Code'da başlıktaki
-dosya/proje adları sınırlı yerel terim listesine alınır. Dosya içeriği, terminal çıktısı ve başka pane'ler
-okunmaz. Desteklenmeyen uygulamada veya zaman aşımında sabit kelime listesi kullanılır; pencere adından
-klasör tahmin edilmez. Mac'te Herdr bağlamı desteklenir, VS Code başlık okuması yoktur; gerçek Mac kabulü bekler.
-faster-whisper `hotwords`, MLX `initial_prompt` kullanır. Wake algılamaya ve dosyadan transkripte masaüstü
-bağlamı eklenmez. Herdr sunucusunda o an odakta olan pane esas alınır; çok istemcili kullanımda yerel
-pencere ile sunucu odağı farklı olabilir, bu eşleme gerçek kullanımda doğrulanmalıdır.
+Tanınan terminal/editörün başlığından kısa terimler alınır. Herdr kaynak envanterinde pencere başlığı
+**tek bir pane başlığıyla tam eşleşiyorsa** kaynak otomatik seçilebilir. Genel veya belirsiz başlıkta
+kaynak tahmin edilmez; Windows tray → **Bağlam kaynağı** menüsünden doğru makine/pane açıkça seçilir.
+Konuşma kaynağı seçimi yalnız tanınan terminal uygulamalarında yapılır; editör başlığı tek başına
+konuşma oturumuna bağlanmaz, yalnız kısa terim ipucu olabilir.
+Windows Terminal gibi terminal pencereleri de desteklenir. Seçim uygun terminal penceresinin hwnd/PID
+kimliğine bağlanır; başka pencere/Chrome'da kullanılmaz. Aynı pencere içi sekme değişimi algılanmaz;
+manuel kaynağı yeniden seçmek gerekir. Bu seçim **yapıştırma hedefi değildir**; son metin işlem sonunda
+odaktaki alana gider.
 
-⚙ Ayarlar → **Canlı Dikte Önizleme** ile önizleme kapatılabilir. Geçici metin panoya yazılmaz ve
-gönderilmez. Tek Whisper modeli/kilidi kullanılır; durdurulduğunda devam eden geçici tur bitirilir,
-bekleyen eski geçici işler atlanır, son tur çalışır. Önizleme varsayılan açık, seçim kalıcı değildir.
+Kaynakta kayıtlı `agent_session` kimliği varsa yalnız bu tam ID veya doğrulanmış yoldaki Codex/Claude
+konuşması okunur. Makine, pane, terminal ve oturum kimliği okumadan önce/sonra doğrulanır. Yalnız
+`user` / `assistant` görünen metni, son **en fazla 300 kelime** ve **512 KiB okuma sınırı** kullanılır;
+araç/sistem metni ve alt ajan kayıtları dışlanır. Rastgele “en yeni oturum” aranmaz. İlgisiz görev
+kayıtları bağlam yapılmaz. Mevcut Herdr oturum başlangıç hook'larının verdiği `agent_session`
+alanı kullanılır; global hook değişikliği yapılmaz. Eski oturumun kimliği kayıtlı değilse genel bağlama dönülür.
+
+Yerel kaynak doğrudan, uzak kaynak mevcut SSH bağlantısında belleğe verilen salt okunur Python
+exporter ile okunur. Uzakta paket kurulmaz ve dosya yazılmaz. Konuşma metni yeni loga/transkript
+kopyasına yazılmaz; RAM önbelleğinde tutulur. Arka plan izleyici yaklaşık 0,75 saniyede bir kaynak
+kontrol eder, envanter yaklaşık 15 saniyede yenilenir; önbellek geçerliliği 5 saniyedir. Dikte
+bağlam için en fazla 150 ms bekler; kaynak hazır değilse başlık/metadata veya sabit ipuçlarıyla devam eder.
+
+Konuşmanın tamamı Whisper'a verilmez. Gerçek HF tokenizer varsa son konuşma **160 token**, terim
+ipuçları **40 token**, toplam en fazla **200 token** ile sınırlanır; bu 223 token bütçesinin altındadır.
+Tokenizer olmayan Mac yolunda muhafazakâr UTF-8 byte sınırı kullanılır. faster-whisper `initial_prompt`
+ve `hotwords`, MLX `initial_prompt` alır. Bağlam için ayrı model çalışmaz. Wake algılama ve dosyadan
+transkripte masaüstü konuşma bağlamı eklenmez.
+
+Konuşma yoksa pane etiketi/cwd'nin son adı ve uygun yerel Git dalı veya varsa uzak metadata dalı
+terim olabilir; uzak yol üzerinde yerel Git çalıştırılmaz. Tray **Bağlam: sohbet (… kelime)**,
+**genel dikte** veya **sohbet kimliği/metni hazır değil** durumunu gösterir. Mimari ve kaynak/çıktı
+ayrımı [mimari.md](mimari.md), doğrulama sınırları [oturum kaydındadır](sessions/2026-10-24-conversation-context/README.md).
 
 ### Yerel metin temizliği
 
-⚙ Ayarlar → **Yerel Metin Temizliği**, varsayılan kapalıdır. Model veya çalıştırıcı yoksa açılamaz.
-Windows kurulumu: Qwen3-1.7B-Q8_0 (Apache-2.0, 1,83 GB), llama.cpp b11852 CPU çalıştırıcısı (MIT).
-Model yalnız son dikteyi işler; toplantı/dosya transkriptlerine uygulanmaz. Uygulama modeli indirmez,
-çalıştırıcı `--offline` ile açılır; GPU Whisper'a bırakılır. Her turda ayrı kısa süreç, dört CPU thread'i,
-Windows'ta düşük öncelik ve 12 saniye süre sınırı vardır. Altı sentetik örnekte yaklaşık 3–7 saniye
-ek süre ölçüldü; bu tüm kayıtlar için performans garantisi değildir.
+⚙ Ayarlar → **Yerel Metin Temizliği**, model ve çalıştırıcı mevcutsa başlangıçta açıktır; eksikse kapalıdır
+ve açılamaz. Tray'den kapatılabilir; seçim RAM'dedir. Sonraki başlangıçta dosyalar mevcutsa yine açılır.
+Menü modelin **(hazır)**, **(hazır değil)** veya **(model yok)** durumunu gösterir. Kapalı temizliği
+yeniden açmak sunucuyu başlatmayı veya başarısız başlangıcı yeniden denemeyi tetikler.
+Uygulama model veya çalıştırıcı indirmez. Mevcut Qwen3-1.7B-Q8_0 (Apache-2.0, 1,83 GB) modeli,
+llama.cpp `llama-server` çalıştırıcısında (MIT) başlangıçta arka planda yüklenir ve bellekte kalır.
+Windows'ta aynı model için onaylı b11852 CUDA 13.4 çalıştırıcısı `.local/llama-cuda/`, CPU yedeği
+`.local/llama/` altındadır. `--list-devices` ile CUDA0 doğrulanırsa `--device CUDA0 -ngl all` seçilir.
+Aygıt yoksa CPU kullanılır; GPU başlangıç, ön ısıtma veya çalışma zamanı API hatasında CPU'ya dönülür.
+Hata alan mevcut dikte ham metni kullanır; aynı istek otomatik yeniden gönderilmez. Menü **GPU hazır** /
+**CPU hazır** durumunu gösterir. Yeni model indirilmez; ayrıntılı ölçümler
+[GPU/çift basış kaydında](sessions/2026-10-24-gpu-double-tap/README.md) izlenir.
+Sunucu yalnız loopback üzerinde geçici bir port ve rastgele erişim anahtarıyla bu makineye açıktır.
+Sistem servisi kurulmaz; daemon normal kapanışta yalnız kendi başlattığı alt süreci kapatır.
 
-Kabul filtresi yeni kelime, sayı değişimi, isim/olumsuzluk ve anlamlı tekrar silmeyi reddeder. Silinebilenler
-ses dolguları ve açık “salı, hayır çarşamba” türü gün düzeltmeleridir; daha genel düzeltmeler muhafazakâr
-biçimde özgün metne döner. Anlam koruması mutlak garanti değildir. Boş, şüpheli veya geciken sonuçta
-Whisper metni kullanılır. Model girdisi `.local/cleanup-temp/` içinde kısa süreli tutulur, bitişte silinir;
-çökmede kalabilir. Ham girdi komut satırına veya yeni bir log dosyasına yazılmaz. Mevcut aylık tam metin
-loglama tercihi devam eder. [Kurulum ve kabul kaydı](sessions/2026-10-24-denetim/uygulama.md).
+Yalnız son dikteyi işler; toplantı/dosya transkriptlerine uygulanmaz. **1200 karakteri aşan metin**
+modele verilmez. İstek **12 saniye süre sınırıyla** çalışır; CPU yedeğinde dört thread ve Windows'ta düşük
+öncelik kullanılır. Model henüz hazır değilse yüklenmesini beklemeden ham
+Whisper metni kullanılır. Hata, süre aşımı veya kabul filtresi reddinde de ham metne dönülür.
+Önceki kalıcı **CPU** sentetik kontrolünde model/prefix'in arka planda ilk hazır olması **3,27 saniye** sürdü. Kısa örnek ilk
+istekte **1,11**, sıcak istekte **0,95 saniye** (önceki yaklaşık 4,3 saniye); 208 karakter örneği
+**3,37 saniye** (önceki 6,27 saniye) sürdü. 506 karakterlik örnek **8,34 saniye** sürdü ve kabul filtresi
+tarafından reddedilip ham metin korundu. Dokuz çağrının altısı kabul edildi, üçünde güvenli ham metne
+dönüş yapıldı. Ölçümler `.local/cleanup-v3-evaluation.json` dosyasındadır. Bunlar gerçek mikrofon
+gecikmesi garantisi değildir. Paragraf üretimi tutarlı değildir; her metnin düzenli bölünmesi beklenmemeli.
+
+Kalıcı GPU sentetik ölçümünde ilk hazır olma **1,692 saniye**, kısa ilk/sıcak istek **0,125/0,129 saniye**,
+208 karakter **0,311 saniye**, 506 karakter **0,735 saniye** sürdü. Uzun örnek filtre tarafından reddedildi;
+dokuz çağrının altısı kabul, üçü güvenli ham metne dönüştü. Qwen 29/29 katmanı GPU'ya taşıdı, ölçülen ek
+VRAM yaklaşık **2223 MiB** idi. Sonuçlar `.local/cleanup-gpu-evaluation.json` içindedir; gerçek mikrofon
+gecikmesi veya her örneğin temizleneceği garantisi değildir.
+
+Model noktalama, büyük/küçük harf ve paragraf düzenleyebilir; ses dolgularını ve açık "salı, hayır çarşamba"
+türü dar özdüzeltmeleri temizleyebilir. Kabul filtresi kelime sırasını, sayıları/tarihleri, özel adları,
+URL/dosya yolu/kod gibi teknik yazımları, olumsuzlukları ve anlamlı tekrarları korur. Yeni kelime veya
+anlam değişikliği riski taşıyan, şüpheli, boş ya da geciken sonuçta ham Whisper metni kullanılır.
+Daha genel özdüzeltmeler bu muhafazakâr filtreyi geçmeyebilir; anlam koruması mutlak garanti değildir.
+
+Kalıcı model akışı girdi/çıktı metnini geçici dosyaya veya yeni loga yazmaz; sunucu çıktısı dosyaya
+kaydedilmez. Önceki `.local/cleanup-temp/` akışı kullanılmaz. Mevcut aylık tam metin loglama tercihi devam eder.
+[Kalıcı model kaydı](sessions/2026-10-24-warm-cleanup/README.md),
+[önceki sadeleştirme kaydı](sessions/2026-10-24-sade-dikte/README.md),
+[model kurulum kaydı](sessions/2026-10-24-denetim/uygulama.md).
+
+### Süre ölçümü
+
+Tray son diktenin süre özetini gösterir. `.local/metrics/dictation.jsonl` yalnız süre, uzunluk ve
+durum kaydıdır: bağlam bekleme, Whisper, yerel temizlik, yapıştırma ve F13 bitişinden yapıştırmaya
+kadar toplam süre ölçülür. Dikte metni, pencere başlığı, pane/proje adı veya dosya içeriği yazılmaz.
+`cleanup_backend` yalnız izin verilen `CPU` / `CUDA0` değerini taşıyabilir; serbest içerik alanı değildir.
+Bu toplam mikrofonla konuşma süresini kapsamaz; F13 ile kaydı bitirdikten sonraki beklemeyi gösterir.
 
 ## Toplantı kaydı
 
@@ -120,18 +184,23 @@ iPhone Ses Kayıtları uygulaması, sıkıştırılmış ayarda `.m4a` (AAC), ka
 
 ## Tray menüsü
 
-Windows'ta sistem tepsisi (pystray), macOS'ta menü çubuğu (rumps). İki platformda da yapı aynıdır:
+Windows'ta sistem tepsisi (pystray), macOS'ta menü çubuğu (rumps). **Bağlam kaynağı** bu sürümde yalnız Windows'tadır:
 
 ```text
 Durum: <Hazır | Kayıt... | İşliyor... | Bekleme | 🟣 Toplantı Kaydı>
+Son süre: <bağlam / Whisper / temizlik / yapıştırma / toplam>
+Bağlam: <sohbet (kelime sayısı) | genel dikte | kaynak hazır değil>
 ─────────────
-🎤 Toplantı   ▸  🎙 Toplantı Kaydı Başlat  /  ⏹ Toplantı Kaydını Durdur
+🎤 Toplantı   ▸  🎙 Toplantı Kaydı Başlat / ⏹ Toplantı Kaydını Durdur
                  📁 Ses dosyasını dök...
                  🎥 Meet Dictation...
 ⚙ Ayarlar     ▸  🗣️ Anahtar Kelime Dinleme: Açık / Kapalı
                  ✏️ Anahtar Kelime: "diktasyon" (değiştir...)
-                 Canlı Dikte Önizleme: Açık / Kapalı
                  Yerel Metin Temizliği: Açık / Kapalı (model yoksa kullanılamaz)
+Bağlam kaynağı: <seçim> ▸ Terminal listesini yenile
+                         Öndeki pencere başlığı
+                         Yerel / <pane etiketi> (<kimlik>)
+                         <makine etiketi> / <pane etiketi> (<kimlik>)
 ─────────────
 ↺ Sıfırla
 ─────────────

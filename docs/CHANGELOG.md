@@ -6,6 +6,72 @@ Bu dosya tamamlanan önemli işlerin ve kararların kaydıdır; en yeni kayıt e
 
 ---
 
+## 2026-10-24 — Doğrulanmış konuşma bağlamı ve mimari şema
+
+- Kullanıcı son konuşma bağlamını uygulamayı onayladı. `context_bridge.py` tam ID/yol çözümleme, rol filtresi ve 512 KiB/300 kelime sınırı; `context_source.py` yerel/SSH önce-sonra kimlik doğrulama ve 5 saniyelik RAM önbelleği sağlar. Yeni model, uzak kurulum veya konuşma kopyası yoktur.
+- Herdr native SessionStart hook'larının mevcut `agent_session` alanı kullanılır; eski oturum kayıtlı olmayabilir. Genel başlıkta kaynak tahmin edilmez; tek tam başlık eşleşmesi veya açık **Bağlam kaynağı** seçimi gerekir. Yalnız user/assistant metni kullanılır, araç/sistem/alt ajan dışlanır.
+- Whisper ipucu gerçek HF tokenizer ile 160 token konuşma + 40 token terim, toplam 200 token sınırındadır. Arka plan kaynak kontrolü 0,75 saniye, envanter 15 saniye; tray durum/kelime sayısı gösterir. Dikte en fazla 150 ms bağlam bekler.
+- [Mimari şema](mimari.md) kaynak/çıktı ayrımını gösterir. Son odaktaki alana yapıştırma, açık F13 çift Enter ve CUDA Qwen davranışı korunur. Canlı doğrulanmış yerel kaynakta konuşma önbelleği 85 kelime/88 ms verdi; metin raporlanmadı. SSH exporter sentetik sınandı, gerçek uzak konuşma kabulü açık. Nihai kontroller [oturum kaydında](sessions/2026-10-24-conversation-context/README.md).
+- Nihai 135 testin 134'ü geçti, Windows symlink yetkisine bağlı 1 test atlandı; üç modül derlendi. Eski daemon/sunucu normal kapandı; bağımsız yeni daemon tray hazır, CUDA sunucusu sağlık yanıtı `ok` ile doğrulandı. Gerçek mikrofon ve SSH konuşma kabulü kullanıcı denemesine açık.
+
+---
+
+## 2026-10-24 — Onaylı Windows F13 çift basış ve Qwen CUDA geçişi
+
+- Windows boşta F13'e 350 ms içinde iki hızlı basış kullanıcının açık Enter hareketidir. Tek basış kayıt başlatmak için 350 ms bekler; kayıt sırasında durdurma anlıktır. İşleme sırasında Enter gönderilmez; 1,25 saniyelik reset ve Mac Caps Lock davranışı korunur. Dikte/wake word sonu hâlâ otomatik Enter göndermez.
+- Aynı Qwen modeli için resmi llama.cpp b11852 CUDA 13.4 çalıştırıcısı ve çalışma zamanı kuruldu, asset digest'leri doğrulandı; `.local/llama-cuda/` GPU, `.local/llama/` CPU yedeğidir. CUDA0 aygıt doğrulaması ve başlangıç/ön ısıtma/API hatasında CPU dönüşü eklendi. Yeni model yoktur.
+- Sentetik CUDA ölçümü: ilk hazır 1,692 sn, kısa ilk/sıcak 0,125/0,129 sn, 208 karakter 0,311 sn, 506 karakter 0,735 sn. Dokuz vakanın altısı kabul, üçü ham metne güvenli dönüş; 29/29 katman ve yaklaşık 2223 MiB ek VRAM. Dosya `.local/cleanup-gpu-evaluation.json`; ayrıntılar [oturum kaydında](sessions/2026-10-24-gpu-double-tap/README.md).
+- Whisper terim ipucuna Qwen/Qwen3 eklendi; “güven/küven” gibi normal kelimeleri koşulsuz Qwen'e dönüştüren sözlük kuralı eklenmedi. 92 test ve derleme kontrolü geçti; daemon bağımsız yeniden başlatıldı, CUDA sunucusunun sağlık yanıtı doğrulandı.
+
+---
+
+## 2026-10-24 — Kalıcı yerel temizlik modeli ve süre ölçümü
+
+- Qwen her dikte için yeniden yüklemek yerine başlangıçta arka plandaki `llama-server` alt sürecinde yüklenip bellekte tutulur. Yalnız loopback, geçici port ve rastgele erişim anahtarı kullanılır. Hazır değilse beklemeden ham metin; 1200 karakter, 12 saniye ve mevcut koruma filtresi sürer. Normal kapanışta yalnız uygulamanın başlattığı süreç kapatılır.
+- Kalıcı temizlik akışı metin girdisi/çıktısı için dosya veya sunucu logu üretmez. Süre ölçümü `.local/metrics/dictation.jsonl` içine yalnız bağlam/Whisper/temizlik/yapıştırma/toplam süre, uzunluk ve durum yazar; metin, pencere/pane adı yoktur. Tray son süre özetini gösterir.
+- Elle seçilen Herdr bağlam kaynağı seçimden sonraki ilk Herdr diktesinin hwnd/PID kimliğine bağlanır; başka pencere veya Chrome'da varsayılan bağlama dönülür, aynı pencereye dönüşte kaynak kullanılabilir. Aynı pencere içi sekme değişimi algılanmaz; kaynak yeniden seçilmelidir. Herdr teslimatı eklenmez; tek son yapıştırma ve Enter göndermeme davranışı korunur.
+- 61/61 test, iki dosya derleme/diff ve 18 öğeli tray callback kontrolü geçti. Sentetik model/prefix ilk hazır olma 3,274 saniye; kısa ilk/sıcak istek 1,110/0,954 saniye, 208 karakter 3,369 saniye ölçüldü. 506 karakter örneği 8,336 saniyede filtre reddiyle ham metne döndü; dokuz çağrının altısı kabul, üçü güvenli ham metne dönüş. Nihai sonuç `.local/cleanup-v3-evaluation.json` dosyasına yazıldı. Model menüsü hazır/hazır değil/model yok durumunu gösterir, yeniden açma başlangıcı tekrar dener.
+- Bağlam beklemesi en fazla 150 ms ile sınırlı. Benchmark'ta sahip olunan sunucu/işçi kapanışı ve hazır durumunun sıfırlanması doğrulandı. Daemon normal kapatılıp `start.vbs` ile yeniden başlatıldı; yeni model sunucusunun sağlık durumu `ok`, çalışma kümesi yaklaşık 2 GB. Gerçek mikrofon kabulü kullanıcı denemesini bekliyor. [Oturum kaydı](sessions/2026-10-24-warm-cleanup/README.md).
+
+---
+
+## 2026-10-24 — Son karar: tek sefer dikte, salt okunur bağlam ve yerel temizlik
+
+- Yiğit'in isteğiyle canlı dikte önizlemesi, geçici çözümleme, Claude canlı taslak/rewrite ve Herdr teslimatı geri çekildi. F13 bitişinde tam ses tek Whisper turuyla çözülür, yerel temizlik açıksa uygulanır, sonuç o anda odaktaki alana pano üzerinden bir kez yapıştırılır. Wake word dahil otomatik Enter yoktur.
+- Varsayılan bağlam tanınan terminal/editörün pencere başlığıdır. Windows **Bağlam kaynağı** menüsü isteğe bağlı salt okunur Herdr metadata kaynağıdır; teslimat hedefi değildir. Yerelde gerçek cwd ve Git dalı, uzakta yalnız varsa metadata dalı kullanılır; uzak pane otomatik eşlenmez.
+- Yerel temizlik model/çalıştırıcı mevcutsa başlangıçta açıktır, tray'den kapatılabilir. Yeni indirme yoktur. 1200 karakter ve 12 saniye CPU sınırı; noktalama/paragraf, dolgu ve dar özdüzeltme için korumalı kabul uygulanır. Sayı/ad/teknik yazım veya anlam korunmazsa ham metne dönülür. Sekiz sentetik vakanın altısı kabul edildi; ilk yedi kısa örnekte 4,31–6,27 saniye, 487 karakterlik örnekte 11,51 saniye ölçüldü ve kelime değişimi nedeniyle ham metin korundu. Paragraf üretimi tutarsızdır.
+- Sade sürümde 51/51 test, derleme ve 17 öğeli tray kontrolü geçti. Gerçek mikrofon ve Mac kabulü açık; daemon yeniden başlatma sonucu oturum kaydına eklenecek.
+- Önceki canlı/terminal deneyleri aşağıda tarihçe olarak korunur; etkin kullanım kısıtları değildir. Son doğrulama ve daemon durumu [sade dikte kaydında](sessions/2026-10-24-sade-dikte/README.md) izlenir.
+
+---
+
+## 2026-10-24 — Onaylı deney: Claude Code canlı taslak
+
+> Aynı gün sonraki sadeleştirme kararıyla geri çekildi; aşağıdaki davranış ve testler önceki prototipin tarihçesidir.
+
+- Windows Ayarlar'a **Deney: Claude canlı taslak (boş giriş)** eklendi; varsayılan kapalı, seçim RAM'de. Yiğit boş/normal Claude Code girişinde, kayıt sırasında düzenleme yapmadan denemeyi onayladı. Herdr'da Claude hedefi seçilmeli ve wake word kapalı olmalı.
+- İlk 60 saniyede biriken sesin tamamından çözülen tek satır taslak yaklaşık 2,5 saniyede bir yenilenir: `Ctrl+E`/`Ctrl+U` önceki taslağı temizler, yeni tam taslak yazılır. İkinci F13 tam kaydın son metnini önce panoya alır, sonra taslağın yerine yazar; Enter yoktur. 60 saniye sonrasında terminal taslağı donar, ekrandaki son 12 saniyelik önizleme sürer.
+- Yerel F13 dışı tuş veya fare tıklaması ve API hatası/zaman aşımı sonraki yazma/silmeleri durdurur. Sonuç panoda kalır; normal teslimata ekleme yapılmaz. Reset yazılmış taslağı silmez. Başka istemcinin yazması algılanamaz; tek kullanıcı ve düzenlememe koşulu deneyin sınırıdır.
+- Boş geçici sonuç atlanır; `--`, `/`, `!`, `?`, `@` başlangıçları mod değiştirmemek için deneyi keser. 86/86 test, derleme ve diff kontrolü geçti. Daemon normal tray kapanışıyla durdurulup `scripts/start.vbs` ile yeniden başlatıldı, yeni tray hazır durumu doğrulandı. RAM hedefi ve deney ayarı yeniden seçilmeli.
+- Gerçek Claude Code girişinde tuş dizisi, mikrofon ve SSH uçtan uca kabulü açık; kullanıcı deneyi bekliyor. [Oturum kaydı](sessions/2026-10-24-terminal-dikte/README.md).
+
+---
+
+## 2026-10-24 — Windows terminal diktesi: açık hedef, son metin, Enter yok
+
+> Aynı gün sonraki sadeleştirme kararıyla Herdr teslimatı geri çekildi; bu bölüm önceki prototipin tarihçesidir.
+
+- Yiğit'in onayıyla diktenin otomatik Enter davranışı kaldırıldı; F13 ve wake word son metni yazı olarak bırakır. Kayıt boyunca geçici önizleme, bitişte tam sesle tek son çözümleme korunur.
+- Windows tray'e **Dikte hedefi** eklendi: liste yenilendikten sonra yerel veya mevcut etkin SSH makine profilindeki Herdr terminali açıkça seçilir. Seçim yalnız RAM'de tutulur ve kayıt başında sabitlenir. Herdr 0.9.3 yerel istemci–uzak pane eşlemesi sunmadığından otomatik hedef tahmini yapılmaz.
+- Açık tray seçimi ilk sürüm uygulama varsayımıdır; kullanıcı kabulü bekler. Başarılı Herdr teslimatı panoya yazmaz; başarısız/belirsiz teslimatta metin kurtarma için panoya alınır.
+- Terminale yalnız son metin tek satır halinde, kontrol karakterleri ayıklanarak yazılır; Enter gönderilmez. Kimlik/süreç/ajan durumu yeniden doğrulanır; belirsiz teslimatta otomatik tekrar yapılmaz. Teslimat başarısız/belirsizse metin panoya alınır ve durum bildirimi gösterilir.
+- Bağlam seçilen pane etiketi ve çalışma klasörünün son adıdır; uzak Git dalı sorgulanmaz. Windows önizlemesi boş metinde de hedef/durum gösterir; sonuç bildirimi yaklaşık 15 saniye kalır.
+- Mikrofon ve model Windows'ta kalır; uzak hedefe yalnız son metin mevcut Herdr SSH bağlantısıyla gider. MCP, servis, port ve bağlantı ayarı eklenmedi.
+- 62/62 test, `dictation.py`/`file_queue.py` derleme ve diff kontrolü geçti. Windows önizleme sentetik veriyle odağı değiştirmeden açıldı; pystray menüsü ve seçim callback'i sahte Icon ile olay döngüsü olmadan doğrulandı. Tanınan terminal pencerelerinde açık Herdr hedefi olmadan genel yapıştırma engellenir.
+- Mac'te çalışan daemon için yeni hedef menüsü ve Windows → Mac gerçek SSH kabulü açık iş olarak tutuldu. Daemon yeniden başlatılmadı; commit/push yapılmadı. [Uygulama ve kabul sınırları](sessions/2026-10-24-terminal-dikte/README.md).
+
+---
+
 ## 2026-10-24 — Belge düzeni, denetim ve dikte iyileştirmesi
 
 - iFonzo, ShapeEscape ve Atelier'in belge/skill/MCP düzenleri karşılaştırıldı; küçük uygulama için tek TODO ve CHANGELOG korundu.

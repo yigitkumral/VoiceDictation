@@ -26,10 +26,15 @@ Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGE
 
 ## Dikte iyileştirmesi — gerçek kullanım kabulü
 
-- [ ] Sonraki daemon başlatmasında kısa onaylı kayıtla önizleme, F13/reset, odak değişimi ve tek gönderimi doğrula; aynı kayıtla önce/sonra kalite ve gecikme kıyası yap. Otomatik/sentetik kontroller [uygulama kaydında](sessions/2026-10-24-denetim/uygulama.md).
-- [ ] Etkin Herdr pane/proje değişimini gerçek masaüstünde doğrula; çok istemcili Herdr sunucusunda odak farklılığına bak.
-- [ ] Mac'te yeni menü önizlemesi, Herdr bağlamı, uygulama hedefi kontrolü ve isteğe bağlı yerel çalıştırıcıyı doğrula. Windows VS Code başlık bağlamının Mac karşılığı henüz yok.
-- [ ] Yerel temizlikte gerçek Türkçe dikte kabulü: dolgu ve açık gün düzeltmeleri dışındaki kendi kendini düzeltmeler bugün muhafazakâr filtreyle özgün metne döner. Genişletme için anlam koruma ölçümü gerekir.
+- [ ] Sade dikteyi gerçek mikrofonla doğrula: F13 başlangıç/bitiş, tek Whisper, tek yapıştırma, reset ve wake word; dikte bitişi otomatik Enter göndermemeli. Windows boşta F13 tek basış 350 ms sonra kayıt, iki hızlı basış yalnız açık Enter hareketi olmalı; kayıt durdurma anlık, işleme sırasında Enter yok. Mac değişmez. Çözümleme sırasında odak değiştirilirse metin son odaktaki alana gitmeli. [Güncel kabul kaydı](sessions/2026-10-24-gpu-double-tap/README.md).
+- [ ] CUDA Qwen ile gerçek mikrofon kalitesi/gecikmesi, Whisper ile GPU paylaşımı ve VRAM tüketimini doğrula; sentetik GPU kurulumu/ölçümleri tamamlandı, gerçek kullanım kabulü açık.
+- [ ] Varsayılan terminal/editör başlığı ipuçlarını ve Windows'taki isteğe bağlı **Bağlam kaynağı** menüsünü doğrula. Herdr yalnız metadata kaynağı olmalı; seçilen pane'e yazılmamalı. Yerel cwd/Git dalı ve varsa uzak `git_branch` metadata'sı, erişim hatası/zaman aşımında sabit listeye dönüş denenmeli.
+- [ ] Yerel temizlikte gerçek Türkçe dikte kabulü: noktalama, paragraf, dolgu ve açık gün özdüzeltmesi; sayı, özel ad, teknik literal, olumsuzluk ve anlamlı tekrar koruması. 1200 karakter sınırı ve 12 saniye zaman aşımında ham metne dönüşü doğrula; gecikmeyi ölç.
+- [ ] Kalıcı Qwen ile gerçek mikrofon gecikmesini ve günlük kullanım RAM tüketimini ölç. Sentetik sıcak/ilk açılış ölçümleri, hazır olmama/hata/zaman aşımı kontrolleri ve sahip olunan süreç/işçi kapanış doğrulaması tamamlandı; sonuçlar [kalıcı model kaydında](sessions/2026-10-24-warm-cleanup/README.md).
+- [ ] Herdr bağlam kaynağının seçilen uygun terminal penceresinin hwnd/PID kimliğine bağlandığını doğrula: başka pencere/Chrome'da kullanılmamalı, aynı pencereye dönüşte kullanılmalı. Aynı pencere içi sekme değişimi algılanmaz; kaynak yeniden seçilmeli. Süre telemetrisinde yalnız süre/uzunluk/durum olmalı; tray özeti F13 bitişinden yapıştırmaya toplam süreyle tutarlı olmalı.
+- [ ] Mac'te sade dikte, Caps Lock/reset, o an odaktaki uygulamaya yapıştırma ve isteğe bağlı yerel çalıştırıcı kabulünü tamamla. Windows başlık/Herdr bağlam kaynağı menüsünün Mac karşılığı henüz yok.
+
+- [ ] Konuşma bağlamını gerçek kullanımda doğrula: doğru kaynak/oturum, user/assistant filtresi, genel başlıkta açık seçim, oturum değişimi, SSH kesilmesi ve 5 saniyelik RAM önbelleği. Yeni konuşma kopyası/logu oluşmamalı; 160+40 token sınırı ve son odaktaki alana yapıştırma korunmalı. Otomatik kontroller [konuşma bağlamı kaydında](sessions/2026-10-24-conversation-context/README.md).
 
 ## Açık işler
 
@@ -39,10 +44,10 @@ Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGE
 - [ ] Wake word değişikliğini diske kaydet (şu an yeniden başlatınca varsayılana dönüyor).
 - [ ] Yeni wake word'ler için Whisper yazım varyasyonu kalıplarını kendiliğinden genişlet.
 
-- [ ] Test kapsamını genişlet: wake word kalıpları, `extract_message`, `_drop_low_confidence_segments` ve gerçek callback sıralaması. Kuyruk, iptal/gönderim, bağlam, önizleme ve yerel temizlik regresyonları mevcut (`venv\Scripts\python -m unittest discover -s tests`).
+- [ ] Test kapsamını genişlet: wake word kalıpları, `extract_message`, `_drop_low_confidence_segments` ve gerçek callback sıralaması. Kuyruk, iptal/yapıştırma, bağlam ve yerel temizlik regresyonları mevcut (`venv\Scripts\python -m unittest discover -s tests`).
 - [ ] Durum makinesi geçişleri için thread güvenliği regresyon testi.
 
-- [ ] Hedef pencere seçimi: metni aktif pencere yerine seçilen bir pencereye yaz.
+- [ ] Hedef pencere seçimi: son metni o an odaktaki alan yerine seçilen bir pencereye yazma gelecekte ayrı özellik olarak değerlendirilebilir; mevcut davranış son odaktaki alana yapıştırmadır.
 - [ ] Çoklu proje: farklı wake word'lerle farklı hedeflere yönlendirme.
 - [ ] Toplantı transkripti hazır olduğunda bildirim göster (Windows toast, macOS rumps).
 
