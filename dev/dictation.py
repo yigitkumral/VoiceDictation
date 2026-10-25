@@ -38,6 +38,7 @@ import threading
 import re
 import logging
 import json
+import socket
 from enum import Enum
 
 # Windows cp1254 encoding fix
@@ -3553,8 +3554,50 @@ def _capture_context_source():
     # Baslangictaki baslik ve secim sabitlenir; bu nesne yapistirmayi yonlendirmez.
     window = _foreground_window()
     selection = _context_selection(window)
-    return dict(window=window, herdr=selection,
-                context="", ready=threading.Event())
+    source = dict(window=window, herdr=selection, context="", ready=threading.Event())
+    if IS_MAC and selection is None and not herdr_selection and window and window[3] in _MAC_TITLE_SCRIPTS:
+        # Mac dogrulamasi ~0,1 sn surer; kayit baslangici ve ilk ses bunu beklemez.
+        source["mac_resolve"] = True
+    return source
+
+
+# Mac'te AX pencere basligini vermiyor; Terminal/iTerm basligi Apple Events ile okunur (tek seferlik izin).
+_MAC_TITLE_SCRIPTS = {
+    "terminal": 'tell application "Terminal" to get name of front window',
+    "iterm2": 'tell application "iTerm2" to get name of current session of current window',
+}
+
+
+def _mac_focused_pane():
+    """Mac: yerel Herdr'in odakli pane'i ve calisma alani adi; pane icerigi okunmaz."""
+    panes = [p for p in _herdr_json(["pane", "list"])["panes"] if p.get("focused")]
+    if len(panes) != 1:
+        return None, ""
+    pane = panes[0]
+    labels = [w.get("label", "") for w in _herdr_json(["workspace", "list"])["workspaces"]
+              if w.get("workspace_id") == pane.get("workspace_id")]
+    selection = dict(machine=None, pane_id=pane["pane_id"], terminal_id=pane["terminal_id"],
+                     title=pane.get("terminal_title_stripped", ""),
+                     label=f"Yerel / {pane.get('label') or pane['pane_id']} ({pane['pane_id']})")
+    return selection, labels[0] if len(labels) == 1 else ""
+
+
+def _mac_terminal_selection(window):
+    """Herdr dis basligi 'bu-makine: calisma alani' odakli pane'in alaniyla uyusursa pane dogrulanir."""
+    script = _MAC_TITLE_SCRIPTS.get(window[3]) if window else None
+    if not script:
+        return None
+    try:
+        result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True,
+                                encoding="utf-8", timeout=1.5)
+        selection, workspace = _mac_focused_pane()
+    except (OSError, ValueError, KeyError, RuntimeError, subprocess.TimeoutExpired):
+        return None
+    # Uzak oturuma bagli istemcide host farklidir; yerel odak o durumda kullanilmaz.
+    prefix = socket.gethostname() + ": "
+    labels = ({part[len(prefix):].strip() for part in result.stdout.strip().split(" — ") if part.startswith(prefix)}
+              if result.returncode == 0 else set())
+    return selection if selection and workspace and labels == {workspace} else None
 
 
 def _context_monitor():
@@ -3570,6 +3613,9 @@ def _context_monitor():
                     last_inventory = time.monotonic()
                     window = _foreground_window()
                 selection = _context_selection(window)
+                if IS_MAC and selection is None and not herdr_selection:
+                    # Yalniz on isitma: dikte basinda baslikla dogrulanmadan kullanilmaz.
+                    selection = _mac_focused_pane()[0]
                 if selection:
                     conversation_cache.request(selection)
                     conversation_cache.refresh(selection)
@@ -4373,6 +4419,8 @@ def stop_word_checker(record_id, source):
     """Baglami bir kez al; F13 kaydinda Whisper durdurulana kadar calismaz."""
     global _recording_context
     try:
+        if isinstance(source, dict) and source.pop("mac_resolve", False):
+            source["herdr"] = _mac_terminal_selection(source.get("window"))
         context = _capture_context(source)
         with recording_lock:
             if _recording_valid(record_id):

@@ -17,7 +17,7 @@ SOURCE = Path(__file__).resolve().parents[2] / "dev/dictation.py"
 def load(*names):
     ns = dict(os=os, re=re, json=json, subprocess=subprocess, threading=threading,
               log=Mock(), wake_word_string="diktasyon", _herdr_context_window=None,
-              conversation_cache=None, herdr_targets=(),
+              conversation_cache=None, herdr_targets=(), IS_MAC=False,
               _TERMINAL_APPS={"herdr", "herdr.exe", "windowsterminal.exe"})
     for node in ast.parse(SOURCE.read_text(encoding="utf-8")).body:
         if isinstance(node, ast.FunctionDef) and node.name in set(names) | {"_context_selection"}:
@@ -87,6 +87,45 @@ class ContextTests(unittest.TestCase):
         self.assertIsNone(ns["_capture_context_source"]()["herdr"])
         ns["_foreground_window"] = lambda: (1, 2, "Project | Code", "chrome.exe")
         self.assertIsNone(ns["_capture_context_source"]()["herdr"])
+
+    def mac(self, title, panes=None, workspaces=None, returncode=0):
+        ns = load("_mac_focused_pane", "_mac_terminal_selection", "_capture_context_source")
+        panes = panes if panes is not None else [
+            dict(pane_id="w1:p1", terminal_id="t1", workspace_id="w1", focused=True, terminal_title_stripped="Sprint | dal"),
+            dict(pane_id="w2:p1", terminal_id="t2", workspace_id="w2", focused=False)]
+        workspaces = workspaces if workspaces is not None else [
+            dict(workspace_id="w1", label="ShapeEscape-sprint-Mac"), dict(workspace_id="w2", label="VoiceDictation")]
+        ns.update(IS_MAC=True, herdr_selection=None, _MAC_TITLE_SCRIPTS={"terminal": "script"},
+                  socket=SimpleNamespace(gethostname=lambda: "mac.home"),
+                  _herdr_json=lambda args, machine=None: dict(panes=panes) if args[0] == "pane" else dict(workspaces=workspaces))
+        run = Mock(return_value=SimpleNamespace(returncode=returncode, stdout=title + "\n"))
+        with patch.object(subprocess, "run", run):
+            return ns["_mac_terminal_selection"]((7, 7, "", "terminal")), ns, run
+
+    def test_mac_focus_needs_local_host_and_matching_workspace_title(self):
+        title = "yigit — mac.home: ShapeEscape-sprint-Mac — ssh ◂ herdr — 244×59"
+        selection, _, run = self.mac(title)
+        self.assertEqual((selection["machine"], selection["pane_id"], selection["terminal_id"]), (None, "w1:p1", "t1"))
+        self.assertEqual(run.call_args.args[0], ["osascript", "-e", "script"])
+        # Uzak oturuma bagli istemci, baska alan, izin yok veya iki odak: tahmin yok.
+        self.assertIsNone(self.mac("yigit — x3: ShapeEscape-sprint-Mac — herdr")[0])
+        self.assertIsNone(self.mac("yigit — mac.home: VoiceDictation — herdr")[0])
+        self.assertIsNone(self.mac("", returncode=1)[0])
+        two = [dict(pane_id=f"w1:p{i}", terminal_id=f"t{i}", workspace_id="w1", focused=True) for i in (1, 2)]
+        self.assertIsNone(self.mac(title, panes=two)[0])
+
+    def test_mac_capture_defers_title_check_and_skips_non_terminal(self):
+        _, ns, _ = self.mac("")
+        ns["_foreground_window"] = lambda: (7, 7, "", "terminal")
+        source = ns["_capture_context_source"]()
+        self.assertIsNone(source["herdr"])
+        self.assertTrue(source["mac_resolve"])
+        ns["_foreground_window"] = lambda: (8, 8, "", "safari")
+        self.assertNotIn("mac_resolve", ns["_capture_context_source"]())
+        ns["herdr_selection"] = dict(pane_id="manual")
+        ns["_herdr_context_window"] = (7, 7)
+        ns["_foreground_window"] = lambda: (7, 7, "", "terminal")
+        self.assertNotIn("mac_resolve", ns["_capture_context_source"]())
 
     def test_verified_conversation_reaches_context_without_git(self):
         ns = load("_capture_context")

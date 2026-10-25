@@ -84,7 +84,9 @@ Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN → LISTENIN
 ### Bağlam ipuçları ve kayıtlı konuşma
 
 Tanınan terminal/editörün başlığından kısa terimler alınır. Herdr kaynak envanterinde pencere başlığı
-**tek bir pane başlığıyla tam eşleşiyorsa** kaynak otomatik seçilebilir. Genel veya belirsiz başlıkta
+**tek bir pane başlığıyla tam eşleşiyorsa** kaynak otomatik seçilebilir. Mac'te başlık yerine Terminal
+başlığındaki `<bu Mac>: <çalışma alanı>` ile Herdr'ın odaklı pane'i birlikte doğrulanır
+([mimari](mimari.md)); ilk kullanımda macOS “Terminal'i denetleme” (Otomasyon) izni sorar. Genel veya belirsiz başlıkta
 kaynak tahmin edilmez; Windows tray → **Bağlam kaynağı** menüsünden doğru makine/pane açıkça seçilir.
 Konuşma kaynağı seçimi yalnız tanınan terminal uygulamalarında yapılır; editör başlığı tek başına
 konuşma oturumuna bağlanmaz, yalnız kısa terim ipucu olabilir.

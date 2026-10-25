@@ -1,5 +1,11 @@
 # CHANGELOG — VoiceDictation
 
+## 25 Ekim 2026 — Mac masaüstü diktesinde Herdr pane bağlamı
+
+- Mac'in kendi diktesinde (dört parmak/Caps Lock) pane hiç bulunmuyordu: kod Mac'te pencere başlığı almıyordu ve Erişilebilirlik API'si de Terminal için yalnız “Terminal” döndürüyor.
+- Yeni yol: öndeki Terminal/iTerm başlığı Apple Events ile okunur. Herdr dış başlığındaki `<bu Mac>: <çalışma alanı>`, yerel Herdr'ın tek odaklı pane'inin alanıyla eşleşirse o pane kaynak olur. Uzak oturum, farklı alan, iki odak veya izin yoksa tahmin yapılmaz. Okuma ~0,1 sn ve kayıt başlangıcını bekletmez (ilk ses kesilmez); izleyici aynı pane'in konuşmasını RAM'de önceden ısıtır.
+- Gerçek ortamda Terminal'deki odaklı pane 0,11 sn'de doğru seçildi. 194 Python testi geçti. Daemon'ın ilk Terminal diktesinde macOS Otomasyon izni ister.
+
 ## 25 Ekim 2026 — Vault dikte: MacBook pane bağlamı
 
 - iPhone/iPad Vault diktesi Windows daemon'ına gider. Windows tanısında Windows pane'leri 30/30 sohbet bağlamı alırken MacBook pane'leri 18/18 `unavailable` kalıyordu.

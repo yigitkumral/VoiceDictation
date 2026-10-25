@@ -129,7 +129,7 @@ launchctl bootout gui/$(id -u)/com.voicedictation.app
 rm -f ~/Library/LaunchAgents/com.voicedictation.app.plist
 ```
 
-### macOS izinleri (dördü de zorunlu)
+### macOS izinleri (ilk dördü zorunlu)
 
 | İzin | Nereden verilir | Eksikse ne bozulur |
 |---|---|---|
@@ -137,6 +137,7 @@ rm -f ~/Library/LaunchAgents/com.voicedictation.app.plist
 | Otomasyon | İlk açılışta çıkan pencere | `.app` hata verir, uygulama başlamaz |
 | Giriş İzleme (Input Monitoring) | System Settings → Privacy & Security → Input Monitoring → `applet` | Caps Lock kısayolu algılanmaz; yalnız wake word çalışır |
 | Erişilebilirlik (Accessibility) | System Settings → Privacy & Security → Accessibility → `applet` | Metin panoda kalır; yapıştırma ve Enter gönderilmez |
+| Otomasyon → Terminal / iTerm | Terminal'de ilk dikte sırasında çıkan pencere (System Settings → Privacy & Security → Automation) | Herdr pane'i bulunamaz; dikte genel bağlamla çalışır |
 
 - İzinleri verdikten sonra uygulamayı bir kez yeniden başlat.
 - Listede aktif olan girdi `applet` adını taşır; eski denemelerden kalan girdileri **−** ile sil.

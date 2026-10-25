@@ -36,7 +36,14 @@ flowchart TD
 
 Kaynak kontrolü arka planda yaklaşık 0,75 saniyede bir çalışır, Herdr envanteri yaklaşık 15 saniyede
 yenilenir. Genel başlıktan “en yeni” veya sunucuda o an odaktaki oturum tahmin edilmez. Tek bir tam
-başlık eşleşmesi yoksa **Bağlam kaynağı** menüsünden seçim gerekir. Manuel seçim uygun terminal
+başlık eşleşmesi yoksa **Bağlam kaynağı** menüsünden seçim gerekir.
+
+**Mac:** Erişilebilirlik API'si Terminal pencere başlığını vermez; başlık eşleşmesi bu yüzden Mac'te
+yapılamaz. Bunun yerine öndeki Terminal/iTerm penceresinin başlığı Apple Events ile okunur (tek seferlik
+Otomasyon izni). Herdr dış başlığı `<makine-adı>: <çalışma alanı>` biçimindedir. Makine adı bu Mac'se
+ve çalışma alanı yerel Herdr'ın tek odaklı pane'inin alanıysa o pane kaynak olur. Uzak oturuma bağlı
+istemci, farklı alan, iki odak veya izin yoksa kaynak seçilmez. Okuma ~0,1 sn sürer ve kayıt başını
+bekletmez; bağlam izleyicisi aynı pane'in konuşmasını yalnız RAM'de önceden ısıtır. Manuel seçim uygun terminal
 penceresinin hwnd/PID kimliğine bağlanır; Chrome veya başka pencerede kaynak kullanılmaz. Aynı pencere
 içindeki sekme değişimi algılanmadığından açık seçim güncellenmelidir.
 
