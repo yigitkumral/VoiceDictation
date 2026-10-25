@@ -95,10 +95,14 @@ def _vd_export():
     deadline = _time.monotonic() + 2.7
     executable = _shutil.which("herdr")
     if executable is None:
-        candidate = _os.path.expanduser("~/.local/bin/herdr")
-        if not _os.path.isfile(candidate) or not _os.access(candidate, _os.X_OK):
+        # Etkilesimsiz SSH (macOS) PATH'i /usr/bin:/bin; Homebrew kurulumu orada gorunmez.
+        for candidate in ("~/.local/bin/herdr", "/opt/homebrew/bin/herdr", "/usr/local/bin/herdr"):
+            candidate = _os.path.expanduser(candidate)
+            if _os.path.isfile(candidate) and _os.access(candidate, _os.X_OK):
+                executable = candidate
+                break
+        else:
             raise FileNotFoundError()
-        executable = candidate
     env = {key: value for key, value in _os.environ.items() if key not in {
         "HERDR_PANE_ID", "HERDR_TAB_ID", "HERDR_WORKSPACE_ID", "HERDR_SOCKET_PATH",
         "HERDR_SESSION", "HERDR_CLIENT_SOCKET_PATH"}}

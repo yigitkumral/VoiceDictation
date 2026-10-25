@@ -227,7 +227,7 @@ class ContextCacheTests(unittest.TestCase):
 
 
 class RemoteExporterTests(unittest.TestCase):
-    def execute(self, before, after=None, executable="/synthetic/bin/herdr", fallback_exists=False):
+    def execute(self, before, after=None, executable="/synthetic/bin/herdr", fallback_exists=False, existing=None):
         request = dict(session="exact-remote-session", pane_id="pane-a", terminal_id="term-a")
         encoded = base64.b64encode(json.dumps(request).encode()).decode()
         ns = dict(resolve_session=Mock(return_value=dict(path="synthetic", session_id="session-a", provider="claude")),
@@ -236,8 +236,10 @@ class RemoteExporterTests(unittest.TestCase):
             return SimpleNamespace(returncode=0, stdout=json.dumps(dict(result=dict(pane=pane))))
         with patch.object(sys, "argv", ["-", encoded]), \
                 patch.object(shutil, "which", return_value=executable), \
-                patch.object(os.path, "expanduser", return_value="/synthetic/home/.local/bin/herdr"), \
-                patch.object(os.path, "isfile", return_value=fallback_exists), \
+                patch.object(os.path, "expanduser", **(dict(side_effect=lambda p: p) if existing else
+                                                     dict(return_value="/synthetic/home/.local/bin/herdr"))), \
+                patch.object(os.path, "isfile", **(dict(side_effect=lambda p: p == existing) if existing else
+                                                 dict(return_value=fallback_exists))), \
                 patch.object(os, "access", return_value=fallback_exists), \
                 patch.object(subprocess, "run", side_effect=[result(before), result(after or before)]) as run:
             output = io.StringIO()
@@ -267,6 +269,14 @@ class RemoteExporterTests(unittest.TestCase):
         result, _, run = self.execute(pane, executable=None, fallback_exists=True)
         self.assertEqual(result["words"], 2)
         self.assertTrue(all(c.args[0][0] == "/synthetic/home/.local/bin/herdr" for c in run.call_args_list))
+
+    def test_remote_exporter_finds_homebrew_binary_outside_ssh_path(self):
+        # macOS etkilesimsiz SSH PATH'i /usr/bin:/bin; Homebrew herdr ancak acik yolla bulunur.
+        pane = dict(id="pane-a", terminal_id="term-a", agent="claude",
+                    agent_session=dict(agent="claude", kind="id", value="session-a"))
+        result, _, run = self.execute(pane, executable=None, fallback_exists=True, existing="/opt/homebrew/bin/herdr")
+        self.assertEqual(result["words"], 2)
+        self.assertTrue(all(c.args[0][0] == "/opt/homebrew/bin/herdr" for c in run.call_args_list))
 
     def test_remote_exporter_missing_binary_does_not_read_any_session(self):
         result, ns, run = self.execute({}, executable=None)

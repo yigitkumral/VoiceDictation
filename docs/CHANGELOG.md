@@ -1,5 +1,11 @@
 # CHANGELOG — VoiceDictation
 
+## 25 Ekim 2026 — Vault dikte: MacBook pane bağlamı
+
+- iPhone/iPad Vault diktesi Windows daemon'ına gider. Windows tanısında Windows pane'leri 30/30 sohbet bağlamı alırken MacBook pane'leri 18/18 `unavailable` kalıyordu.
+- Sebep: Windows Mac'e etkileşimsiz SSH ile bağlanınca PATH `/usr/bin:/bin:/usr/sbin:/sbin` oluyor; Homebrew `herdr` (`/opt/homebrew/bin`) bulunamıyordu. Uzak okuyucu artık `~/.local/bin`, `/opt/homebrew/bin` ve `/usr/local/bin` yollarını da dener. Mac'in SSH Python'u (3.9) köprü kodunu çalıştırıyor.
+- Aynı kısıtlı ortamla bu oturumun pane'i uçtan uca okundu: eski kod `unavailable`, yeni kod sohbet (300 kelime). 192 Python testi geçti. Windows ve Mac daemon'ları yeni sürümle yeniden başlatıldı.
+
 ## 25 Ekim 2026 — Mac Whisper terim listesi ve kelime düzeltmeleri
 
 - Mac tanı kayıtları incelendi (Yiğit'in isteğiyle). Mac'te sabit terim listesi token yerine 160 byte'ta kesiliyordu; listenin yarısı Whisper'a hiç ulaşmıyordu. Bütçe artık `mlx_whisper` tokenizer'ıyla 160 token olarak ölçülüyor; tüm liste (151 token) gidiyor.
