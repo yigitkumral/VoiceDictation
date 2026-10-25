@@ -1,4 +1,4 @@
-"""Ayni daemon icinde uc parmak -> F13 isleyicisi; ayri uygulama/izin yok."""
+"""Ayni daemon icinde dort parmak -> F13 isleyicisi; ayri uygulama/izin yok."""
 import ctypes
 from pathlib import Path
 import queue
@@ -20,7 +20,9 @@ class Trackpad:
         self._last_report = 0
         self._dropped_full = 0
         self._dropped_stale = 0
-        self._three_rejections = None
+        self._full_rejections = None
+        # Hedef parmak sayisi modulden okunur; eski modulde sayi sorgusu yok ve uc parmaktir.
+        self.fingers = 4
         if not Path(library_path).is_file():
             return
         try:
@@ -35,10 +37,18 @@ class Trackpad:
             lib.vd_trackpad_counts.restype = None
             lib.vd_trackpad_rejections.argtypes = [ctypes.POINTER(ctypes.c_ulong)]
             lib.vd_trackpad_rejections.restype = None
-            self._three_rejections = getattr(lib, 'vd_trackpad_three_rejections', None)
-            if self._three_rejections is not None:
-                self._three_rejections.argtypes = [ctypes.POINTER(ctypes.c_ulong)]
-                self._three_rejections.restype = None
+            fingers = getattr(lib, 'vd_trackpad_fingers', None)
+            if fingers is None:
+                self.fingers = 3
+                log.warning("[TRACKPAD] Eski modul uc parmak bekliyor; dev/scripts/build-mac-trackpad.sh ile yeniden derle")
+            else:
+                fingers.argtypes = []
+                fingers.restype = ctypes.c_int
+                self.fingers = fingers()
+            self._full_rejections = getattr(lib, 'vd_trackpad_full_rejections', None)
+            if self._full_rejections is not None:
+                self._full_rejections.argtypes = [ctypes.POINTER(ctypes.c_ulong)]
+                self._full_rejections.restype = None
             result = lib.vd_trackpad_start(self._callback)
             if result:
                 self.status = f"baslatilamadi ({result})"
@@ -70,7 +80,7 @@ class Trackpad:
             if self.enabled and not self._stop.is_set() and age < .2:
                 try:
                     self._on_tap()
-                    self._log.info("[TRACKPAD] Uc parmak -> F13 isleyicisi (kuyruk=%.1f ms)", age * 1000)
+                    self._log.info("[TRACKPAD] %d parmak -> F13 isleyicisi (kuyruk=%.1f ms)", self.fingers, age * 1000)
                 except Exception:
                     self._log.exception("[TRACKPAD] Hareket islenemedi")
             elif self.enabled and not self._stop.is_set() and age >= .2:
@@ -101,11 +111,11 @@ class Trackpad:
             self._library.vd_trackpad_rejections(rejected)
             self._log.info("[TRACKPAD] frame=%d tap=%d red(hareket,parmak,sure,modifier,gec_parmak,veri)=%s",
                            frames.value, taps.value, list(rejected)[1:])
-            three = (ctypes.c_ulong * 7)()
-            if self._three_rejections is not None:
-                self._three_rejections(three)
-            self._log.info("[TRACKPAD] uc_parmak_red=%s kuyruk_dolu=%d kuyruk_eski=%d",
-                           list(three)[1:] if self._three_rejections is not None else 'bilinmiyor',
+            full = (ctypes.c_ulong * 7)()
+            if self._full_rejections is not None:
+                self._full_rejections(full)
+            self._log.info("[TRACKPAD] %d_parmak_red=%s kuyruk_dolu=%d kuyruk_eski=%d", self.fingers,
+                           list(full)[1:] if self._full_rejections is not None else 'bilinmiyor',
                            self._dropped_full, self._dropped_stale)
         return frames.value, taps.value
 

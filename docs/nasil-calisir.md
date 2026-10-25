@@ -12,7 +12,7 @@ Kurulum arşivleri çalışırken kullanılmaz; Windows'taki eski ZIP dosyaları
 
 Mac'te menüden Çıkış, Cocoa uygulamayı sonlandırmadan önce trackpad'i, tanı yazıcısını, sahip olunan Qwen sürecini ve PID kaydını kapatır. Böylece her yeniden açılışta eski model süreçleri bellekte birikmez. Klasör geçişinin geri dönüş kayıtları `.local/migration-YYYYMMDD/` altında tutulur.
 
-Mac'te otomatik yapıştırma için yeni başlatıcının Erişilebilirlik izni gerekir. İzin yoksa metin panoya alınır ama `⌘V` gönderilmez; tanıda `permission_denied`, menüde “Klavye izni eksik — metin panoda” görünür. Başarı sesi çalmaz. İzin varken tuş gönderimi, hedef uygulamanın metni gerçekten kabul ettiğinin tek başına kanıtı değildir; gerçek kullanım ayrıca doğrulanır.
+Mac'te otomatik yapıştırma için yeni başlatıcının Erişilebilirlik izni gerekir. İzin yoksa metin panoya alınır ama `⌘V` gönderilmez; tanıda `permission_denied`, menüde “Klavye izni eksik — metin panoda” görünür. Bitiş tonu durdurmada zaten çalmıştır; yapıştırma yapılmaz. İzin varken tuş gönderimi, hedef uygulamanın metni gerçekten kabul ettiğinin tek başına kanıtı değildir; gerçek kullanım ayrıca doğrulanır.
 
 ```mermaid
 flowchart LR
@@ -59,13 +59,13 @@ Son 100 olayı kaynak makine/pane, kod sürümü ve bağlam durumuna göre, konu
 
 Görsel anlatım: [etkileşimli HTML şeması](dikte-akisi.html). Model promptları, kaynak sınırları ve GPU/RAM ayrımı açılır bölümlerde gösterilir.
 
-Başlangıç ve metin yapıştırılınca çalan tamamlanma sesleri eski tonları ve eski Windows çalma yolunu kullanır. Kaydı durdurma anında ek bir ton yoktur. Bağlam durumu Windows'ta sağ alttaki VoiceDictation simgesinin sağ tık menüsünde ve simgenin üzerine gelince açıklama balonunda görünür; bağlam değişince yenilenir.
+Başlangıç tonu kayıt açılınca, bitiş tonu (eski ikili tamamlanma tonu) kayıt durdurulduğu anda çalar; ekrana bakmadan kaydın bittiği duyulur. Sonraki yapıştırma sessizdir. Boş/hatalı sonuçta ayrıca hata tonu çalar. Tonlar eski Windows çalma yolunu kullanır. Bağlam durumu Windows'ta sağ alttaki VoiceDictation simgesinin sağ tık menüsünde ve simgenin üzerine gelince açıklama balonunda görünür; bağlam değişince yenilenir.
 
 Durum makinesi `LISTENING → RECORDING → PROCESSING → COOLDOWN → LISTENING` sırasıyla ilerler. Ses yalnız RAM'de tutulur ve metne çevrildikten sonra silinir.
 
 1. **Başlat:** F13 (Windows) veya Caps Lock x2 (macOS) tuşuna bas ya da açıkken "Diktasyon" de. Kayıt sesi çalar, simge kırmızıya döner. Bağlam ipucu için o andaki pencere başlığı veya seçilmiş salt okunur Herdr kaynağı alınır.
 2. **Konuş:** Ses birikir. Geçici çözümleme, canlı dikte önizlemesi ve terminale canlı taslak yazımı yoktur. Sessizlikte kayıt kendiliğinden gönderilmez. Başlangıçta 30 saniye hiç konuşma algılanmazsa kayıt iptal olur.
-3. **Bitir:** Aynı tuşa bas ya da tekrar "Diktasyon" de. Whisper turbo (`beam=3`) kaydın tamamını bir kez çözer. Yerel temizlik açıksa uygulandıktan sonra metin panoya alınır ve **işlem bittiğinde odaktaki alana** bir kez yapıştırılır. Kayıt başındaki pencereye veya Herdr pane'ine kilitlenmez. **Enter gönderilmez; metni kontrol edip Enter'a sen basarsın.**
+3. **Bitir:** Aynı tuşa bas ya da tekrar "Diktasyon" de. Whisper turbo (`beam=3`) kaydın tamamını bir kez çözer. Bitiş tonu durdurma anında çalar. Yerel temizlik açıksa uygulandıktan sonra metin panoya alınır ve **işlem bittiğinde odaktaki alana** sessizce bir kez yapıştırılır. Kayıt başındaki pencereye veya Herdr pane'ine kilitlenmez. **Enter gönderilmez; metni kontrol edip Enter'a sen basarsın.**
 4. **Bekleme:** 1,5 saniye sonra dinlemeye döner.
 
 - **Windows F13 tek/çift basış:** Boşta ilk tuşa basıldığı anda ses RAM'e kaydedilir. Tuş bırakıldıktan
@@ -312,7 +312,7 @@ Mac'te aynı tanı ve bağlam kodu kullanılır; Whisper Apple Silicon MLX yolun
 Qwen temizliği `.local/llama/llama-server` ve aynı GGUF model mevcutsa açılır.
 Mevcut çalıştırıcı seçimi Mac'te CPU kullanır; Windows CUDA performansı Mac için varsayılmaz.
 Caps Lock kullanımı değişmez. Deneysel Mac trackpad modülü aynı VoiceDictation sürecinde
-çalışır; ayrı uygulama veya ek izin yoktur. Üç parmak kısa dokunma/basma içeride F13
+çalışır; ayrı uygulama veya ek izin yoktur. Dört parmak kısa dokunma/basma içeride F13
 işleyicisini çağırır: tek hareket kayıt açar/kapatır; boşta hızlı çift hareket Enter gönderir.
 Modül kurulmuşsa açık başlar; Ayarlar → Trackpad ile kapatılır. Ayarlar → Bildirim sesini dene
 aynı başlangıç tonunu RAM'den `NSSound` ile çalar; `afplay`/geçici dosya kullanılmaz.

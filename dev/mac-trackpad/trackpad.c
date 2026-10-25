@@ -35,7 +35,7 @@ static void (*tapCallback)(void);
 static bool enabled;
 static unsigned long frameCount, tapCount;
 static unsigned long rejected[7];
-static unsigned long threeRejected[7];
+static unsigned long fullRejected[7];
 
 static void contacts(Device dev, Contact *input, size_t count, double timestamp, size_t frame, void *ref) {
     if (count > 16 || (count && !input)) return;
@@ -50,11 +50,11 @@ static void contacts(Device dev, Contact *input, size_t count, double timestamp,
     pthread_mutex_lock(&mutex);
     frameCount++;
     bool hadGesture = gesture.active;
-    bool hadThree = gesture.three;
+    bool hadFull = gesture.full;
     bool fire = VDFeed(&gesture, timestamp, points, n, blocked || !enabled);
     if (enabled && hadGesture && n == 0 && !fire && gesture.lastReject >= 0 && gesture.lastReject < 7) {
         rejected[gesture.lastReject]++;
-        if (hadThree) threeRejected[gesture.lastReject]++;
+        if (hadFull) fullRejected[gesture.lastReject]++;
     }
     if (fire && tapCallback) {
         tapCount++;
@@ -82,9 +82,11 @@ void vd_trackpad_rejections(unsigned long *values) {
     pthread_mutex_unlock(&mutex);
 }
 
-void vd_trackpad_three_rejections(unsigned long *values) {
+int vd_trackpad_fingers(void) { return VD_FINGERS; }
+
+void vd_trackpad_full_rejections(unsigned long *values) {
     pthread_mutex_lock(&mutex);
-    memcpy(values, threeRejected, sizeof(threeRejected));
+    memcpy(values, fullRejected, sizeof(fullRejected));
     pthread_mutex_unlock(&mutex);
 }
 

@@ -721,7 +721,7 @@ def _start_menubar_gui():
             global mac_trackpad
             mac_trackpad = Trackpad(TRACKPAD_LIBRARY, _trackpad_f13, log)
             atexit.register(mac_trackpad.close)
-            self._trackpad_item = rumps.MenuItem("Trackpad: üç parmak", callback=self.on_trackpad)
+            self._trackpad_item = rumps.MenuItem(f"Trackpad: {mac_trackpad.fingers} parmak", callback=self.on_trackpad)
             ayarlar_submenu.add(self._trackpad_item)
             ayarlar_submenu.add(rumps.MenuItem("Bildirim sesini dene", callback=lambda _: sound_recording()))
             self._timing_item = rumps.MenuItem(last_timing_summary, callback=None)
@@ -758,7 +758,7 @@ def _start_menubar_gui():
             self._cleanup_setting.state = cleanup_enabled
             self._trackpad_item.state = mac_trackpad.enabled
             frames, taps = mac_trackpad.counts()
-            self._trackpad_item.title = f"Trackpad: {mac_trackpad.status} ({taps} dokunuş)"
+            self._trackpad_item.title = f"Trackpad {mac_trackpad.fingers} parmak: {mac_trackpad.status} ({taps} dokunuş)"
             self._timing_item.title = last_timing_summary
             self._context_item.title = context_status
             self._cleanup_setting.title = _cleanup_menu_label()
@@ -4112,8 +4112,8 @@ def _send_final(msg, record_id, source=None, timings=None):
         return "permission_denied"
     if paste_only(valid):
         timings["paste_ms"] = (time.perf_counter() - started) * 1000
+        # Bitis tonu kayit durdurulunca caldi; yapistirma sessizdir.
         log.info(f"[OK] >> {msg}")
-        sound_sent()
         return "pasted"
     else:
         timings["paste_ms"] = (time.perf_counter() - started) * 1000
@@ -4322,6 +4322,7 @@ def do_send(msg, expected_id, target):
         record_id = _recording_id
         _recording_source = target
         _recording_context = ""
+    sound_sent()
     threading.Thread(target=_finish_dictation,
                      args=(record_id, [], "", target, msg), daemon=True).start()
 
@@ -4338,6 +4339,8 @@ def do_stop_and_send(expected_id=None):
             target["stopped_at"] = time.perf_counter()
         with audio_lock:
             frames = list(audio_frames)
+    # Bitis tonu durdurma aninda: ekrana bakmadan kaydin bittigi duyulur.
+    sound_sent()
     # pynput callback'i bloklanmaz: islenirken F13 uzun basma ile iptal edilebilir.
     threading.Thread(target=_finish_dictation,
                      args=(record_id, frames, context, target), daemon=True).start()

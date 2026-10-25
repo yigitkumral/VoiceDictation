@@ -250,6 +250,7 @@ class RecordingTests(unittest.TestCase):
         ns.update(IS_MAC=True, _mac_keyboard_access=Mock(return_value=True))
         self.assertEqual(ns['_send_final']('Merhaba.', 1), 'pasted')
         ns['paste_only'].assert_called_once()
+        ns['sound_sent'].assert_not_called()  # bitis tonu durdurmada calar
 
     def test_stop_claims_recording_once_without_blocking_keyboard(self):
         ns = self.ns
@@ -257,9 +258,11 @@ class RecordingTests(unittest.TestCase):
         with patch.object(threading, "Thread") as worker:
             ns["do_stop_and_send"](expected_id=0)
             worker.assert_not_called()
+            ns["sound_sent"].assert_not_called()
             ns["do_stop_and_send"](expected_id=1)
             ns["do_stop_and_send"](expected_id=1)
             worker.assert_called_once()
+            ns["sound_sent"].assert_called_once()
             worker.return_value.start.assert_called_once()
         self.assertEqual(ns["sm"].state, ns["State"].PROCESSING)
 

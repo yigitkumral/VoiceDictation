@@ -1,5 +1,11 @@
 # CHANGELOG — VoiceDictation
 
+## 25 Ekim 2026 — Mac dört parmak ve durdurma tonu
+
+- Yiğit'in isteğiyle trackpad hareketi üç parmaktan dört parmağa geçti: üç parmak günlük macOS hareketlerinde çok kullanılıyor, dört parmak dokunma kullanılmıyor. Üç ve beş parmak reddedilir; zamanlama ve hareket eşikleri değişmedi. Modül hedef parmak sayısını bildirir; eski üç parmak modülü yüklenirse log uyarısı ve menüde "Trackpad 3 parmak" görünür.
+- Bitiş tonu (eski ikili tamamlanma tonu) artık metin yapıştırılınca değil, kayıt durdurulduğu anda çalar; yapıştırma sessizdir. Tek nefes wake akışında ton mesaj alındığında çalar. Toplantı ve dosya transkripti sesleri değişmedi.
+- 189 Python testi ve 13 C hareket senaryosu Mac'te geçti; yeni modül derlendi. Gerçek dört parmak ve ses kabulü ayrıca izleniyor.
+
 ## 25 Ekim 2026 — Mac klavye izni ve trackpad tanısı
 
 - Yeni başlatıcı için kullanıcı Erişilebilirlik ve Giriş İzleme izinlerini yeniden verdi. Son açılışta güvenilmeyen klavye süreci uyarısı yok; mikrofon ve trackpad hazır. Menüden çıkışın daemon, model alt süreci ve PID kaydını birlikte kapattığı gerçek Mac'te doğrulandı.

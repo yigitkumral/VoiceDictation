@@ -2,7 +2,7 @@
 
 Trackpad algılayıcısı **VoiceDictation'ın kendi sürecinde** çalışır. Ayrı uygulama, menü
 çubuğu simgesi veya Erişilebilirlik izni yoktur. Mevcut VoiceDictation mikrofon ve
-yapıştırma izinleri geçerlidir. Üç parmak hareketi içeride F13 işleyicisini çağırır;
+yapıştırma izinleri geçerlidir. Dört parmak hareketi içeride F13 işleyicisini çağırır (üç parmak günlük macOS hareketlerinde çok kullanıldığı için seçilmedi);
 işletim sistemine sahte tuş gönderilmez.
 
 ## Kurulum ve kullanım
@@ -20,19 +20,19 @@ Eski TP prototip uygulaması kullanılmaz ve başlatılmamalıdır; eski üretim
 
 ## Hareket
 
-Tanı kayıtlarında `uc_parmak_red` yalnız gerçekten üç parmak görülen hareketlerin reddini sayar; genel `red` normal tek parmak kullanımını da içerir. `kuyruk_dolu` ve `kuyruk_eski` kaybolan olayları, `F13 durum=...` ise algılanan dokunuşun uygulamada hangi duruma geçtiğini gösterir. Bu sayaçlar koordinat veya konuşma metni içermez. Yeni sayaç için yerel modül yeniden derlenir; eski modülde değer bilinmiyor olarak yazılır.
+Tanı kayıtlarında `4_parmak_red` yalnız gerçekten dört parmak görülen hareketlerin reddini sayar; genel `red` normal tek parmak kullanımını da içerir. `kuyruk_dolu` ve `kuyruk_eski` kaybolan olayları, `F13 durum=...` ise algılanan dokunuşun uygulamada hangi duruma geçtiğini gösterir. Bu sayaçlar koordinat veya konuşma metni içermez. Yeni sayaç için yerel modül yeniden derlenir; eski modülde değer bilinmiyor olarak yazılır. Eski (üç parmak) modül yüklenirse logda uyarı çıkar ve menüde "Trackpad 3 parmak" görünür; `build-mac-trackpad.sh` ile yeniden derlenir.
 
-- Dahili trackpad'e üç parmağı 200 ms içinde yerleştir, 30–600 ms toplam sürede kaldır.
+- Dahili trackpad'e dört parmağı 200 ms içinde yerleştir, 30–600 ms toplam sürede kaldır.
 - Hafif dokunma ve fiziksel sol tıklama kabul edilir. Her parmak başlangıca göre normalize
   0,035'ten fazla yer değiştirirse kaydırma/sürükleme sayılıp reddedilir.
-- İki/dört parmak, uzun temas, değişen parmak kimliği, sağ tıklama ve modifier ile temas reddedilir.
+- İki/üç/beş parmak, uzun temas, değişen parmak kimliği, sağ tıklama ve modifier ile temas reddedilir.
 - Parmakların tamamı kalkınca **bir** F13 işlenir. Kayıt dokunma başlangıcında değil, sonunda başlar.
 - Tek hareket kayıt açar/kapatır. Boşta iki kabul edilen hareketin arasındaki süre 250 ms'yi
   aşmazsa Enter gönderilir; dikte bitişinde otomatik Enter yoktur. Trackpad uzun basışı reset değildir.
 - Eski Caps Lock çift/üçlü basışları korunur. F13, bekleyen Caps Lock toggle'ını iptal eder.
 
-Sistem hareketleri engellenmez. Üç parmak sözlük arama/sürükleme gibi macOS ayarlarıyla
-çakışma ayrıca sınanmalıdır. Mac odak koruması uygulama PID'si düzeyindedir; aynı uygulama
+Sistem hareketleri engellenmez. Dört parmak kaydırma (Mission Control, uygulama geçişi) hareket
+eşiğiyle reddedilir; kısa dokunmanın macOS ayarlarıyla çakışmadığı ayrıca sınanmalıdır. Mac odak koruması uygulama PID'si düzeyindedir; aynı uygulama
 içindeki pencere/pane değişimi ayırt edilmez.
 
 ## Ses
@@ -49,7 +49,7 @@ ve kapatılmış hareketler çalıştırılmaz. Koordinatlar RAM'de işlenir; a�
 ekran veya klavye içeriği kaydı yoktur. Mevcut aylık loga kabul edilen hareketler ve
 30 saniyelik frame/tap/red sayaçları yazılır (hareket, parmak, süre, modifier, geç yerleşme, veri).
 
-`Gesture.h` / `test_gesture.c`: 12 sentetik senaryo. Python testleri Mac F13 durum
+`Gesture.h` / `test_gesture.c`: 13 sentetik senaryo. Python testleri Mac F13 durum
 makinesini, modül yaşam döngüsünü, kapatmayı ve ses hatalarını sınar. Gerçek hareket,
 Enter, ses ve uyku dönüşü ayrıca denenir.
 
