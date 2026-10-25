@@ -306,9 +306,10 @@ INITIAL_PROMPT = (
     # NOT: Wake word ("Diktasyon") buraya KOYULMAZ — prompt'a eklenirse Whisper
     # belirsiz/kisa seslerde wake word'u hayal eder ve false-positive trigger atar.
     # Wake word algilama regex pattern'i ile yapilir, vocabulary boost'a gerek yok.
-    "Claude, Claude Code, Qwen, Qwen3, BMAD, API, commit, deploy, push, pull, "
-    "merge, branch, refactor, component, TypeScript, React, OpenClaw, PRD, "
-    "MCP, sprint, story, pipeline, Winston, Amelia, workflow, endpoint, "
+    # Sira onemli: butce (160 token) asilirsa sondaki terimler duser; sik kullanilanlar basta.
+    "Claude, Claude Code, Codex, Herdr, pane, tab, workspace, worktree, session, VoiceDictation, "
+    "Qwen, Qwen3, BMAD, shard, PRD, MCP, API, commit, deploy, push, pull, merge, branch, refactor, "
+    "compact, component, TypeScript, React, OpenClaw, sprint, story, pipeline, Winston, Amelia, workflow, endpoint, "
     "frontend, backend, repository, npm, Node.js, VS Code, extension, "
     "Anthropic, Sonnet, Opus, Haiku, token, prompt, agent, sub-agent, "
     "party mode, orchestrator, gateway, Tailscale, Parsec, Discord"
@@ -1310,6 +1311,21 @@ def _dedupe_segment_runs(segments, aggressive=False):
     return out if changed else segments
 
 
+_mlx_prompt_tokenizer = None
+
+
+def _mlx_tokenizer():
+    """MLX ipucu butcesi gercek Whisper token'iyla olculur; yuklenemezse bayt siniri kalir."""
+    global _mlx_prompt_tokenizer
+    if _mlx_prompt_tokenizer is None:
+        try:
+            from mlx_whisper.tokenizer import get_tokenizer
+            _mlx_prompt_tokenizer = get_tokenizer(multilingual=True, language="tr", task="transcribe")
+        except Exception:
+            _mlx_prompt_tokenizer = False
+    return _mlx_prompt_tokenizer or None
+
+
 def _whisper_context(context):
     """Ses modelinin toplam ipucu butcesi: en cok 160+40 token (223'ten az)."""
     conversation = isinstance(context, dict) and context.get("status") == "conversation"
@@ -1321,11 +1337,11 @@ def _whisper_context(context):
         return re.sub(r"\b" + re.escape(wake_word_string) + r"\b", "", text, flags=re.I).strip()
     def fit(text, limit, tail=False):
         text = clean(text)
-        tokenizer = getattr(model, "hf_tokenizer", None) if not IS_MAC else None
+        tokenizer = _mlx_tokenizer() if IS_MAC else getattr(model, "hf_tokenizer", None)
         if tokenizer is not None:
             try:
-                encoded = tokenizer.encode(text, add_special_tokens=False)
-                ids = encoded.ids
+                # MLX tokenizer liste, faster-whisper tokenizer Encoding dondurur.
+                ids = tokenizer.encode(text) if IS_MAC else tokenizer.encode(text, add_special_tokens=False).ids
                 if isinstance(ids, list):
                     return tokenizer.decode(ids[-limit:] if tail else ids[:limit])
             except (AttributeError, TypeError, ValueError):
@@ -3317,12 +3333,19 @@ _WORD_CORRECTIONS = [
     (re.compile(r"\bClaude\s+code\b", re.IGNORECASE), "Claude Code"),
     # Atelier projesi — ateliyer/atelyal/atelial/ateliyel -> Atelier
     (re.compile(r"\batel[iy]+[ae]?[lr]\b", re.IGNORECASE), "Atelier"),
-    # VoiceDictation — "Voice Daktion / Voice Diction / Voice Stick" -> VoiceDictation
-    (re.compile(r"\bvoice\s*(?:da?ktion|diction|stick)\b", re.IGNORECASE), "VoiceDictation"),
+    # VoiceDictation — "Voice Daktion / Voice Diction / Voice Daktation / Voice Ductation / Voice Stick"
+    (re.compile(r"\bvoice\s*(?:d\w*?(?:tion|sion)|stick)\b", re.IGNORECASE), "VoiceDictation"),
+    # --- Mac tani kayitlari (25 Eki 2026) ---
+    # Herdr terminal coklayicisi — Herder/Herdır -> Herdr (ek korunur: Herder'i -> Herdr'i)
+    (re.compile(r"\bherd[eı]r\b", re.IGNORECASE), "Herdr"),
+    # Tarayici — Tadayici -> Tarayici (buyuk harf ve ek korunur)
+    (re.compile(r"\b([Tt])aday(ıc)"), r"\1aray\2"),
+    # sohbaya -> sohbete (Turkcede "sohbaya" kelimesi yok)
+    (re.compile(r"\bsohbaya\b", re.IGNORECASE), "sohbete"),
     # NotebookLM — "notebook lm / notebook lmd" -> NotebookLM
     (re.compile(r"\bnotebook\s*lm[dt]?\b", re.IGNORECASE), "NotebookLM"),
-    # BMAD metodolojisi — vmed/vmad/vmat/bmat -> BMAD
-    (re.compile(r"\b[vb]m[ae][dt]\b", re.IGNORECASE), "BMAD"),
+    # BMAD metodolojisi — vmed/vmad/vmat/bmat/B-MED -> BMAD
+    (re.compile(r"\b[vb]-?m[ae][dt]\b", re.IGNORECASE), "BMAD"),
     # PRD dosyasi — PDD -> PRD
     (re.compile(r"\bP[RD]D\b"), "PRD"),
     # ChatGPT — "chat gpt" -> ChatGPT

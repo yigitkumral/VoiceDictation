@@ -17,9 +17,19 @@ class ByteTokenizer:
         return bytes(ids).decode('utf-8', errors='ignore')
 
 
+class ByteListTokenizer:
+    """mlx_whisper Tokenizer gibi: encode liste dondurur."""
+    def encode(self, text):
+        return list(text.encode('utf-8'))
+
+    def decode(self, ids):
+        return bytes(ids).decode('utf-8', errors='ignore')
+
+
 class PromptBudgetTests(unittest.TestCase):
     def load(self, mac=False):
         ns = dict(re=re, model=SimpleNamespace(hf_tokenizer=ByteTokenizer()), IS_MAC=mac,
+                  _mlx_tokenizer=lambda: ByteListTokenizer(),
                   INITIAL_PROMPT='Sabit teknik terimler.', wake_word_string='Diktasyon')
         node = next(n for n in ast.parse((ROOT/'dev/dictation.py').read_text(encoding='utf-8')).body
                     if isinstance(n, ast.FunctionDef) and n.name == '_whisper_context')
@@ -46,6 +56,37 @@ class PromptBudgetTests(unittest.TestCase):
         prompt, hints = self.load()('Project')
         self.assertEqual(prompt, 'Sabit teknik terimler.')
         self.assertEqual(hints, 'Project')
+
+
+    def test_full_static_prompt_fits_real_whisper_token_budget(self):
+        try:
+            from mlx_whisper.tokenizer import get_tokenizer
+        except ImportError:
+            self.skipTest('mlx_whisper yok')
+        tree = ast.parse((ROOT/'dev/dictation.py').read_text(encoding='utf-8'))
+        node = next(n for n in tree.body if isinstance(n, ast.Assign)
+                    and getattr(n.targets[0], 'id', None) == 'INITIAL_PROMPT')
+        prompt = ast.literal_eval(node.value)
+        tokenizer = get_tokenizer(multilingual=True, language='tr', task='transcribe')
+        self.assertLessEqual(len(tokenizer.encode(prompt)), 160)
+        self.assertIn('Herdr', prompt)
+
+
+class WordCorrectionTests(unittest.TestCase):
+    def test_mac_diagnostic_misspellings_are_corrected_without_touching_real_words(self):
+        tree = ast.parse((ROOT/'dev/dictation.py').read_text(encoding='utf-8'))
+        body = [n for n in tree.body if (isinstance(n, ast.Assign) and getattr(n.targets[0], 'id', None) == '_WORD_CORRECTIONS')
+                or (isinstance(n, ast.FunctionDef) and n.name == '_apply_word_corrections')]
+        ns = dict(re=re)
+        exec(compile(ast.Module(body=body, type_ignores=[]), 'dictation.py', 'exec'), ns)
+        fix = ns['_apply_word_corrections']
+        self.assertEqual(fix("Herder'ı açtım, Herder tabi"), "Herdr'ı açtım, Herdr tabi")
+        self.assertEqual(fix('Voice Daktation ve Voice Ductation'), 'VoiceDictation ve VoiceDictation')
+        self.assertEqual(fix("B-MED'de shard"), "BMAD'de shard")
+        self.assertEqual(fix('Tadayıcıyı başlat, tadayıcı'), 'Tarayıcıyı başlat, tarayıcı')
+        self.assertEqual(fix('seninle sohbaya devam'), 'seninle sohbete devam')
+        for word in ('şart değil', 'Tarayıcı', 'herhalde', 'VoiceDictation'):
+            self.assertEqual(fix(word), word)
 
 
 if __name__ == '__main__':

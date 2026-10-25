@@ -1,5 +1,13 @@
 # CHANGELOG — VoiceDictation
 
+## 25 Ekim 2026 — Mac Whisper terim listesi ve kelime düzeltmeleri
+
+- Mac tanı kayıtları incelendi (Yiğit'in isteğiyle). Mac'te sabit terim listesi token yerine 160 byte'ta kesiliyordu; listenin yarısı Whisper'a hiç ulaşmıyordu. Bütçe artık `mlx_whisper` tokenizer'ıyla 160 token olarak ölçülüyor; tüm liste (151 token) gidiyor.
+- Listeye Codex, Herdr, pane, tab, workspace, worktree, session, VoiceDictation, shard ve compact eklendi; sık kullanılanlar başa alındı. Gerçek tokenizer ile 160 token sınırını sınayan test eklendi.
+- Kayıtlarda görülen hatalar için düzeltme: Herder → Herdr, Voice Daktation/Ductation → VoiceDictation, B-MED → BMAD, Tadayıcı → Tarayıcı, sohbaya → sohbete. "şart" gibi gerçek kelimeler değiştirilmez.
+- Açık: Mac'te pencere başlığı alınmadığı için otomatik Herdr pane eşleşmesi hiç çalışmıyor (53 kaydın tamamı `no_pane_match`); bağlam yalnız elle kaynak seçimiyle geliyor.
+- 191 Python testi geçti.
+
 ## 25 Ekim 2026 — Mac dört parmak ve durdurma tonu
 
 - Yiğit'in isteğiyle trackpad hareketi üç parmaktan dört parmağa geçti: üç parmak günlük macOS hareketlerinde çok kullanılıyor, dört parmak dokunma kullanılmıyor. Üç ve beş parmak reddedilir; zamanlama ve hareket eşikleri değişmedi. Modül hedef parmak sayısını bildirir; eski üç parmak modülü yüklenirse log uyarısı ve menüde "Trackpad 3 parmak" görünür.

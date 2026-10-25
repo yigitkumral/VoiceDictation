@@ -2,6 +2,8 @@
 
 Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGELOG.md](CHANGELOG.md) dosyasına yazılır.
 
+- [ ] Mac'te odaktaki Herdr pane'ini otomatik bul: Mac'te pencere başlığı alınmadığı için başlık eşleşmesi hiç çalışmıyor (25 Ekim tanısında 53/53 `no_pane_match`). Herdr'ın odak bilgisi veya Terminal/iTerm pencere başlığı araştırılacak.
+- [ ] Dikte kaydına üst süre sınırı düşün: 25 Ekim 16:24'te ortam konuşmasından yanlış wake ile açılan kayıt 32,5 dk sürdü (ortam konuşması 30 sn konuşmasızlık zaman aşımını tetiklemiyor). Wake word kaldırılırsa yeniden değerlendirilir.
 - [ ] Mac'te gerçek dört parmak → kayıt → durdurmada bitiş tonu → sessiz yapıştırma akışının kullanıcı kabulünü tamamla; dört parmak dokunuşun Mission Control/uygulama geçişi gibi sistem hareketleriyle çakışmadığını sına. Yeni başlatıcının mikrofon, Erişilebilirlik ve Giriş İzleme izinleri verildi; yeniden açılışta güven uyarısı yok. Eski ortam `.local/migration-20261025/` altında kullanım kabulüne kadar korunuyor.
 
 ## Mac'te ilk oturum

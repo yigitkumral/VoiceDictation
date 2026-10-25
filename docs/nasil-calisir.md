@@ -106,9 +106,11 @@ kopyasına yazılmaz; RAM önbelleğinde tutulur. Arka plan izleyici yaklaşık 
 kontrol eder, envanter yaklaşık 15 saniyede yenilenir; önbellek geçerliliği 5 saniyedir. Dikte
 bağlam için en fazla 150 ms bekler; kaynak hazır değilse başlık/metadata veya sabit ipuçlarıyla devam eder.
 
-Konuşmanın tamamı Whisper'a verilmez. Gerçek HF tokenizer varsa son konuşma **160 token**, terim
+Konuşmanın tamamı Whisper'a verilmez. Son konuşma ya da sabit terim listesi **160 token**, terim
 ipuçları **40 token**, toplam en fazla **200 token** ile sınırlanır; bu 223 token bütçesinin altındadır.
-Tokenizer olmayan Mac yolunda muhafazakâr UTF-8 byte sınırı kullanılır. faster-whisper `initial_prompt`
+Windows'ta faster-whisper, Mac'te `mlx_whisper` tokenizer'ı sayar; tokenizer yüklenemezse muhafazakâr
+UTF-8 byte sınırı kullanılır. (25 Ekim 2026'ya kadar Mac hep byte sınırındaydı ve sabit listenin yarısı
+kesiliyordu.) Sabit listede sık kullanılan terimler baştadır; bütçe aşılırsa sondakiler düşer. faster-whisper `initial_prompt`
 ve `hotwords`, MLX `initial_prompt` alır. Bağlam için ayrı model çalışmaz. Wake algılama ve dosyadan
 transkripte masaüstü konuşma bağlamı eklenmez.
 
