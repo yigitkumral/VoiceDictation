@@ -70,6 +70,7 @@ class PromptBudgetTests(unittest.TestCase):
         tokenizer = get_tokenizer(multilingual=True, language='tr', task='transcribe')
         self.assertLessEqual(len(tokenizer.encode(prompt)), 160)
         self.assertIn('Herdr', prompt)
+        self.assertIn('iFonzo', prompt)
 
 
 class WordCorrectionTests(unittest.TestCase):
@@ -85,7 +86,10 @@ class WordCorrectionTests(unittest.TestCase):
         self.assertEqual(fix("B-MED'de shard"), "BMAD'de shard")
         self.assertEqual(fix('Tadayıcıyı başlat, tadayıcı'), 'Tarayıcıyı başlat, tarayıcı')
         self.assertEqual(fix('seninle sohbaya devam'), 'seninle sohbete devam')
-        for word in ('şart değil', 'Tarayıcı', 'herhalde', 'VoiceDictation'):
+        self.assertEqual(fix("iPhonezo'yu nasıl yazacak, iPhone zo ve ifonso"),
+                         "iFonzo'yu nasıl yazacak, iFonzo ve iFonzo")
+        self.assertEqual(fix('Ayfonzo, i-fonzo, iFonzo'), 'iFonzo, iFonzo, iFonzo')
+        for word in ('şart değil', 'Tarayıcı', 'herhalde', 'VoiceDictation', 'iPhone', 'iPhone so', 'iPhone zor'):
             self.assertEqual(fix(word), word)
 
 

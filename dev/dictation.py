@@ -308,7 +308,7 @@ INITIAL_PROMPT = (
     # belirsiz/kisa seslerde wake word'u hayal eder ve false-positive trigger atar.
     # Wake word algilama regex pattern'i ile yapilir, vocabulary boost'a gerek yok.
     # Sira onemli: butce (160 token) asilirsa sondaki terimler duser; sik kullanilanlar basta.
-    "Claude, Claude Code, Codex, Herdr, pane, tab, workspace, worktree, session, VoiceDictation, "
+    "Claude, Claude Code, Codex, Herdr, iFonzo, pane, tab, workspace, worktree, session, VoiceDictation, "
     "Qwen, Qwen3, BMAD, shard, PRD, MCP, API, commit, deploy, push, pull, merge, branch, refactor, "
     "compact, component, TypeScript, React, OpenClaw, sprint, story, pipeline, Winston, Amelia, workflow, endpoint, "
     "frontend, backend, repository, npm, Node.js, VS Code, extension, "
@@ -3339,6 +3339,9 @@ _WORD_CORRECTIONS = [
     # --- Mac tani kayitlari (25 Eki 2026) ---
     # Herdr terminal coklayicisi — Herder/Herdır -> Herdr (ek korunur: Herder'i -> Herdr'i)
     (re.compile(r"\bherd[eı]r\b", re.IGNORECASE), "Herdr"),
+    # iFonzo kisisel ajani — iPhonezo/iPhone zo/ifonso/ayfonzo -> iFonzo (ek korunur;
+    # tek basina "iPhone" ve "iPhone so" takilmaz)
+    (re.compile(r"\b(?:i|ay)[-\s]?(?:ph|f)on(?:e?[sz]|e\s+z)o\b", re.IGNORECASE), "iFonzo"),
     # Tarayici — Tadayici -> Tarayici (buyuk harf ve ek korunur)
     (re.compile(r"\b([Tt])aday(ıc)"), r"\1aray\2"),
     # sohbaya -> sohbete (Turkcede "sohbaya" kelimesi yok)

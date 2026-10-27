@@ -1,5 +1,10 @@
 # CHANGELOG — VoiceDictation
 
+## 27 Ekim 2026 — iFonzo adı doğru yazılır
+
+- Whisper "iFonzo"yu bilinen marka yüzünden "iPhonezo" yazıyordu. `_WORD_CORRECTIONS` artık iPhonezo, iPhone zo, ifonso, ayfonzo, i-fonzo biçimlerini ekini koruyarak iFonzo yapar; tek başına "iPhone" ve "iPhone so" değişmez.
+- iFonzo, sabit Whisper terim listesinin başına eklendi (liste 156/160 token).
+
 ## 27 Ekim 2026 — Sohbet bağlamından "karar:" etiketleri atılır
 
 - ShapeEscape pane'inde Mac diktesi metne `karar:"` ekliyordu: bölüm başlarında ve kaydın sonundaki sessizlikte art arda. Sebep, Whisper ipucuna giren sohbet kuyruğundaki ajan yanıtlarının `karar: ...` satırıyla bitmesiydi; Whisper bu kalıbı kopyalıyordu. Qwen temizliği ve kabul kapısı kelime silmediği için etiket yapıştırılan metne geçiyordu.
