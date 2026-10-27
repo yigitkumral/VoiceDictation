@@ -14,6 +14,8 @@ from types import MappingProxyType
 MAX_WORDS = 300
 MAX_OUTPUT_BYTES = 32 * 1024
 REFRESH_TIMEOUT = 3.0
+# Ajan yanitlarindaki "karar:" gibi etiketleri Whisper dikteye kopyaliyor; ipucuna girmez.
+_LABELS = re.compile(r"\b(?:karar|soru|b[iİ]lg[iİ])\s*:", re.IGNORECASE)
 _SAFE_TARGET = re.compile(r"(?:[A-Za-z0-9_][A-Za-z0-9_.-]*@)?(?:[A-Za-z0-9][A-Za-z0-9_.-]*|\[[0-9A-Fa-f:]+\])\Z")
 
 
@@ -66,6 +68,7 @@ def _snapshot(messages, bridge):
         if not isinstance(text, str):
             continue
         text = "".join(c for c in text if c in "\n\t" or ord(c) >= 32 and not 127 <= ord(c) <= 159)
+        text = _LABELS.sub(" ", text)
         words = text.split()
         if not words:
             continue

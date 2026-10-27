@@ -1,5 +1,11 @@
 # CHANGELOG — VoiceDictation
 
+## 27 Ekim 2026 — Sohbet bağlamından "karar:" etiketleri atılır
+
+- ShapeEscape pane'inde Mac diktesi metne `karar:"` ekliyordu: bölüm başlarında ve kaydın sonundaki sessizlikte art arda. Sebep, Whisper ipucuna giren sohbet kuyruğundaki ajan yanıtlarının `karar: ...` satırıyla bitmesiydi; Whisper bu kalıbı kopyalıyordu. Qwen temizliği ve kabul kapısı kelime silmediği için etiket yapıştırılan metne geçiyordu.
+- `context_source._snapshot` artık Whisper ipucu ve terim ipuçları kurulmadan önce `karar:`, `soru:`, `bilgi:` (büyük/küçük harf fark etmez, iki nokta zorunlu) kalıplarını siler. İki nokta olmayan "karar", "kararı" gibi kelimeler korunur. Sondaki tekrarları silen genel bir filtre Yiğit'in kararıyla eklenmedi.
+- 195 Python testi geçti. Daemon yeniden başlatılana kadar eski kod çalışır.
+
 ## 25 Ekim 2026 — Mac masaüstü diktesinde Herdr pane bağlamı
 
 - Mac'in kendi diktesinde (dört parmak/Caps Lock) pane hiç bulunmuyordu: kod Mac'te pencere başlığı almıyordu ve Erişilebilirlik API'si de Terminal için yalnız “Terminal” döndürüyor.

@@ -115,6 +115,16 @@ class ContextCacheTests(unittest.TestCase):
         self.assertEqual(result["text"].split()[0], "w100")
         self.assertEqual(result["text"].split()[-1], "w399")
 
+    def test_colon_labels_never_reach_whisper_prompt(self):
+        self.bridge.read_conversation.return_value = dict(messages=[
+            dict(role="assistant", text="Önerim Yol 1.\nkarar: Yol 1 mi?\nSORU : Admin?\nBİLGİ: hazır"),
+            dict(role="user", text='karar:" tamam ilerleyelim. Bilgi: kararı verdim')], words=14)
+        result = self.cache.refresh(self.selection)
+        self.assertEqual(result["text"], 'Önerim Yol 1. Yol 1 mi? Admin? hazır\n" tamam ilerleyelim. kararı verdim')
+        self.assertEqual(result["words"], 13)
+        hinted = self.bridge.build_hints.call_args[0][0]
+        self.assertNotIn("karar:", " ".join(item["text"] for item in hinted))
+
     def test_failed_refresh_drops_old_content_without_exposing_error_text(self):
         self.cache.refresh(self.selection)
         self.bridge.read_conversation.side_effect = RuntimeError("PRIVATE_TRANSCRIPT")
