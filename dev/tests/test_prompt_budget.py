@@ -30,7 +30,8 @@ class PromptBudgetTests(unittest.TestCase):
     def load(self, mac=False):
         ns = dict(re=re, model=SimpleNamespace(hf_tokenizer=ByteTokenizer()), IS_MAC=mac,
                   _mlx_tokenizer=lambda: ByteListTokenizer(),
-                  INITIAL_PROMPT='Sabit teknik terimler.', wake_word_string='Diktasyon')
+                  INITIAL_PROMPT='Sabit teknik terimler.', wake_word_string='Diktasyon',
+                  PERSONAL_HINTS='iFonzo')
         node = next(n for n in ast.parse((ROOT/'dev/dictation.py').read_text(encoding='utf-8')).body
                     if isinstance(n, ast.FunctionDef) and n.name == '_whisper_context')
         exec(compile(ast.Module(body=[node], type_ignores=[]), 'dictation.py', 'exec'), ns)
@@ -43,7 +44,7 @@ class PromptBudgetTests(unittest.TestCase):
             self.assertLessEqual(len(prompt.encode()), 160)
             self.assertLessEqual(len(hints.encode()), 40)
             self.assertTrue(prompt.endswith('Yeni konu Qwen GPU.'))
-            self.assertTrue(hints.startswith('Qwen'))
+            self.assertTrue(hints.startswith('iFonzo, Qwen'))
 
     def test_wake_and_special_tokens_are_removed_from_both_inputs(self):
         prompt, hints = self.load()(dict(status='conversation',
@@ -51,6 +52,11 @@ class PromptBudgetTests(unittest.TestCase):
         self.assertNotIn('Diktasyon', prompt + hints)
         self.assertNotIn('<|', prompt + hints)
         self.assertNotIn('\x00', prompt)
+
+    def test_conversation_hints_always_carry_personal_names_once(self):
+        load = self.load()
+        self.assertEqual(load(dict(status='conversation', text='Merhaba', hotwords=''))[1], 'iFonzo')
+        self.assertEqual(load(dict(status='conversation', text='Merhaba', hotwords='Herdr, iFonzo'))[1], 'Herdr, iFonzo')
 
     def test_missing_conversation_keeps_static_prompt(self):
         prompt, hints = self.load()('Project')
@@ -90,6 +96,7 @@ class WordCorrectionTests(unittest.TestCase):
                          "iFonzo'yu nasıl yazacak, iFonzo ve iFonzo")
         self.assertEqual(fix('Ayfonzo, i-fonzo, iFonzo'), 'iFonzo, iFonzo, iFonzo')
         self.assertEqual(fix("Iphones o, iPhones o'yu, İfonzo"), "iFonzo, iFonzo'yu, iFonzo")
+        self.assertEqual(fix('iPhonezlu, iPhonezu, iFonzu'), 'iFonzo, iFonzo, iFonzo')
         for word in ('şart değil', 'Tarayıcı', 'herhalde', 'VoiceDictation', 'iPhone', 'iPhone so', 'iPhone zor', 'iPhones oldu'):
             self.assertEqual(fix(word), word)
 

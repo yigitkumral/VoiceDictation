@@ -53,7 +53,7 @@ class DiagnosticTests(unittest.TestCase):
         ns = load('quick_transcribe', '_whisper_context', '_diagnostic_event')
         state = threading.local(); state.trace = {'stages': {}}
         ns.update(diagnostic_state=state, _has_speech=lambda audio: True,
-                  transcribe_lock=threading.Lock(), IS_MAC=False, INITIAL_PROMPT='fixed',
+                  transcribe_lock=threading.Lock(), IS_MAC=False, INITIAL_PROMPT='fixed', PERSONAL_HINTS='iFonzo',
                   model=Mock(), _clean_transcription=lambda t: t + '.',
                   _strip_known_artifacts=lambda t: t, _dedupe_repeated_segments=lambda t, **kw: t)
         ns['model'].transcribe.return_value = ([SimpleNamespace(text='Synthetic text')], None)

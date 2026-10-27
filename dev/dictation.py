@@ -316,6 +316,9 @@ INITIAL_PROMPT = (
     "party mode, orchestrator, gateway, Tailscale, Parsec, Discord"
 )
 
+# Sohbet baglaminda sabit liste gitmez; marka adina kayan kisisel adlar ipucunda hep basta durur.
+PERSONAL_HINTS = "iFonzo"
+
 
 # --- STATE MACHINE ---
 
@@ -1332,6 +1335,8 @@ def _whisper_context(context):
     conversation = isinstance(context, dict) and context.get("status") == "conversation"
     initial = context.get("text", "") if conversation else INITIAL_PROMPT
     hints = context.get("hotwords", "") if isinstance(context, dict) else context
+    if conversation and PERSONAL_HINTS not in (hints or ""):
+        hints = PERSONAL_HINTS + (", " + hints if hints else "")
     def clean(text):
         text = re.sub(r"<\|.*?\|>", "", str(text))
         text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", text)
@@ -3339,9 +3344,9 @@ _WORD_CORRECTIONS = [
     # --- Mac tani kayitlari (25 Eki 2026) ---
     # Herdr terminal coklayicisi — Herder/Herdır -> Herdr (ek korunur: Herder'i -> Herdr'i)
     (re.compile(r"\bherd[eı]r\b", re.IGNORECASE), "Herdr"),
-    # iFonzo kisisel ajani — iPhonezo/iPhone zo/iPhones o/ifonso/ayfonzo -> iFonzo (ek korunur;
+    # iFonzo kisisel ajani — iPhonezo/iPhonezu/iPhonezlu/iPhone zo/iPhones o/ifonso/ayfonzo -> iFonzo (ek korunur;
     # tek basina "iPhone", "iPhone so" ve "iPhones oldu" takilmaz)
-    (re.compile(r"\b(?:i|ay)[-\s]?(?:ph|f)on(?:e?[sz]|e\s+z|es\s+)o\b", re.IGNORECASE), "iFonzo"),
+    (re.compile(r"\b(?:i|ay)[-\s]?(?:ph|f)on(?:e?[sz]l?[ou]|e\s+z[ou]|es\s+o)\b", re.IGNORECASE), "iFonzo"),
     # Tarayici — Tadayici -> Tarayici (buyuk harf ve ek korunur)
     (re.compile(r"\b([Tt])aday(ıc)"), r"\1aray\2"),
     # sohbaya -> sohbete (Turkcede "sohbaya" kelimesi yok)

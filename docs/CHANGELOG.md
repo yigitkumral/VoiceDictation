@@ -2,8 +2,8 @@
 
 ## 27 Ekim 2026 — iFonzo adı doğru yazılır
 
-- Whisper "iFonzo"yu bilinen marka yüzünden "iPhonezo" yazıyordu. `_WORD_CORRECTIONS` artık iPhonezo, iPhone zo, iPhones o, ifonso, ayfonzo, i-fonzo biçimlerini ekini koruyarak iFonzo yapar; tek başına "iPhone", "iPhone so" ve "iPhones oldu" değişmez.
-- iFonzo, sabit Whisper terim listesinin başına eklendi (liste 156/160 token).
+- Whisper "iFonzo"yu bilinen marka yüzünden "iPhonezo" yazıyordu. `_WORD_CORRECTIONS` artık iPhonezo, iPhonezu, iPhonezlu, iPhone zo, iPhones o, ifonso, ayfonzo, i-fonzo biçimlerini ekini koruyarak iFonzo yapar; tek başına "iPhone", "iPhone so" ve "iPhones oldu" değişmez.
+- iFonzo, sabit Whisper terim listesinin başına eklendi (liste 156/160 token). Sohbet bağlamında sabit liste gitmediği için `PERSONAL_HINTS` ("iFonzo") Whisper ipucu terimlerinin başına her zaman eklenir; sohbette "iPhone" sık geçince Whisper markaya kayıyordu.
 
 ## 27 Ekim 2026 — Sohbet bağlamından "karar:" etiketleri atılır
 
