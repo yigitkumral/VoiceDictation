@@ -3339,9 +3339,9 @@ _WORD_CORRECTIONS = [
     # --- Mac tani kayitlari (25 Eki 2026) ---
     # Herdr terminal coklayicisi — Herder/Herdır -> Herdr (ek korunur: Herder'i -> Herdr'i)
     (re.compile(r"\bherd[eı]r\b", re.IGNORECASE), "Herdr"),
-    # iFonzo kisisel ajani — iPhonezo/iPhone zo/ifonso/ayfonzo -> iFonzo (ek korunur;
-    # tek basina "iPhone" ve "iPhone so" takilmaz)
-    (re.compile(r"\b(?:i|ay)[-\s]?(?:ph|f)on(?:e?[sz]|e\s+z)o\b", re.IGNORECASE), "iFonzo"),
+    # iFonzo kisisel ajani — iPhonezo/iPhone zo/iPhones o/ifonso/ayfonzo -> iFonzo (ek korunur;
+    # tek basina "iPhone", "iPhone so" ve "iPhones oldu" takilmaz)
+    (re.compile(r"\b(?:i|ay)[-\s]?(?:ph|f)on(?:e?[sz]|e\s+z|es\s+)o\b", re.IGNORECASE), "iFonzo"),
     # Tarayici — Tadayici -> Tarayici (buyuk harf ve ek korunur)
     (re.compile(r"\b([Tt])aday(ıc)"), r"\1aray\2"),
     # sohbaya -> sohbete (Turkcede "sohbaya" kelimesi yok)

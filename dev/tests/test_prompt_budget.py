@@ -89,7 +89,8 @@ class WordCorrectionTests(unittest.TestCase):
         self.assertEqual(fix("iPhonezo'yu nasıl yazacak, iPhone zo ve ifonso"),
                          "iFonzo'yu nasıl yazacak, iFonzo ve iFonzo")
         self.assertEqual(fix('Ayfonzo, i-fonzo, iFonzo'), 'iFonzo, iFonzo, iFonzo')
-        for word in ('şart değil', 'Tarayıcı', 'herhalde', 'VoiceDictation', 'iPhone', 'iPhone so', 'iPhone zor'):
+        self.assertEqual(fix("Iphones o, iPhones o'yu, İfonzo"), "iFonzo, iFonzo'yu, iFonzo")
+        for word in ('şart değil', 'Tarayıcı', 'herhalde', 'VoiceDictation', 'iPhone', 'iPhone so', 'iPhone zor', 'iPhones oldu'):
             self.assertEqual(fix(word), word)
 
 
