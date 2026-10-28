@@ -1,5 +1,11 @@
 # CHANGELOG — VoiceDictation
 
+## 28 Ekim 2026 — Dikte kalitesi Tur 3: kesin ad düzeltmeleri
+
+- Kayıtlarda tekrar görülen ve başka anlamı olmayan biçimler düzeltilir (ek korunur): TestSlight, TestSplight, Test Slight, test slide, Test Flight → TestFlight; hurdler → Herdr; ClotCode, Clot Code, KlotKod → Claude Code; Pushet → push et; iphone-zo, Iphone Zoan, iFoz → iFonzo.
+- Gerçek kelimeyle karışabilecekler bilinçli olarak eklenmedi: Payne/pain, Volt, work tree, Cemilay, iPhone'su, iPhone's, tek başına Slight/slide.
+- 228 Python testi geçti.
+
 ## 28 Ekim 2026 — Dikte kalitesi Tur 2: sohbet bağlamında biçim temizliği
 
 - Whisper'a giden sohbet metninde Markdown kalın, başlık, tablo ve araç çerçeveleri (`<task-notification>`, `local-command-stdout`) vardı; Whisper `**` gibi biçimleri dikteye kopyalıyordu (27 Ekim'de 8/163 kayıt) ve etiketler token bütçesini yiyordu.

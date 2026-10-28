@@ -3337,6 +3337,15 @@ _WORD_CORRECTIONS = [
     # Mac/Vault (27 Eki 2026): Suank, suksuank, Züksuank, Zug zwang, Tsugzwang; "swing", "Wang" takilmaz.
     (re.compile(r"\bt?(?:[sz][ouü]+[gcktsxz]+\s*[sz]?|[sz])(?:[vw]|u)an[gk]+\b", re.IGNORECASE), "Zugzwang"),
 
+    # Windows/Vault (28 Eki 2026): TestSlight/TestSplight/Test Slight/test slide/Test Flight -> TestFlight.
+    (re.compile(r"\btest(?:s(?:p)?light|\s+(?:slight|slide|flight))\b", re.IGNORECASE), "TestFlight"),
+    # Windows/Vault (28 Eki 2026): hurdler/Hurdler -> Herdr; ek korunur.
+    (re.compile(r"\bhurdler\b", re.IGNORECASE), "Herdr"),
+    # Windows/Vault (28 Eki 2026): ClotCode/Clot Code/KlotKod -> Claude Code; tam adla sinirli.
+    (re.compile(r"\b[ck]lot\s*(?:code|kod)\b", re.IGNORECASE), "Claude Code"),
+    # Windows/Vault (28 Eki 2026): yalniz tam Pushet/PUSHET/pushet -> push et.
+    (re.compile(r"\bpushet\b", re.IGNORECASE), "push et"),
+
     # --- Kalibrasyon paketi 1 (18 Haz 2026): reference_tr.txt sesli okuma diff'i ---
     # Claude (Anthropic) — clout/cloud/claud/klod/klot -> Claude; ardindan "Claude code" -> "Claude Code"
     # NOT: dogru form "Claude" (sondaki 'e' + \b) bu pattern'e takilmaz, sadece hatali varyasyonlar duzelir.
@@ -3352,7 +3361,9 @@ _WORD_CORRECTIONS = [
     (re.compile(r"\bherd[eı]r\b", re.IGNORECASE), "Herdr"),
     # iFonzo kisisel ajani — iPhonezo/iPhonezu/iPhonezlu/iPhone zo/iPhones o/ifonso/ayfonzo -> iFonzo (ek korunur;
     # tek basina "iPhone", "iPhone so" ve "iPhones oldu" takilmaz)
-    (re.compile(r"\b(?:i|ay)[-\s]?(?:ph|f)on(?:e?[sz]l?[ou]|e\s+z[ou]|es\s+o)\b", re.IGNORECASE), "iFonzo"),
+    # Windows/Vault (28 Eki 2026): iphone-zo/iPhone-zo/Iphone Zoan/iFoz da ayni ad; ek korunur.
+    (re.compile(r"\b(?:(?:i|ay)[-\s]?(?:ph|f)on(?:e?[sz]l?[ou]|e\s+z[ou]|e-zo|e\s+zoan|es\s+o)|ifoz)\b",
+                re.IGNORECASE), "iFonzo"),
     # Tarayici — Tadayici -> Tarayici (buyuk harf ve ek korunur)
     (re.compile(r"\b([Tt])aday(ıc)"), r"\1aray\2"),
     # sohbaya -> sohbete (Turkcede "sohbaya" kelimesi yok)

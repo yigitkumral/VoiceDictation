@@ -95,13 +95,16 @@ class PromptBudgetTests(unittest.TestCase):
 
 
 class WordCorrectionTests(unittest.TestCase):
-    def test_mac_diagnostic_misspellings_are_corrected_without_touching_real_words(self):
+    def setUp(self):
         tree = ast.parse((ROOT/'dev/dictation.py').read_text(encoding='utf-8'))
         body = [n for n in tree.body if (isinstance(n, ast.Assign) and getattr(n.targets[0], 'id', None) == '_WORD_CORRECTIONS')
                 or (isinstance(n, ast.FunctionDef) and n.name == '_apply_word_corrections')]
         ns = dict(re=re)
         exec(compile(ast.Module(body=body, type_ignores=[]), 'dictation.py', 'exec'), ns)
-        fix = ns['_apply_word_corrections']
+        self.fix = ns['_apply_word_corrections']
+
+    def test_mac_diagnostic_misspellings_are_corrected_without_touching_real_words(self):
+        fix = self.fix
         self.assertEqual(fix("Herder'ı açtım, Herder tabi"), "Herdr'ı açtım, Herdr tabi")
         self.assertEqual(fix('Voice Daktation ve Voice Ductation'), 'VoiceDictation ve VoiceDictation')
         self.assertEqual(fix("B-MED'de shard"), "BMAD'de shard")
@@ -125,6 +128,55 @@ class WordCorrectionTests(unittest.TestCase):
                          'Cloud Çalışma', 'Cloud Codebase'):
             with self.subTest(original=original):
                 self.assertEqual(fix(original), original)
+
+    def assert_corrections(self, replacements, untouched):
+        for original, expected in replacements:
+            with self.subTest(original=original):
+                self.assertEqual(self.fix(original), expected)
+        for original in untouched:
+            with self.subTest(untouched=original):
+                self.assertEqual(self.fix(original), original)
+
+    def test_testflight_variants_keep_suffixes_and_standalone_words(self):
+        variants = ('TestSlight', 'TestSplight', 'Test Slight', 'test slide', 'Test Flight', 'test flight')
+        replacements = [(variant, 'TestFlight') for variant in variants]
+        replacements += [(variant + "'a", "TestFlight'a") for variant in variants]
+        replacements += [('TestSlight’tan', 'TestFlight’tan')]
+        self.assert_corrections(replacements, ('Slight', 'slide', 'flight', 'Splight', 'TestFlight',
+            'TestSlightly', 'TestSlighta', 'preTestSlight', 'test slides', 'test flights',
+            'test slightness', 'test flightless'))
+
+    def test_hurdler_is_a_whole_word_and_keeps_suffixes(self):
+        self.assert_corrections([
+            ('hurdler', 'Herdr'), ('Hurdler', 'Herdr'), ("Hurdler'ı", "Herdr'ı"),
+            ('hurdler’ın', 'Herdr’ın')],
+            ('hurdle', 'hurdles', 'hurdlers', 'Hurdlerı', 'preHurdler', 'Herdr'))
+
+    def test_joined_claude_code_variants_do_not_expand_cloud_corrections(self):
+        variants = ('ClotCode', 'Clot Code', 'KlotKod', 'klot kod')
+        replacements = [(variant, 'Claude Code') for variant in variants]
+        replacements += [(variant + "'un", "Claude Code'un") for variant in variants]
+        replacements += [('ClotCode’dan', 'Claude Code’dan')]
+        self.assert_corrections(replacements, ('ClotCodebase', 'KlotKodlama', 'preClotCode',
+            'Cloud Save Files', 'Cloud Storage', 'Cloud Run', 'Cloud Codebase', 'Claude Code'))
+
+    def test_pushet_is_a_whole_word_and_keeps_suffixes(self):
+        self.assert_corrections([
+            ('Pushet', 'push et'), ('PUSHET', 'push et'), ('pushet', 'push et'),
+            ("Pushet'i yaz", "push et'i yaz"), ('pushet’i', 'push et’i')],
+            ('pushed', 'pushes', 'pushets', 'prepushet', 'pushetmek', 'push et'))
+
+    def test_ifonzo_new_variants_keep_suffixes_and_iphone_uses(self):
+        variants = ('iphone-zo', 'iPhone-zo', 'Iphone Zoan', 'iFoz')
+        replacements = [(variant, 'iFonzo') for variant in variants]
+        replacements += [(variant + "'ya", "iFonzo'ya") for variant in variants]
+        replacements += [('iFoz’dan', 'iFonzo’dan')]
+        self.assert_corrections(replacements, ("iPhone'su", 'iPhone 0', "iPhone's", 'iPhone',
+            'iPhone so', 'iPhones oldu', 'iPhone-zoo', 'Iphone Zoans', 'iFozz', 'preiFoz', 'iFoza'))
+
+    def test_explicitly_excluded_words_and_title_case_stay_untouched(self):
+        self.assert_corrections([], ('pane Payne pain', 'Vault Volt', 'worktree work tree',
+            'Gemini Cemilay', 'ateliyede', 'Title Case Aynen Kalır'))
 
 
 if __name__ == '__main__':

@@ -16,5 +16,6 @@ tamamlanan işler [CHANGELOG](../CHANGELOG.md) dosyasındadır.
 
 | Oturum | İçerik |
 |---|---|
+| [2026-10-28-dikte-kalite](2026-10-28-dikte-kalite/README.md) | Windows/Vault dikte kayıt analizi, Opus–Astra çapraz görüşü ve kalite düzeltmeleri (Tur 1–3) |
 | [2026-10-24-denetim](2026-10-24-denetim/README.md) | Belge düzeni, kod/güvenlik denetimi, onaylı dikte iyileştirmeleri ve kabul sonuçları |
 | [2026-09-16-yapi-sadelestirme](2026-09-16-yapi-sadelestirme/README.md) | VoiceDictation yapı analizi, kararlar, uygulama planı, P1–P4 sonuçları ve persona karşılaştırması |
