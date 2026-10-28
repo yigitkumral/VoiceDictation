@@ -18,6 +18,7 @@ from unittest.mock import Mock, call, patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from dev import context_source as source
+from dev import context_bridge as bridge
 
 
 class ContextCacheTests(unittest.TestCase):
@@ -124,6 +125,83 @@ class ContextCacheTests(unittest.TestCase):
         self.assertEqual(result["words"], 13)
         hinted = self.bridge.build_hints.call_args[0][0]
         self.assertNotIn("karar:", " ".join(item["text"] for item in hinted))
+
+    def test_snapshot_removes_each_format_before_text_and_hints(self):
+        cases = [
+            ("**Atelier** __Widget__ *Sonar* _Qwen_", "Atelier Widget Sonar Qwen"),
+            ("**Atelier\nWidget** __Sonar\nQwen__", "Atelier Widget Sonar Qwen"),
+            ("***Atelier*** **_Widget_**", "Atelier Widget"),
+            ("# Atelier\n### Widget\n> Sonar\n> > Qwen", "Atelier Widget Sonar Qwen"),
+            ("- Atelier\n* Widget\n1. Sonar\n12. Qwen", "Atelier Widget Sonar Qwen"),
+            ("| Atelier | Widget |\n|---|:---:|\n| Sonar | Qwen |", "Atelier Widget Sonar Qwen"),
+            ("```python\ncleanup_text Widget\n```\n`Sonar`", "cleanup_text Widget Sonar"),
+            ("```Widget```", "Widget"),
+            ("Atelier <task-notification>HiddenTask stdout</task-notification> Widget", "Atelier Widget"),
+            ("Atelier <local-command-stdout>HiddenOutput</local-command-stdout> Widget", "Atelier Widget"),
+            ("Atelier <local-command-stderr>HiddenError</local-command-stderr> Widget", "Atelier Widget"),
+            ('<pasted_content id="12">Atelier **Widget**</pasted_content>', "Atelier Widget"),
+            ('<pasted_content label="a > b">Atelier</pasted_content>', "Atelier"),
+            ('<TASK-NOTIFICATION id="12">HiddenTask</TASK-NOTIFICATION> Atelier', "Atelier"),
+            ("<unknown>Atelier</unknown><b>Widget</b>", "Atelier Widget"),
+            ("**karar:** Atelier __SORU:__ Widget", "Atelier Widget"),
+        ]
+        for raw, expected in cases:
+            with self.subTest(raw=raw):
+                result = source._snapshot([dict(role="assistant", text=raw)], self.bridge)
+                self.assertEqual(result["text"], expected)
+                self.assertEqual(result["words"], len(expected.split()))
+                self.assertEqual(self.bridge.build_hints.call_args.args[0],
+                                 [dict(role="assistant", text=expected)])
+
+    def test_snapshot_preserves_code_names_paths_and_multiplication(self):
+        expected = r"snake_case a*b foo__bar /tmp/voice_dictation.py C:\repo\context_source.py __init__.py"
+        result = source._snapshot([dict(role="user", text=expected)], self.bridge)
+        self.assertEqual(result["text"], expected)
+        self.assertEqual(result["words"], 6)
+
+    def test_unclosed_and_nested_tool_frames_discard_their_content(self):
+        for tag in ("task-notification", "local-command-stdout", "local-command-stderr"):
+            with self.subTest(tag=tag):
+                text = f'Atelier <{tag} id="12">HiddenName ' + "noise " * 400
+                result = source._snapshot([dict(role="user", text=text)], self.bridge)
+                self.assertEqual(result["text"], "Atelier")
+                self.assertEqual(result["words"], 1)
+        text = ("Atelier <task-notification>HiddenTask <task-notification>HiddenChild</task-notification> "
+                "HiddenTail <local-command-stdout>HiddenOutput</local-command-stdout></task-notification> Widget")
+        result = source._snapshot([dict(role="user", text=text)], self.bridge)
+        self.assertEqual(result["text"], "Atelier Widget")
+
+    def test_empty_cleaned_messages_do_not_consume_budget_or_enter_hints(self):
+        messages = [dict(role="user", text="Atelier Widget"),
+                    dict(role="assistant", text="<task-notification>HiddenName</task-notification>"),
+                    dict(role="assistant", text="##\n|---|---|\n** __ `")]
+        result = source._snapshot(messages, self.bridge)
+        self.assertEqual(result["text"], "Atelier Widget")
+        self.assertEqual(result["words"], 2)
+        self.assertEqual(self.bridge.build_hints.call_args.args[0], messages[:1])
+        self.assertEqual(source._snapshot(messages[1:], self.bridge), source._empty())
+
+    def test_snapshot_counts_only_clean_words_before_three_hundred_word_cut(self):
+        raw = "|---|---|\n" * 400 + " ".join(f"**Widget{i}**" for i in range(350))
+        result = source._snapshot([dict(role="user", text=raw)], self.bridge)
+        self.assertEqual(result["words"], 300)
+        self.assertEqual(result["text"], " ".join(f"Widget{i}" for i in range(50, 350)))
+
+    def test_local_and_ssh_cache_use_the_same_clean_snapshot_and_real_hints(self):
+        self.bridge.read_conversation.return_value = dict(messages=[dict(role="user", text=(
+            '# **Atelier**\n<pasted_content id="12">`cleanup_text`</pasted_content>\n'
+            '<task-notification>HiddenTask Notification</task-notification>\n'
+            '<local-command-stdout>HiddenOutput stdout</local-command-stdout>\n'
+            '<local-command-stderr>HiddenError stderr</local-command-stderr>'))], words=10)
+        self.bridge.build_hints.side_effect = bridge.build_hints
+        local = dict(self.cache.refresh(self.selection))
+        self.selection["machine"] = "mac"
+        self.cache.request(self.selection)
+        remote = dict(self.remote())
+        self.assertEqual(local, remote)
+        self.assertEqual(local["text"], "Atelier cleanup_text")
+        self.assertEqual(local["words"], 2)
+        self.assertEqual(set(local["hotwords"].split(", ")), {"Atelier", "cleanup_text"})
 
     def test_failed_refresh_drops_old_content_without_exposing_error_text(self):
         self.cache.refresh(self.selection)

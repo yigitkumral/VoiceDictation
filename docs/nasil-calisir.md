@@ -102,6 +102,11 @@ araç/sistem metni ve alt ajan kayıtları dışlanır. Rastgele “en yeni otur
 kayıtları bağlam yapılmaz. Mevcut Herdr oturum başlangıç hook'larının verdiği `agent_session`
 alanı kullanılır; global hook değişikliği yapılmaz. Eski oturumun kimliği kayıtlı değilse genel bağlama dönülür.
 
+Whisper ajan yanıtlarının biçimini dikteye kopyalayabildiği için görünen metin kelime sınırından önce sadeleşir:
+`karar:`, `soru:`, `bilgi:` etiketleri; Markdown vurgu, başlık, alıntı, liste, tablo ve backtick işaretleri atılır,
+kelimeler kalır. `<task-notification>`, `<local-command-stdout>` ve `<local-command-stderr>` blokları içerikleriyle
+dışlanır; diğer etiketlerde (`<pasted_content>` gibi) yalnız etiket gider. Yerel, SSH ve Vault yolu aynı temizliği kullanır.
+
 Yerel kaynak doğrudan, uzak kaynak mevcut SSH bağlantısında belleğe verilen salt okunur Python
 exporter ile okunur. Uzakta paket kurulmaz ve dosya yazılmaz. Konuşma metni yeni loga/transkript
 kopyasına yazılmaz; RAM önbelleğinde tutulur. Arka plan izleyici yaklaşık 0,75 saniyede bir kaynak

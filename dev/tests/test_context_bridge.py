@@ -125,6 +125,38 @@ class ContextBridgeTests(unittest.TestCase):
         self.assertTrue(result["messages"][-1]["text"].endswith("new199"))
         self.assertEqual(self.read("codex", max_words=5)["words"], 5)
 
+    def test_format_is_removed_before_line_structure_and_word_budget_are_lost(self):
+        for provider in ("codex", "claude"):
+            with self.subTest(provider=provider):
+                make = codex if provider == "codex" else claude
+                self.write(provider, [make("user", "**Atelier** `cleanup_text`"), make("assistant", (
+                    "|---|---|\n" * 400 +
+                    "<task-notification>HiddenName " + "noise " * 400 + "</task-notification>\n"
+                    "## Widget\n> Sonar\n- Qwen\n1. CUDA\n"
+                    "```python\nVoiceDictation\n```\n"
+                    '<pasted_content id="12">snake_case a*b /tmp/file_name.py</pasted_content>'))])
+                result = self.read(provider)
+                self.assertEqual(result["messages"], [dict(role="user", text="Atelier cleanup_text"),
+                    dict(role="assistant", text="Widget Sonar Qwen CUDA VoiceDictation snake_case a*b /tmp/file_name.py")])
+                self.assertEqual(result["words"], 10)
+
+    def test_unclosed_tool_frames_are_removed_before_tail_truncation(self):
+        for tag in ("task-notification", "local-command-stdout", "local-command-stderr"):
+            with self.subTest(tag=tag):
+                self.write("codex", [codex("user", "Atelier Widget"),
+                                      codex("assistant", f"<{tag}>HiddenName " + "noise " * 400)])
+                self.assertEqual(self.read("codex")["messages"], [dict(role="user", text="Atelier Widget")])
+
+    def test_hints_strip_tool_frames_and_keep_formatted_terms_and_pasted_text(self):
+        hints = bridge.build_hints([dict(role="user", text=(
+            "**VoiceDictation** __Atelier__ *Widget* _Qwen_ `cleanup_text`\n"
+            '<pasted_content id="12">Sonar</pasted_content>\n'
+            '<task-notification>HiddenTask Notification</task-notification>\n'
+            '<local-command-stdout>HiddenOutput Stdout</local-command-stdout>\n'
+            '<local-command-stderr>HiddenError Stderr</local-command-stderr>'))])
+        self.assertEqual(set(hints.split(", ")),
+                         {"VoiceDictation", "Atelier", "Widget", "Qwen", "cleanup_text", "Sonar"})
+
     def test_large_token_cannot_export_entire_transcript(self):
         self.write("codex", [codex("user", "x" * 100000)])
         result = self.read("codex")

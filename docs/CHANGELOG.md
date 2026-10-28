@@ -1,5 +1,11 @@
 # CHANGELOG — VoiceDictation
 
+## 28 Ekim 2026 — Dikte kalitesi Tur 2: sohbet bağlamında biçim temizliği
+
+- Whisper'a giden sohbet metninde Markdown kalın, başlık, tablo ve araç çerçeveleri (`<task-notification>`, `local-command-stdout`) vardı; Whisper `**` gibi biçimleri dikteye kopyalıyordu (27 Ekim'de 8/163 kayıt) ve etiketler token bütçesini yiyordu.
+- `context_bridge._plain_context_text` görünen metni kelime sınırından önce sadeleştirir; `_visible_text` ve `context_source._snapshot` aynı fonksiyonu kullanır, SSH exporter ve Vault da kapsanır. Kod çiti içindeki adlar, dosya yolları, `snake_case` ve `<pasted_content>` içindeki kullanıcı metni korunur.
+- 222 Python testi geçti.
+
 ## 28 Ekim 2026 — Dikte kalitesi Tur 1: noktalama, ret nedeni, kabul kapısı
 
 - 24–28 Ekim Windows kayıt analizi (449 dikte) ve Opus–Astra çapraz görüşüyle planlandı; kayıt: [oturum](sessions/2026-10-28-dikte-kalite/README.md).

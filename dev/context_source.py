@@ -10,6 +10,8 @@ import threading
 import time
 from types import MappingProxyType
 
+from dev.context_bridge import _plain_context_text
+
 
 MAX_WORDS = 300
 MAX_OUTPUT_BYTES = 32 * 1024
@@ -68,6 +70,7 @@ def _snapshot(messages, bridge):
         if not isinstance(text, str):
             continue
         text = "".join(c for c in text if c in "\n\t" or ord(c) >= 32 and not 127 <= ord(c) <= 159)
+        text = _plain_context_text(text)
         text = _LABELS.sub(" ", text)
         words = text.split()
         if not words:

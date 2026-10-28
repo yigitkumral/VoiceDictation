@@ -12,6 +12,52 @@ MAX_READ_BYTES = 512 * 1024
 MAX_WORDS = 300
 MAX_TEXT_CHARS = 24000
 _HEAD_BYTES = 64 * 1024
+_TEXT_TAG = re.compile(r"<(?P<close>/)?(?P<name>[A-Za-z][\w:-]*)(?=[\s/>])"
+                       r"(?:[^<>\"']|\"[^\"]*\"|'[^']*')*>")
+_TOOL_FRAMES = {"task-notification", "local-command-stdout", "local-command-stderr"}
+
+
+def _plain_context_text(text):
+    """Bicimi kelime sinirindan once ayikla; yerel ve SSH ayni kodu kullanir."""
+    parts, blocked, cursor = [], [], 0
+    for match in _TEXT_TAG.finditer(text):
+        if not blocked:
+            parts.append(text[cursor:match.start()])
+            parts.append(" ")
+        name = match["name"].lower()
+        if name in _TOOL_FRAMES:
+            if match["close"]:
+                if blocked and blocked[-1] == name:
+                    blocked.pop()
+            elif not match.group().endswith("/>"):
+                blocked.append(name)
+        cursor = match.end()
+    if not blocked:
+        parts.append(text[cursor:])
+    text = "".join(parts)
+
+    lines = []
+    for line in text.splitlines():
+        # Citin dil etiketi de prompt'a gitmez; ayni satirdaki kod korunur.
+        if re.fullmatch(r"[ \t]*`{3,}[^`]*", line):
+            continue
+        cells = line.strip().strip("|").split("|")
+        if "|" in line and all(re.fullmatch(r"\s*:?-{3,}:?\s*", cell) for cell in cells):
+            continue
+        previous = None
+        while previous != line:
+            previous = line
+            line = re.sub(r"^[ \t]*(?:#{1,6}(?:[ \t]+|$)|>[ \t]?|[-*+][ \t]+|\d+[.)][ \t]+)",
+                          "", line)
+        lines.append(line.replace("|", " ").replace("`", ""))
+    text = "\n".join(lines)
+    # Kelime ici alt cizgi/carpma ve dosya yolu vurguyla karistirilmaz.
+    previous = None
+    while previous != text:
+        previous = text
+        text = re.sub(r"(?<![\w/\\])(\*{1,3}|_{1,3})(?=\S)(.+?)(?<=\S)\1(?![\w/\\]|\.\w)",
+                      r"\2", text, flags=re.S)
+    return re.sub(r"(?<!\S)(?:\*{1,3}|_{1,3})(?!\S)", " ", text).strip()
 
 
 def _session_id(value):
@@ -153,7 +199,7 @@ def _visible_text(message, role, provider):
     text = re.sub(r"<system-reminder>[\s\S]*?(?:</system-reminder>|$)", "", text, flags=re.I)
     if any(unicodedata.category(char) in ("Cc", "Cf", "Cs") and char not in "\t\r\n" for char in text):
         return ""
-    return text.strip()
+    return _plain_context_text(text)
 
 
 def _trim_messages(messages, max_words):
