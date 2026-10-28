@@ -57,7 +57,21 @@ class PromptBudgetTests(unittest.TestCase):
         load = self.load()
         self.assertEqual(load(dict(status='conversation', text='Merhaba', hotwords=''))[1], 'iFonzo, Zugzwang')
         self.assertEqual(load(dict(status='conversation', text='Merhaba', hotwords='Herdr, iFonzo'))[1],
-                         'Zugzwang, Herdr, iFonzo')
+                         'iFonzo, Zugzwang, Herdr')
+
+    def test_personal_names_move_from_tail_before_truncation_on_both_platforms(self):
+        for mac in (False, True):
+            hints = self.load(mac)(dict(status='conversation', text='Merhaba',
+                hotwords='Qwen, CUDA, GPU, Herdr, ' * 20 + 'ifonzo, ZUGZWANG, iFonzo'))[1]
+            self.assertTrue(hints.startswith('iFonzo, Zugzwang, Qwen, CUDA'))
+            self.assertEqual(hints.casefold().count('ifonzo'), 1)
+            self.assertEqual(hints.casefold().count('zugzwang'), 1)
+            self.assertLessEqual(len(hints.encode()), 40)
+
+    def test_personal_names_are_compared_as_whole_list_items(self):
+        hints = self.load()(dict(status='conversation', text='Merhaba',
+            hotwords='iFonzoX, ZugzwangX'))[1]
+        self.assertEqual(hints, 'iFonzo, Zugzwang, iFonzoX, ZugzwangX')
 
     def test_missing_conversation_keeps_static_prompt(self):
         prompt, hints = self.load()('Project')
@@ -102,6 +116,15 @@ class WordCorrectionTests(unittest.TestCase):
                          'Zugzwang, Zugzwang, Zugzwang, Zugzwang, Zugzwang, Zugzwang')
         for word in ('şart değil', 'Tarayıcı', 'herhalde', 'VoiceDictation', 'iPhone', 'iPhone so', 'iPhone zor', 'iPhones oldu', 'swing', 'Wang', 'şu an', 'savan'):
             self.assertEqual(fix(word), word)
+        for original, expected in [('Cloud', 'Claude'), ('cloud code', 'Claude Code'),
+                                   ('Cloud Code', 'Claude Code'), ("Claud'a", "Claude'a"),
+                                   ('Klod', 'Claude'), ('cloud ile çalış', 'Claude ile çalış')]:
+            with self.subTest(original=original):
+                self.assertEqual(fix(original), expected)
+        for original in ('Cloud Save Files', 'Cloud Storage', 'Cloud Run', 'cloud Storage',
+                         'Cloud Çalışma', 'Cloud Codebase'):
+            with self.subTest(original=original):
+                self.assertEqual(fix(original), original)
 
 
 if __name__ == '__main__':

@@ -73,7 +73,7 @@ class FileAndTextTests(unittest.TestCase):
 
 class CleanupTests(unittest.TestCase):
     def test_conservative_cleanup_acceptance(self):
-        f = load("_accept_cleanup")["_accept_cleanup"]
+        f = load("_accept_cleanup", "_cleanup_rejection_reason")["_accept_cleanup"]
         self.assertTrue(f("Eee bugün dosyayı açalım.", "Bugün dosyayı açalım."))
         self.assertTrue(f("Toplantı salı, hayır çarşamba günü olacak.", "Toplantı çarşamba günü olacak."))
         for original, changed in [

@@ -157,8 +157,9 @@ gecikmesi veya her örneğin temizleneceği garantisi değildir.
 
 Model noktalama, büyük/küçük harf ve paragraf düzenleyebilir; ses dolgularını ve açık "salı, hayır çarşamba"
 türü dar özdüzeltmeleri temizleyebilir. Kabul filtresi kelime sırasını, sayıları/tarihleri, özel adları,
-URL/dosya yolu/kod gibi teknik yazımları, olumsuzlukları ve anlamlı tekrarları korur. Yeni kelime veya
-anlam değişikliği riski taşıyan, şüpheli, boş ya da geciken sonuçta ham Whisper metni kullanılır.
+URL/dosya yolu/kod gibi teknik yazımları, olumsuzlukları ve anlamlı tekrarları korur. Whisper'ın soru işareti
+aynı kelimenin ardında kalmalıdır (yeni soru işareti eklenebilir); dengeli çift tırnak dengesiz bırakılamaz. Yeni
+kelime veya anlam değişikliği riski taşıyan, şüpheli, boş ya da geciken sonuçta ham Whisper metni kullanılır.
 Daha genel özdüzeltmeler bu muhafazakâr filtreyi geçmeyebilir; anlam koruması mutlak garanti değildir.
 
 Kalıcı model akışı girdi/çıktı metnini geçici dosyaya veya yeni loga yazmaz; sunucu çıktısı dosyaya
@@ -173,6 +174,9 @@ Tray son diktenin süre özetini gösterir. `.local/metrics/dictation.jsonl` yal
 durum kaydıdır: bağlam bekleme, Whisper, yerel temizlik, yapıştırma ve F13 bitişinden yapıştırmaya
 kadar toplam süre ölçülür. Dikte metni, pencere başlığı, pane/proje adı veya dosya içeriği yazılmaz.
 `cleanup_backend` yalnız izin verilen `CPU` / `CUDA0` değerini taşıyabilir; serbest içerik alanı değildir.
+Reddedilen temizlikte `cleanup_reason` ilk takılan kuralı sabit bir kodla verir: `empty`, `length`, `control`,
+`numbers`, `literals`, `symbols`, `words`, `question`, `quote`. Qwen hiç çalışmadıysa (`oversize`, `not_ready`,
+`busy`) bu ret sayılmaz; neden kodu yazılmaz. Ayrıntılı tanıda aynı karar içeriksiz `cleanup_decision` aşamasıdır.
 Bu toplam mikrofonla konuşma süresini kapsamaz; F13 ile kaydı bitirdikten sonraki beklemeyi gösterir.
 
 ## Toplantı kaydı
@@ -277,7 +281,7 @@ Whisper sessizlikte ve gürültüde halüsinasyon üretebilir. Katmanlar, üreti
 |---|---|---|---|
 | VAD ön filtresi | Tümü | Sessiz bölümleri modele vermeden ayıklar (Windows'ta `vad_filter`, macOS'ta Silero `_vad_prefilter`) | Açık |
 | `condition_on_previous_text=False` | Tümü | Önceki çıktının sonraki parçaya zincirleme tekrar taşımasını engeller | Açık |
-| `_clean_transcription` | Dikte | Bilinen halüsinasyon kalıplarını ve tekrarları siler | Açık |
+| `_clean_transcription` | Dikte | Bilinen halüsinasyon kalıplarını ve tekrarları siler; sondaki `.?!…` korunur, uçtaki `,;:` atılır | Açık |
 | `_drop_low_confidence_segments` | Toplantı, dosya | Düşük güvenli segmentleri atar (`no_speech_prob` > 0,6 ve `avg_logprob` < −1,0; ya da `compression_ratio` > 2,4) | Açık |
 | `_strip_known_artifacts` | Toplantı, dosya | "Altyazı M.K." gibi kalıpları siler; gerçek "evet evet evet" cevaplarına dokunmaz | Açık |
 | `_apply_word_corrections` | Tümü | Kronik yanlış yazımları düzeltir (Claude, Zugzwang, VoiceDictation …); kaynağı [kalibrasyon](calibration/README.md) | Açık |

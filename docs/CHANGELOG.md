@@ -1,5 +1,16 @@
 # CHANGELOG — VoiceDictation
 
+## 28 Ekim 2026 — Dikte kalitesi Tur 1: noktalama, ret nedeni, kabul kapısı
+
+- 24–28 Ekim Windows kayıt analizi (449 dikte) ve Opus–Astra çapraz görüşüyle planlandı; kayıt: [oturum](sessions/2026-10-28-dikte-kalite/README.md).
+- `_clean_transcription` 10+ kelimelik metinde sondaki `.?!…` işaretini siliyordu; Qwen reddettiğinde ya da metin 1200 karakteri aşınca diktelerin ~%40'ı noktalamasız, soru cümleleri soru işaretsiz kalıyordu. Artık yalnız uçtaki `,;:` atılır.
+- Qwen ret nedeni içeriksiz kodla `cleanup_reason` (metrik) ve `cleanup_decision` (tanı) olarak kaydedilir: `empty`, `length`, `control`, `numbers`, `literals`, `symbols`, `words`, `question`, `quote`. Prompt deneyi (Tur 4) bu kayda dayanacak.
+- Kabul kapısı: Whisper'ın soru işareti aynı kelimenin ardında kalmalı ("ne durumdayız?" → "ne durumdayız." reddedilir); dengeli çift tırnak dengesiz bırakılamaz.
+- `PERSONAL_HINTS` sohbet ipucunda zaten geçse bile liste öğesi olarak başa taşınır; 40 token kesiminde düşmez.
+- Cloud → Claude düzeltmesi, ardından Code dışında büyük harfli bir ad geliyorsa ("Cloud Save Files", "Cloud Storage") uygulanmaz.
+- "İzlediğiniz için teşekkür ederim" kapanış halüsinasyonu "ederim" bırakmadan silinir.
+- 222 Python testi geçti.
+
 ## 28 Ekim 2026 — Zugzwang wake word sayılmaz
 
 - Wake word yalnız "Diktasyon"dur. `context_bridge.build_hints` Zugzwang'ı yanlışlıkla wake word gibi ipucundan dışlıyordu; dışlama kaldırıldı. Zugzwang, iFonzo ile birlikte `PERSONAL_HINTS` içinde sohbet bağlamında Whisper ipucunun başında her zaman durur.

@@ -99,6 +99,12 @@ class DiagnosticTests(unittest.TestCase):
         self.assertEqual(state.trace['stages']['qwen_request']['prompt'], sent['prompt'])
         self.assertEqual(state.trace['stages']['qwen_response']['text'], 'Unrelated output')
         self.assertEqual(ns['cleanup_stats'].value['status'], 'rejected')
+        self.assertEqual(state.trace['stages']['cleanup_decision'],
+                         {'status': 'rejected', 'reason': 'words'})
+
+        ns['_cleanup_request'].return_value = {'content': 'Original sentence.'}
+        self.assertEqual(ns['_cleanup_text']('Original sentence'), 'Original sentence.')
+        self.assertEqual(state.trace['stages']['cleanup_decision'], {'status': 'accepted'})
 
 
 if __name__ == '__main__':

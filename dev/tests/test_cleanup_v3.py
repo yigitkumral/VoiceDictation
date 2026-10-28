@@ -93,6 +93,69 @@ class CleanupContentTests(unittest.TestCase):
                           "Merhaba {dünya}.", "Merhaba <dünya>.", ""):
             self.assertFalse(self.accept("Merhaba dünya", candidate))
 
+    def test_rejection_reason_is_the_first_failing_rule(self):
+        reason = load_cleanup()["_cleanup_rejection_reason"]
+        for original, candidate, expected in [
+                ("Merhaba", "", "empty"),
+                ("Merhaba", "Merhaba " * 20, "length"),
+                ("Merhaba 2", "Merhaba\x00 3", "control"),
+                ("Saat 13.30", "Saat 14.30", "numbers"),
+                ("dictation.py aç", "dictation, py aç", "literals"),
+                ("Merhaba dünya", "# Merhaba dünya", "symbols"),
+                ("Dosyayı silme?", "Dosyayı sil.", "words"),
+                ("Ne durumdayız?", 'Ne durumdayız."', "question"),
+                ("Merhaba dünya", '"Merhaba dünya.', "quote")]:
+            with self.subTest(expected=expected):
+                self.assertEqual(reason(original, candidate), expected)
+                self.assertFalse(self.accept(original, candidate))
+        self.assertIsNone(reason("Merhaba dünya", "Merhaba dünya."))
+
+    def test_question_marks_stay_after_the_same_word_occurrence(self):
+        for original, candidate in [
+                ("Ne durumdayız?", "Ne durumdayız."),
+                ("Nasılsın? Bugün geldin", "Nasılsın bugün geldin?"),
+                ("Evet? Evet", "Evet evet?"),
+                ("Nasılsın??", "Nasılsın?"),
+                ("Eee? Nasılsın", "Nasılsın?"),
+                ("Salı? Bugün salı, hayır çarşamba", "Salı bugün çarşamba.")]:
+            with self.subTest(original=original, candidate=candidate):
+                self.assertFalse(self.accept(original, candidate))
+        for original, candidate in [
+                ("Ne durumdayız?", "Ne durumdayız?!"),
+                ("Ne durumdayız", "Ne durumdayız?"),
+                ("Eee ne durumdayız?", "Ne durumdayız?"),
+                ("Salı, hayır çarşamba ne durumdayız?", "Çarşamba ne durumdayız?"),
+                ("Eee? Eee", "Eee?"),
+                ('"Ne durumdayız?"', '“Ne durumdayız?”')]:
+            with self.subTest(original=original):
+                self.assertTrue(self.accept(original, candidate))
+
+    def test_questions_inside_literals_do_not_anchor_to_a_word(self):
+        for original in ("`?` bunu koru", "```?``` bunu koru",
+                         "https://example.test/? bunu koru", r"C:\test\? bunu koru"):
+            with self.subTest(original=original):
+                self.assertTrue(self.accept(original, original + "."))
+
+    def test_candidate_cannot_create_unbalanced_double_quotes(self):
+        for original, candidate in [
+                ("Merhaba dünya", '"Merhaba dünya.'),
+                ('"Merhaba dünya"', '"Merhaba dünya.'),
+                ('“Merhaba dünya”', '“Merhaba dünya.'),
+                ("Merhaba dünya", 'Merhaba dünya”.'),
+                ("Merhaba dünya", '”Merhaba dünya“')]:
+            with self.subTest(original=original, candidate=candidate):
+                self.assertFalse(self.accept(original, candidate))
+        for original, candidate in [
+                ("Merhaba dünya", '"Merhaba dünya."'),
+                ("Merhaba dünya", '“Merhaba dünya.”'),
+                ('"Merhaba dünya"', '“Merhaba dünya.”'),
+                ('"Merhaba dünya', 'Merhaba dünya”.'),
+                ('“Merhaba dünya', '"Merhaba dünya.'),
+                ("Ali geldi", "Ali geldi'"),
+                ("Ali'ye söyle", "Ali’ye söyle.")]:
+            with self.subTest(original=original, candidate=candidate):
+                self.assertTrue(self.accept(original, candidate))
+
 
 class CleanupRunnerTests(unittest.TestCase):
     def setUp(self):
@@ -134,6 +197,37 @@ class CleanupRunnerTests(unittest.TestCase):
             self.assertEqual(self.ns["cleanup_stats"].value["status"], "not_ready")
             self.request.assert_not_called()
             launch.assert_not_called()
+
+    def test_rejection_stats_have_only_a_reason_code_and_reset_on_acceptance(self):
+        self.request.return_value = dict(content="Ne durumdayız.")
+        self.assertEqual(self.ns["_cleanup_text"]("Ne durumdayız?"), "Ne durumdayız?")
+        self.assertEqual(self.ns["cleanup_stats"].value, dict(status="rejected", reason="question"))
+        self.ns["_diagnostic_event"].assert_any_call("cleanup_decision", status="rejected", reason="question")
+        self.request.return_value = dict(content="Ne durumdayız?!")
+        self.assertEqual(self.ns["_cleanup_text"]("Ne durumdayız?"), "Ne durumdayız?!")
+        self.assertEqual(self.ns["cleanup_stats"].value, dict(status="accepted"))
+        self.ns["_diagnostic_event"].assert_any_call("cleanup_decision", status="accepted")
+
+    def test_skipped_calls_are_not_rejections_and_clear_previous_reason(self):
+        self.ns["cleanup_stats"].value = dict(status="rejected", reason="words")
+        for status in ("oversize", "unavailable", "not_ready", "busy", "disabled"):
+            with self.subTest(status=status):
+                self.ns["cleanup_enabled"] = status != "disabled"
+                self.ns["_cleanup_available"] = lambda: status != "unavailable"
+                self.ns["_cleanup_server"]["ready"].set()
+                if status == "not_ready":
+                    self.ns["_cleanup_server"]["ready"].clear()
+                if status == "busy":
+                    self.ns["cleanup_lock"].acquire()
+                try:
+                    text = "a" * 1201 if status == "oversize" else "Merhaba"
+                    self.assertEqual(self.ns["_cleanup_text"](text), text)
+                    self.assertEqual(self.ns["cleanup_stats"].value, dict(status=status))
+                finally:
+                    if status == "busy":
+                        self.ns["cleanup_lock"].release()
+        self.request.assert_not_called()
+        self.ns["_diagnostic_event"].assert_not_called()
 
     def test_accepts_paragraphs_and_numeric_only_metrics(self):
         self.request.return_value = dict(content="Bugün çalışalım.\n\nSonra dosyayı aç.",
@@ -368,7 +462,7 @@ class CleanupServerTests(unittest.TestCase):
 def benchmark():
     """Yalniz acikca cagrilinca; daemon/model import etmeden sentetik CPU olcumu."""
     ns = load_cleanup()
-    accept = ns["_accept_cleanup"]
+    rejection_reason = ns["_cleanup_rejection_reason"]
     cases = [
         ("short_punctuation", "bugün dosyayı açalım önce testleri çalıştır sonra sonucu yaz"),
         ("short_repeat_warm", "bugün dosyayı açalım önce testleri çalıştır sonra sonucu yaz"),
@@ -393,9 +487,10 @@ def benchmark():
         for name, original in cases:
             observed = {}
             def capture(before, candidate):
-                observed.update(candidate=candidate, accepted=accept(before, candidate))
-                return observed["accepted"]
-            ns["_accept_cleanup"] = capture
+                reason = rejection_reason(before, candidate)
+                observed.update(candidate=candidate, accepted=reason is None)
+                return reason
+            ns["_cleanup_rejection_reason"] = capture
             started = time.perf_counter()
             output = ns["_cleanup_text"](original)
             results.append(dict(case=name, original=original, output=output,

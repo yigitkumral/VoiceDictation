@@ -1061,7 +1061,7 @@ _HALLUCINATION_RE = re.compile(
 # Temizlenebilir halusinasyon artiklari (uzun metinlerden cikarilir, kisa metinleri filtreler)
 _ARTIFACT_RE = re.compile(
     r"Altyaz[ıi]\s*M\.?[A-Z]\.?[A-Z]?\.?"   # Altyazı M.K., Altyazı M.D.D.
-    r"|İzlediğiniz için teşekkür\w*"          # YouTube outro
+    r"|İzlediğiniz için teşekkür\w*(?:\s+eder(?:im|iz)\b)?[.,;:!?…]*"  # YouTube outro
     r"|Abone ol\w*"                           # YouTube CTA
     , re.IGNORECASE
 )
@@ -1139,7 +1139,7 @@ def _clean_transcription(text):
     # 4) Uzun metin: artiklari temizle ama gercek icerigi koru
     cleaned = _ARTIFACT_RE.sub("", cleaned).strip()
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    cleaned = re.sub(r"^[\s.,;:!?]+|[\s.,;:!?]+$", "", cleaned)
+    cleaned = re.sub(r"^[\s.,;:!?…]+|[\s,;:]+$", "", cleaned)
     if not cleaned or len(cleaned.split()) < 3:
         return ""
     return _apply_word_corrections(cleaned)
@@ -1336,8 +1336,11 @@ def _whisper_context(context):
     initial = context.get("text", "") if conversation else INITIAL_PROMPT
     hints = context.get("hotwords", "") if isinstance(context, dict) else context
     if conversation:
-        missing = [term for term in PERSONAL_HINTS if term not in (hints or "")]
-        hints = ", ".join(missing + ([hints] if hints else []))
+        personal = list(dict.fromkeys(PERSONAL_HINTS))
+        names = {term.casefold() for term in personal}
+        remaining = [term.strip() for term in (hints or "").split(",")
+                     if term.strip() and term.strip().casefold() not in names]
+        hints = ", ".join(personal + remaining)
     def clean(text):
         text = re.sub(r"<\|.*?\|>", "", str(text))
         text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", text)
@@ -3337,7 +3340,8 @@ _WORD_CORRECTIONS = [
     # --- Kalibrasyon paketi 1 (18 Haz 2026): reference_tr.txt sesli okuma diff'i ---
     # Claude (Anthropic) — clout/cloud/claud/klod/klot -> Claude; ardindan "Claude code" -> "Claude Code"
     # NOT: dogru form "Claude" (sondaki 'e' + \b) bu pattern'e takilmaz, sadece hatali varyasyonlar duzelir.
-    (re.compile(r"\b[ck]l[ao]u?[dt]\b", re.IGNORECASE), "Claude"),
+    # Code disinda buyuk harfle baslayan urun adlarini koru (Cloud Storage vb.).
+    (re.compile(r"\b[ck]l[ao]u?[dt]\b(?!\s+(?!code\b)(?-i:[A-ZÇĞİÖŞÜ]))", re.IGNORECASE), "Claude"),
     (re.compile(r"\bClaude\s+code\b", re.IGNORECASE), "Claude Code"),
     # Atelier projesi — ateliyer/atelyal/atelial/ateliyel -> Atelier
     (re.compile(r"\batel[iy]+[ae]?[lr]\b", re.IGNORECASE), "Atelier"),
@@ -3898,8 +3902,8 @@ def _stop_cleanup_server():
         worker.join(timeout=1)
 
 
-def _accept_cleanup(original, candidate):
-    """Sozcuk sirasi sabit; yalniz noktalama, paragraf ve dar silme izni."""
+def _cleanup_rejection_reason(original, candidate):
+    """Ilk ret kuralinin iceriksiz kodu; kabulde None."""
     def fold(word):
         # Python casefold tek basina Turkce buyuk I/İ icin yeterli degil.
         return word.replace("İ", "i").replace("I", "ı").casefold().replace("’", "'")
@@ -3907,15 +3911,18 @@ def _accept_cleanup(original, candidate):
     token_re = re.compile(r"\w+(?:['’]\w+)*")
     matches = list(token_re.finditer(original))
     before = [fold(m.group()) for m in matches]
-    after = [fold(m.group()) for m in token_re.finditer(candidate)]
-    if not after or len(candidate) > len(original) * 1.25 + 32:
-        return False
+    candidate_matches = list(token_re.finditer(candidate))
+    after = [fold(m.group()) for m in candidate_matches]
+    if not after:
+        return "empty"
+    if len(candidate) > len(original) * 1.25 + 32:
+        return "length"
     if any(ord(c) < 32 and c not in "\n\r\t" for c in candidate):
-        return False
+        return "control"
     # Sayi, tarih, saat, isaret ve yuzde bicimi aynen kalir.
     numbers = r"[+−-]?\d+(?:[.,:/-]\d+)*(?:[%‰])?"
     if re.findall(numbers, original) != re.findall(numbers, candidate):
-        return False
+        return "numbers"
     # Teknik yazimlar ve kodun ic bosluklari modelin noktalama alani degildir.
     literals = re.compile(
         r"```[\s\S]*?```|`[^`\n]*`|"
@@ -3927,13 +3934,13 @@ def _accept_cleanup(original, candidate):
     def protected(text):
         return [m.group().rstrip(".,;!") for m in literals.finditer(text)]
     if protected(original) != protected(candidate):
-        return False
+        return "literals"
     # Yeni Markdown/operator/control simgesi eklenemez; var olani da silinemez.
     def symbols(text):
         return "".join(c for c in text if not c.isalnum() and not c.isspace()
                        and c not in ".,;:!?…'’\"“”()[]")
     if symbols(original) != symbols(candidate):
-        return False
+        return "symbols"
     fillers = {"eee", "ee", "ıı", "ııı", "ıııı", "hım", "hımm", "ıhm"}
     optional = {i for i, word in enumerate(before) if word in fillers}
     corrections = {}
@@ -3945,21 +3952,57 @@ def _accept_cleanup(original, candidate):
                 if word.start() == match.start():
                     corrections[i] = i + 2  # Eski gun ve hayir birlikte atlanir.
                     break
-    # Kucuk bir hizalama: zorunlu kelimeler sirayla birer kez kalmali.
-    reachable = {0: {0}}
-    for i in range(len(before) + 1):
-        states = reachable.pop(i, set())
-        if i == len(before):
-            return len(after) in states
-        next_states = reachable.setdefault(i + 1, set())
-        for j in states:
-            if j < len(after) and before[i] == after[j]:
-                next_states.add(j + 1)
-            if i in optional:
-                next_states.add(j)
-            if i in corrections:
-                reachable.setdefault(corrections[i], set()).add(j)
-    return False
+    def questions(text, words):
+        plain = literals.sub(lambda m: " " * len(m.group()), text)
+        return [plain[m.end():words[i + 1].start() if i + 1 < len(words) else len(text)].count("?")
+                for i, m in enumerate(words)]
+    before_questions = questions(original, matches)
+    after_questions = questions(candidate, candidate_matches)
+
+    def aligned(check_questions=False):
+        # Zorunlu kelimeler ve varsa onlara bagli soru isaretleri sirayla kalmali.
+        reachable = {0: {0}}
+        for i in range(len(before) + 1):
+            states = reachable.pop(i, set())
+            if i == len(before):
+                return len(after) in states
+            next_states = reachable.setdefault(i + 1, set())
+            for j in states:
+                if (j < len(after) and before[i] == after[j]
+                        and (not check_questions or before_questions[i] <= after_questions[j])):
+                    next_states.add(j + 1)
+                if i in optional and (not check_questions or not before_questions[i]):
+                    next_states.add(j)
+                if i in corrections and (not check_questions
+                        or not any(before_questions[i:corrections[i]])):
+                    reachable.setdefault(corrections[i], set()).add(j)
+        return False
+
+    if not aligned():
+        return "words"
+    if not aligned(check_questions=True):
+        return "question"
+
+    def balanced_quotes(text):
+        if text.count('"') % 2:
+            return False
+        depth = 0
+        for char in text:
+            if char == "“":
+                depth += 1
+            elif char == "”":
+                depth -= 1
+                if depth < 0:
+                    return False
+        return depth == 0
+    if balanced_quotes(original) and not balanced_quotes(candidate):
+        return "quote"
+    return None
+
+
+def _accept_cleanup(original, candidate):
+    """Sozcuk sirasi sabit; yalniz noktalama, paragraf ve dar silme izni."""
+    return _cleanup_rejection_reason(original, candidate) is None
 
 
 def _cleanup_text(text):
@@ -4014,9 +4057,13 @@ def _cleanup_text(text):
         if candidate.startswith("</think>"):
             candidate = candidate[len("</think>"):].strip()
         candidate = candidate.removesuffix("[end of text]").strip()
-        if _accept_cleanup(baseline, candidate):
+        reason = _cleanup_rejection_reason(baseline, candidate)
+        _diagnostic_event("cleanup_decision", status="accepted" if reason is None else "rejected",
+                          **({"reason": reason} if reason is not None else {}))
+        if reason is None:
             cleanup_stats.value["status"] = "accepted"
             return candidate
+        cleanup_stats.value["reason"] = reason
         log.info("[TEMIZLIK] Yerel model sonucu kabul edilmedi; ozgun metin korunuyor.")
     except TimeoutError:
         cleanup_stats.value = {"status": "timeout"}
@@ -4135,6 +4182,9 @@ def _write_timing(values):
     for key in ("status", "cleanup_status"):
         if values.get(key) in statuses:
             row[key] = values[key]
+    if (row.get("cleanup_status") == "rejected" and values.get("cleanup_reason") in
+            {"empty", "length", "control", "numbers", "literals", "symbols", "words", "question", "quote"}):
+        row["cleanup_reason"] = values["cleanup_reason"]
     if values.get("source") == "vault":
         row["source"] = "vault"
     if values.get("cleanup_backend") in {"CPU", "CUDA0"}:
@@ -4174,6 +4224,8 @@ def _send_final(msg, record_id, source=None, timings=None):
     stats = getattr(cleanup_stats, "value", {})
     timings["cleanup_status"] = stats.get("status", "skipped")
     timings["cleanup_backend"] = stats.get("backend")
+    if stats.get("status") == "rejected" and "reason" in stats:
+        timings["cleanup_reason"] = stats["reason"]
     for key in ("prompt_ms", "predicted_ms", "prompt_n", "predicted_n"):
         if key in stats:
             timings[key] = stats[key]
@@ -4372,6 +4424,8 @@ def _remote_dictate(audio, pane_id, machine_label, client=None):
             stats = getattr(cleanup_stats, "value", {})
             timings["cleanup_status"] = stats.get("status", "skipped")
             timings["cleanup_backend"] = stats.get("backend")
+            if stats.get("status") == "rejected" and "reason" in stats:
+                timings["cleanup_reason"] = stats["reason"]
             timings["output_chars"] = len(text)
             timings["status"] = "returned"
             _diagnostic_event("cleanup_selected", text=text, status=stats.get("status", "skipped"))
