@@ -317,7 +317,7 @@ INITIAL_PROMPT = (
 )
 
 # Sohbet baglaminda sabit liste gitmez; marka adina kayan kisisel adlar ipucunda hep basta durur.
-PERSONAL_HINTS = "iFonzo"
+PERSONAL_HINTS = ("iFonzo", "Zugzwang")
 
 
 # --- STATE MACHINE ---
@@ -1335,8 +1335,9 @@ def _whisper_context(context):
     conversation = isinstance(context, dict) and context.get("status") == "conversation"
     initial = context.get("text", "") if conversation else INITIAL_PROMPT
     hints = context.get("hotwords", "") if isinstance(context, dict) else context
-    if conversation and PERSONAL_HINTS not in (hints or ""):
-        hints = PERSONAL_HINTS + (", " + hints if hints else "")
+    if conversation:
+        missing = [term for term in PERSONAL_HINTS if term not in (hints or "")]
+        hints = ", ".join(missing + ([hints] if hints else []))
     def clean(text):
         text = re.sub(r"<\|.*?\|>", "", str(text))
         text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", text)
@@ -3330,7 +3331,8 @@ _WORD_CORRECTIONS = [
     # Zugzwang (Almanca satranc terimi): zooksvang, zooksvank, zugsvang, zuckswang,
     # zucksvang, zugswang, zoogzwang, zukzwang, zuxvank, zooks vank vb. -> Zugzwang
     # Whisper hem -ng hem -nk hem -ngk yazabilir, ortada x/bosluk birakabilir.
-    (re.compile(r"\bz[ou]+[gcktsxz]+\s*[vw]an[gk]+\b", re.IGNORECASE), "Zugzwang"),
+    # Mac/Vault (27 Eki 2026): Suank, suksuank, Züksuank, Zug zwang, Tsugzwang; "swing", "Wang" takilmaz.
+    (re.compile(r"\bt?(?:[sz][ouü]+[gcktsxz]+\s*[sz]?|[sz])(?:[vw]|u)an[gk]+\b", re.IGNORECASE), "Zugzwang"),
 
     # --- Kalibrasyon paketi 1 (18 Haz 2026): reference_tr.txt sesli okuma diff'i ---
     # Claude (Anthropic) — clout/cloud/claud/klod/klot -> Claude; ardindan "Claude code" -> "Claude Code"

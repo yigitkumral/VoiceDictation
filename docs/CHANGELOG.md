@@ -1,5 +1,10 @@
 # CHANGELOG — VoiceDictation
 
+## 28 Ekim 2026 — Zugzwang wake word sayılmaz
+
+- Wake word yalnız "Diktasyon"dur. `context_bridge.build_hints` Zugzwang'ı yanlışlıkla wake word gibi ipucundan dışlıyordu; dışlama kaldırıldı. Zugzwang, iFonzo ile birlikte `PERSONAL_HINTS` içinde sohbet bağlamında Whisper ipucunun başında her zaman durur.
+- Zugzwang düzeltmesi Mac/Vault'ta görülen Suank, suksuank, Züksuank, Zug zwang ve Tsugzwang biçimlerini de yakalar; "swing", "Wang", "şu an" değişmez.
+
 ## 27 Ekim 2026 — iFonzo adı doğru yazılır
 
 - Whisper "iFonzo"yu bilinen marka yüzünden "iPhonezo" yazıyordu. `_WORD_CORRECTIONS` artık iPhonezo, iPhonezu, iPhonezlu, iPhone zo, iPhones o, ifonso, ayfonzo, i-fonzo biçimlerini ekini koruyarak iFonzo yapar; tek başına "iPhone", "iPhone so" ve "iPhones oldu" değişmez.

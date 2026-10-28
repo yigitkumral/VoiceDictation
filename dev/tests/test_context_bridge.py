@@ -235,10 +235,11 @@ class ContextBridgeTests(unittest.TestCase):
                  "https://PrivateURL.test/HiddenName Person@PrivateEmail.test "
                  "OPENAI_API_KEY=SecretValue sk-PrivateApiKey123456789 "
                  "Bearer PrivateBearerValue C:\\PrivatePath\\SecretFile.py Ali VoiceDictation")])
-        for forbidden in ("Diktasyon", "Zugzwang", "Bugün", "Ignore", "Previous", "Instructions", "Private",
+        for forbidden in ("Diktasyon", "Bugün", "Ignore", "Previous", "Instructions", "Private",
                           "Secret", "Bearer", "ToolName", "API_KEY"):
             self.assertNotIn(forbidden, hints)
         self.assertIn("VoiceDictation", hints)
+        self.assertIn("Zugzwang", hints)  # Wake word degil, proje adi.
         self.assertIn("Ali", hints)
 
 

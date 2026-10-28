@@ -261,7 +261,7 @@ def build_hints(messages, max_terms=24):
                 "yeni eski dosya dosyayı kod kodu proje projeyi çalıştır aç kapat yap yaz "
                 "the this that these those please thanks hello ignore previous instructions "
                 "system developer assistant user tool delete remove all files only output "
-                "diktasyon diktation dictation zugzwang token secret password authorization "
+                "diktasyon diktation dictation token secret password authorization "
                 "apikey api_key bearer true false none null").split())
     candidates = []
     for match in re.finditer(r"[^\W\d][\w]*(?:[._-][\w]+)*", text):
