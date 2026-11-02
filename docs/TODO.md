@@ -49,6 +49,11 @@ Bu dosyada yalnız açık işler durur. Kapanan madde buradan silinir ve [CHANGE
 
 ## Açık işler
 
+- [ ] Yetim `llama-server`: SIGTERM, SIGINT ve SIGHUP artık temiz kapanıyor; SIGKILL ve çökmede (ör. Metal SIGABRT) yetim yine kalabilir. Açılışta yetim temizliği gerekip gerekmediğine karar ver. 1 Kasım'daki 3,5 günlük yetim kopyanın nedeni doğrulanmadı.
+- [ ] Toplantı kaydı sürerken kapanış: kod okumasına göre sinyal de menü Çıkış'ı da kaydı sonlandırıp son WAV'ı yazmıyor. Gerçek kayıtta dene; ses kaybını önleyecek bir kapanış gerekip gerekmediğine karar ver.
+- [ ] MLX önbellek sınırı ve sinyal kapanışı sonrası gerçek kullanım kabulü: 2 Kasım testleri `mac-validation.wav` ile yerel uzak dikte ucundan yapıldı. Mikrofon, yapıştırma ve daemon içinde dosya dökümü yolu denenmedi; günlük kullanımdan sonra `vmmap --summary` ile belleği yeniden ölç.
+- [ ] Mac'te `.local/VoiceDictation.app` başlatıcısının `applet` süreci (~29 MB) daemon açıkken açık kalıyor; neden kapanmadığını incele. Fazladan kopya yok.
+
 - [ ] [24 Ekim denetiminden kalanları](sessions/2026-10-24-denetim/uygulama.md#kapsam-dışında-kalan-denetim-bulguları) Yiğit'le değerlendir: PID kilidi, editör shell çağrısı, log politikası, toplantı thread yaşam döngüsü, kuyruk/diarize ve dosya çözümleme koşullaması.
 
 - [ ] Ayar dosyası (JSON/YAML): kodda sabit duran ayarları (eşikler, model, cihaz, kısayol tuşu, wake word, `LECTURE_AGGRESSIVE_CLEANUP`) dışarı al.
