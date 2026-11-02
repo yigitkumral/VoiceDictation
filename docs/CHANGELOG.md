@@ -1,5 +1,12 @@
 # CHANGELOG — VoiceDictation
 
+## 2 Kasım 2026 — Mac: sinyalle temiz kapanış
+
+- Daemon sinyal yakalamıyordu; SIGTERM ile kapanınca `llama-server` yetim ve PID dosyası bayat kalabiliyordu. SIGTERM, SIGINT ve SIGHUP artık menü Çıkış'ıyla aynı kaynak kapanışını izleyici thread'de çalıştırır; takılırsa süreç 15 sn sonra yine biter. Kapanışta model artık ilk sıradadır.
+- Gerçek Mac kabulünde iki engel bulundu ve giderildi: menü çubuğu zamanlayıcısı `should_quit` görünce temizlik bitmeden Cocoa'yı sonlandırıyordu; `rumps` SIGINT'i kendi işleyicisine alıyordu.
+- Gerçek daemon'da boşta üç sinyal, Whisper isteği sırasında ve açılış sırasında SIGTERM ile menü Çıkış'ı denendi: süreç, `llama-server` ve PID dosyası kalmadı. SIGKILL ve çökme yakalanamaz. Windows yolu değişmedi.
+- 237 Python testi geçti.
+
 ## 2 Kasım 2026 — Mac: MLX tampon önbelleği sınırı
 
 - Mac daemon'u boşta 3,8 GB tutuyordu; GPU tarafındaki 2,9 GB'nin ~1,4 GB'si model değil, MLX'in serbest bırakıp elde tuttuğu tamponlardı. Açılışta `mx.set_cache_limit(64 MB)`, her `mlx_whisper.transcribe` çağrısından sonra `transcribe_lock` içinde `mx.clear_cache()` çalışır. Model, kuantizasyon, Qwen ve Windows yolu değişmedi.

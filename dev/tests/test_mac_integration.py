@@ -12,7 +12,7 @@ from test_dictation import load
 
 class MacIntegrationTests(unittest.TestCase):
     def test_mac_quit_closes_owned_resources_before_cocoa_terminates(self):
-        ns = load('_quit_menubar')
+        ns = load('_quit_menubar', '_close_owned_resources')
         order = []
         ns.update(should_quit=threading.Event(),
                   mac_trackpad=SimpleNamespace(close=lambda: order.append('trackpad')),
@@ -22,10 +22,10 @@ class MacIntegrationTests(unittest.TestCase):
         app = SimpleNamespace(quit_application=lambda: order.append('quit'))
         ns['_quit_menubar'](app)
         self.assertTrue(ns['should_quit'].is_set())
-        self.assertEqual(order, ['trackpad', 'diagnostics', 'model', 'pid', 'quit'])
+        self.assertEqual(order, ['model', 'trackpad', 'diagnostics', 'pid', 'quit'])
 
     def test_mac_quit_still_stops_model_if_trackpad_close_fails(self):
-        ns = load('_quit_menubar')
+        ns = load('_quit_menubar', '_close_owned_resources')
         stop, remove, quit_app = Mock(), Mock(), Mock()
         ns.update(should_quit=threading.Event(),
                   mac_trackpad=SimpleNamespace(close=Mock(side_effect=RuntimeError('synthetic'))),

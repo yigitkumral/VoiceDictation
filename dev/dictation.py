@@ -38,6 +38,7 @@ import threading
 import re
 import logging
 import json
+import signal
 import socket
 from enum import Enum
 
@@ -485,6 +486,8 @@ listen_last_speech_time = 0
 wake_word_enabled = False  # Anahtar kelime (Diktasyon) varsayilan kapali, tray'den acilabilir
 current_modifiers = set()
 should_quit = threading.Event()
+EXIT_SIGNAL_TIMEOUT = 15  # sn; sinyal kapanisi takilirsa surec yine de biter
+_signal_exit = threading.Event()  # menu cubugu zamanlayicisi temizlik bitmeden Cocoa'yi sonlandirmasin
 recording_lock = threading.RLock()
 _recording_id = 0
 _recording_context = ""
@@ -659,25 +662,70 @@ def _refresh_herdr_targets(notify=True):
             _gui.update_menu()
 
 
-def _quit_menubar(rumps):
-    """Cocoa terminate Python finally/atexit'i atlayabilir; kaynaklari once kapat."""
+def _close_owned_resources():
+    """Menu Cikis ve sinyal ortak kapanisi. Model once: sonraki adim takilsa da yetim llama-server kalmaz."""
     should_quit.set()
-    actions = [("model", _stop_cleanup_server), ("pid", _remove_daemon_pid)]
+    actions = [("model", _stop_cleanup_server)]
     if mac_trackpad is not None:
-        actions.insert(0, ("trackpad", mac_trackpad.close))
+        actions.append(("trackpad", mac_trackpad.close))
     if diagnostic_writer is not None:
-        actions.insert(1, ("diagnostics", diagnostic_writer.close))
+        actions.append(("diagnostics", diagnostic_writer.close))
+    actions.append(("pid", _remove_daemon_pid))
     for name, close in actions:
         try:
             close()
         except Exception as exc:
             log.warning("[CIKIS] %s kapatilamadi: %s", name, type(exc).__name__)
+
+
+def _quit_menubar(rumps):
+    """Cocoa terminate Python finally/atexit'i atlayabilir; kaynaklari once kapat."""
+    _close_owned_resources()
     rumps.quit_application()
+
+
+def _exit_on_signal(signum):
+    """Kaynaklari kapatip sureci bitirir; Cocoa/GUI thread'ine dokunmaz. Takilan kapanis zaman asiminda kesilir."""
+    code = 128 + signum
+    _signal_exit.set()
+    should_quit.set()
+    failsafe = threading.Timer(EXIT_SIGNAL_TIMEOUT, os._exit, args=(code,))
+    failsafe.daemon = True
+    failsafe.start()
+    log.info("[CIKIS] Sinyal alindi: %s", signal.Signals(signum).name)
+    _close_owned_resources()
+    logging.shutdown()
+    os._exit(code)
+
+
+def _install_exit_signals():
+    """SIGTERM/SIGINT/SIGHUP -> temiz kapanis. Baslaticinin nohup ve & ile yok saydigi sinyaller de yakalanir.
+    Sinyal C katmanindan boruya yazilir: Cocoa dongusu ya da uzun C cagrisi izleyici thread'i geciktirmez.
+    Windows'ta taskkill yakalanamaz, burada kurulum yok."""
+    if IS_WIN:
+        return
+    exit_signals = (signal.SIGTERM, signal.SIGINT, signal.SIGHUP)
+    read_fd, write_fd = os.pipe()
+    os.set_blocking(write_fd, False)
+    signal.set_wakeup_fd(write_fd)
+    for signum in exit_signals:
+        signal.signal(signum, lambda *_: None)
+
+    def watch():
+        while True:
+            signum = os.read(read_fd, 1)[0]
+            if signum in exit_signals:
+                _exit_on_signal(signum)
+
+    threading.Thread(target=watch, daemon=True, name="exit-signal").start()
 
 
 def _start_menubar_gui():
     """macOS menu bar uygulamasi (rumps) — tam ekranda da gorunur."""
     import rumps
+    from PyObjCTools import AppHelper
+    # rumps.App.run SIGINT'i kendi isleyicisine alip temizliksiz sonlandiriyor; _install_exit_signals yerinde kalsin.
+    AppHelper.installMachInterrupt = lambda: None
 
     _state_icons = {
         State.LISTENING:  "🟢",
@@ -771,7 +819,7 @@ def _start_menubar_gui():
             self._context_item.title = context_status
             self._cleanup_setting.title = _cleanup_menu_label()
             self._wake_change_item.title = f"✏️  Anahtar Kelime: \"{wake_word_string}\" (değiştir...)"
-            if should_quit.is_set():
+            if should_quit.is_set() and not _signal_exit.is_set():
                 rumps.quit_application()
 
         def on_toggle_wake(self, _):
@@ -5154,6 +5202,7 @@ def main():
         print(f"\n[HATA] Baska bir daemon zaten calisiyor (PID {existing_pid}).")
         sys.exit(3)
 
+    _install_exit_signals()
     _write_daemon_pid()
     import atexit
     atexit.register(_remove_daemon_pid)

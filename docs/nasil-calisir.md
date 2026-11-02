@@ -10,7 +10,7 @@ Geliştirme dosyaları tek `dev/` ağacındadır: Python/C kaynakları, `dev/scr
 
 Kurulum arşivleri çalışırken kullanılmaz; Windows'taki eski ZIP dosyaları ve tamamlanmış deneme artıkları temizlendi. Modeller, çalıştırıcılar ve tanı logları `.local/` altında korunur. Python önbelleği gerektiğinde yeniden oluşabilir; test geçici dosyaları `.local/test-tmp/` altındadır.
 
-Mac'te menüden Çıkış, Cocoa uygulamayı sonlandırmadan önce trackpad'i, tanı yazıcısını, sahip olunan Qwen sürecini ve PID kaydını kapatır. Böylece her yeniden açılışta eski model süreçleri bellekte birikmez. Klasör geçişinin geri dönüş kayıtları `.local/migration-YYYYMMDD/` altında tutulur.
+Mac'te menüden Çıkış, Cocoa uygulamayı sonlandırmadan önce sahip olunan Qwen sürecini, trackpad'i, tanı yazıcısını ve PID kaydını kapatır. Böylece her yeniden açılışta eski model süreçleri bellekte birikmez. SIGTERM, SIGINT ve SIGHUP aynı kapanışı çalıştırır, süreç `128 + sinyal` koduyla biter; başlatıcının `nohup` ile yok saydırdığı SIGHUP da buna dahildir. SIGKILL ve süreç çökmesi yakalanamaz. Windows'ta bu sinyal yolu kurulmaz. Klasör geçişinin geri dönüş kayıtları `.local/migration-YYYYMMDD/` altında tutulur.
 
 Mac'te otomatik yapıştırma için yeni başlatıcının Erişilebilirlik izni gerekir. İzin yoksa metin panoya alınır ama `⌘V` gönderilmez; tanıda `permission_denied`, menüde “Klavye izni eksik — metin panoda” görünür. Bitiş tonu durdurmada zaten çalmıştır; yapıştırma yapılmaz. İzin varken tuş gönderimi, hedef uygulamanın metni gerçekten kabul ettiğinin tek başına kanıtı değildir; gerçek kullanım ayrıca doğrulanır.
 
