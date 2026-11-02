@@ -1210,17 +1210,19 @@ def _clean_transcription(text):
     return _apply_word_corrections(cleaned)
 
 
-def _strip_known_artifacts(text):
+def _strip_known_artifacts(text, keep_end=False):
     """Lecture/file path icin GUVENLI artifact temizleyici.
     `_clean_transcription`'in aksine tekrar tespiti YAPMAZ (gercek "evet evet" cevaplarini koru).
     Sadece bilinen YouTube dataset kaliplarini siler (Altyazi M.K., izlediginiz icin...).
+    keep_end: dikte yolu sondaki .?!… isaretini korur (segment birlestirmede eski davranis).
     """
     if not text:
         return ""
     cleaned = _ENGLISH_HALLUC_RE.sub("", text).strip()
     cleaned = _ARTIFACT_RE.sub("", cleaned).strip()
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    cleaned = re.sub(r"^[\s.,;:!?]+|[\s.,;:!?]+$", "", cleaned)
+    end = r"[\s,;:]+$" if keep_end else r"[\s.,;:!?]+$"
+    cleaned = re.sub(r"^[\s.,;:!?…]+|" + end, "", cleaned)
     return cleaned
 
 
@@ -1478,7 +1480,7 @@ def quick_transcribe(audio_data, beam_size=3, context="", valid=None):
     if cleaned:
         # B1: Lecture LIVE pass'inde "M.K." / "Izlediginiz icin tesekkur..." YouTube artifaktlarini sil.
         # Dictation kisa kayitlari icin de iyi davranis (false positive yok).
-        cleaned = _strip_known_artifacts(cleaned)
+        cleaned = _strip_known_artifacts(cleaned, keep_end=True)
     if cleaned:
         # B4: 3+ ardarda 'Eee/Hım' filler tekrarini tekillestir. aggressive=False -> gercek cevap korunur.
         cleaned = _dedupe_repeated_segments(cleaned, aggressive=False)

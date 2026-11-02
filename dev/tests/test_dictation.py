@@ -53,7 +53,7 @@ class FileAndTextTests(unittest.TestCase):
         ns = load("_dedupe_segment_runs", "_finalize_segments", "_segments_to_paragraphs")
         ns.update(_FILLER_RE=re.compile(r"^(?:E+e*|Ee+|Hı+m?|Mı+m?|Aa+|Ah+)$", re.I),
                   _drop_low_confidence_segments=lambda s: (s, 0),
-                  _strip_known_artifacts=lambda t: t, _apply_word_corrections=lambda t: t)
+                  _strip_known_artifacts=lambda t, **kw: t, _apply_word_corrections=lambda t: t)
         def segments(word, n):
             return [dict(start=i, end=i + 1, text=word) for i in range(n)]
         clean, text = ns["_finalize_segments"](segments("Eee.", 3))
@@ -358,7 +358,7 @@ class ModelCallTests(unittest.TestCase):
         ns = load("quick_transcribe", "_whisper_context")
         ns.update(_has_speech=lambda audio: True, transcribe_lock=threading.Lock(), IS_MAC=False,
                   INITIAL_PROMPT="fixed", model=Mock(), _clean_transcription=lambda t: t,
-                  _strip_known_artifacts=lambda t: t, _dedupe_repeated_segments=lambda t, **kw: t)
+                  _strip_known_artifacts=lambda t, **kw: t, _dedupe_repeated_segments=lambda t, **kw: t)
         ns["model"].transcribe.return_value = ([SimpleNamespace(text="Merhaba")], None)
         self.assertEqual(ns["quick_transcribe"](np.ones(1600), context="project, branch"), "Merhaba")
         self.assertEqual(ns["model"].transcribe.call_args.kwargs["hotwords"], "project, branch")

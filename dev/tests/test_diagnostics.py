@@ -55,7 +55,7 @@ class DiagnosticTests(unittest.TestCase):
         ns.update(diagnostic_state=state, _has_speech=lambda audio: True,
                   transcribe_lock=threading.Lock(), IS_MAC=False, INITIAL_PROMPT='fixed', PERSONAL_HINTS=('iFonzo', 'Zugzwang'),
                   model=Mock(), _clean_transcription=lambda t: t + '.',
-                  _strip_known_artifacts=lambda t: t, _dedupe_repeated_segments=lambda t, **kw: t)
+                  _strip_known_artifacts=lambda t, **kw: t, _dedupe_repeated_segments=lambda t, **kw: t)
         ns['model'].transcribe.return_value = ([SimpleNamespace(text='Synthetic text')], None)
         ns['quick_transcribe']([], context={'status': 'conversation', 'text': 'Example context', 'hotwords': 'AtlasBridge'})
         sent = ns['model'].transcribe.call_args.kwargs

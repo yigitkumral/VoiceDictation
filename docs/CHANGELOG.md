@@ -1,5 +1,10 @@
 # CHANGELOG — VoiceDictation
 
+## 2 Kasım 2026 — Dikte sonu noktalaması korunur
+
+- `quick_transcribe`, `_clean_transcription`'dan sonra `_strip_known_artifacts` çağırdığı için korunan `.?!…` işaretleri burada yine siliniyordu. `keep_end=True` ile dikte yolu bu işaretleri korur, baştaki noktalama ve sondaki `,;:` atılır; toplantı ve dosya yolu eskisi gibi kalır.
+- 238 Python testi geçti.
+
 ## 2 Kasım 2026 — Mac: sinyalle temiz kapanış
 
 - Daemon sinyal yakalamıyordu; SIGTERM ile kapanınca `llama-server` yetim ve PID dosyası bayat kalabiliyordu. SIGTERM, SIGINT ve SIGHUP artık menü Çıkış'ıyla aynı kaynak kapanışını izleyici thread'de çalıştırır; takılırsa süreç 15 sn sonra yine biter. Kapanışta model artık ilk sıradadır.

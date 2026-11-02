@@ -49,6 +49,15 @@ class TextQualityTests(unittest.TestCase):
         self.assertEqual(self.clean('Merhaba dünya?'), 'Merhaba dünya?')
         self.assertEqual(self.ns['_strip_known_artifacts'](self.text + '?'), self.text)
 
+    def test_dictation_artifact_pass_keeps_terminal_punctuation(self):
+        # quick_transcribe _clean_transcription ardindan bunu cagirir; 28 Eki Vault kaydinda nokta burada gidiyordu.
+        strip = self.ns['_strip_known_artifacts']
+        for text in (self.text + '?', 'Şu anda güzel.', 'Neden mi demeliydim?', self.text + '…'):
+            with self.subTest(text=text):
+                self.assertEqual(strip(self.clean(text), keep_end=True), text)
+        self.assertEqual(strip(self.text + '. Altyazı M.K.', keep_end=True), self.text + '.')
+        self.assertEqual(strip(self.text + ',;', keep_end=True), self.text)
+
     def test_complete_outro_is_removed_including_verb_and_punctuation(self):
         for verb in ('ederim', 'ederiz'):
             for punctuation in ('.', '?!', '…', ''):
