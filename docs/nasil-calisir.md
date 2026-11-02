@@ -300,6 +300,7 @@ Ayarlar `dev/dictation.py` içindeki sabitlerdir; ayar dosyası yoktur. Ortam de
 | Sabit | Değer | Etkisi |
 |---|---|---|
 | `MODEL_SIZE`, `LECTURE_MODEL_SIZE` | `"turbo"` | Whisper large-v3-turbo (macOS: `mlx-community/whisper-turbo`) |
+| `MLX_CACHE_LIMIT_BYTES` | 64 MB | Yalnız macOS: MLX'in boşta tuttuğu tampon sınırı; her Whisper çağrısından sonra bu tamponlar ayrıca bırakılır, model ağırlıkları bellekte kalır |
 | `WAKE_WORD_DEFAULT` | `"diktasyon"` | Varsayılan wake word |
 | `INITIAL_PROMPT` | Terim listesi | Türkçe ve teknik kelimelere çözümleme önceliği |
 | `SILENCE_THRESHOLD` | `0.008` | Dikte kaydında konuşma algılama eşiği |

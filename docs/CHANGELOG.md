@@ -1,5 +1,11 @@
 # CHANGELOG — VoiceDictation
 
+## 2 Kasım 2026 — Mac: MLX tampon önbelleği sınırı
+
+- Mac daemon'u boşta 3,8 GB tutuyordu; GPU tarafındaki 2,9 GB'nin ~1,4 GB'si model değil, MLX'in serbest bırakıp elde tuttuğu tamponlardı. Açılışta `mx.set_cache_limit(64 MB)`, her `mlx_whisper.transcribe` çağrısından sonra `transcribe_lock` içinde `mx.clear_cache()` çalışır. Model, kuantizasyon, Qwen ve Windows yolu değişmedi.
+- Daemon ölçümü (5 test diktesi sonrası): Physical footprint 3,8 → 2,1 GB, IOAccelerator 2,9 → 1,5 GB. 5,2 sn seste Whisper süresi ~420 → ~424 ms; kısa ses ve kelime zamanlı çıktı aynı (hash eşit), MLX tepe belleği değişmedi.
+- 234 Python testi geçti.
+
 ## 28 Ekim 2026 — Dikte kalitesi Tur 3: kesin ad düzeltmeleri
 
 - Kayıtlarda tekrar görülen ve başka anlamı olmayan biçimler düzeltilir (ek korunur): TestSlight, TestSplight, Test Slight, test slide, Test Flight → TestFlight; hurdler → Herdr; ClotCode, Clot Code, KlotKod → Claude Code; Pushet → push et; iphone-zo, Iphone Zoan, iFoz → iFonzo.

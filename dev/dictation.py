@@ -232,6 +232,7 @@ from pynput import keyboard as pynput_kb
 ## MLX vs faster-whisper gecis: True=mlx, False=faster-whisper
 USE_MLX = IS_MAC  # macOS'ta MLX, Windows'ta faster-whisper
 if IS_MAC and USE_MLX:
+    import mlx.core as mx
     import mlx_whisper
 else:
     from faster_whisper import WhisperModel
@@ -256,6 +257,8 @@ MODEL_SIZE = "turbo"
 LECTURE_MODEL_SIZE = "turbo"  # Toplanti/ders/dosya transkripti icin (turbo = large-v3-turbo)
 MLX_MODEL_REPO = "mlx-community/whisper-turbo"
 MLX_LECTURE_MODEL_REPO = "mlx-community/whisper-turbo"
+# MLX'in serbest birakip elde tuttugu tampon siniri (agirliklar haric). Olcum: docs/CHANGELOG.md, 2 Kasim 2026.
+MLX_CACHE_LIMIT_BYTES = 64 * 1024 * 1024
 
 # Platform-aware device secimi
 def _detect_device():
@@ -1014,14 +1017,28 @@ def _start_tray_gui():
 
 # --- MODEL ---
 
+def _release_mlx_cache():
+    """MLX'in elde tuttugu bos tamponlari birakir; agirliklar yerinde kalir.
+    transcribe_lock icinde cagrilir. Hata dikteyi bozmasin diye yalniz loglanir."""
+    try:
+        mx.clear_cache()
+    except Exception as e:
+        log.warning(f"[MLX] Onbellek temizlenemedi: {type(e).__name__}: {e}")
+
+
 def load_model():
     global model
     log.info(f"[...] Model yukleniyor: {MODEL_SIZE} ({DEVICE})...")
     log.info("   (Ilk seferde model indirilecek, birkac dakika surebilir)")
     if IS_MAC and USE_MLX:
+        mx.set_cache_limit(MLX_CACHE_LIMIT_BYTES)
         # mlx-whisper: ilk transcribe'da model otomatik yuklenir, warm-up yapalim
         _dummy = np.zeros(SAMPLE_RATE, dtype=np.float32)
-        mlx_whisper.transcribe(_dummy, path_or_hf_repo=MLX_MODEL_REPO, language="tr")
+        with transcribe_lock:
+            try:
+                mlx_whisper.transcribe(_dummy, path_or_hf_repo=MLX_MODEL_REPO, language="tr")
+            finally:
+                _release_mlx_cache()
         log.info("[OK] Model hazir! (MLX — Apple Silicon GPU)")
     else:
         model = WhisperModel(MODEL_SIZE, device=DEVICE, compute_type=COMPUTE_TYPE)
@@ -1383,11 +1400,14 @@ def quick_transcribe(audio_data, beam_size=3, context="", valid=None):
                 # MLX: beam_size gecme — mlx-whisper henuz desteklemiyor.
                 # condition_on_previous_text=False: dictation kisa kayitlarda bile halusinasyon
                 # zincirini onler (model kendi onceki ciktisini prompt'a sokarak tekrar etmesin).
-                result = mlx_whisper.transcribe(
-                    audio_data, path_or_hf_repo=MLX_MODEL_REPO,
-                    language="tr", initial_prompt=(hints + "\n" + initial).strip(),
-                    condition_on_previous_text=False,
-                )
+                try:
+                    result = mlx_whisper.transcribe(
+                        audio_data, path_or_hf_repo=MLX_MODEL_REPO,
+                        language="tr", initial_prompt=(hints + "\n" + initial).strip(),
+                        condition_on_previous_text=False,
+                    )
+                finally:
+                    _release_mlx_cache()
                 text = result.get("text", "").strip()
             else:
                 # condition_on_previous_text=False (B1): faster-whisper default'u True; bu Tauron LIVE'da
@@ -1537,12 +1557,15 @@ def _transcribe_audio_path(audio, beam_size=5, word_timestamps=False):
         # ciktisini prompt'a sokarak tekrar etmesin (Hakan Hoca'da 70dk "Altyazi M.K."
         # zincirinin acik sebebi).
         with transcribe_lock:
-            result = mlx_whisper.transcribe(
-                filtered_audio, path_or_hf_repo=MLX_LECTURE_MODEL_REPO,
-                language="tr", initial_prompt=INITIAL_PROMPT,
-                word_timestamps=word_timestamps,
-                condition_on_previous_text=False,
-            )
+            try:
+                result = mlx_whisper.transcribe(
+                    filtered_audio, path_or_hf_repo=MLX_LECTURE_MODEL_REPO,
+                    language="tr", initial_prompt=INITIAL_PROMPT,
+                    word_timestamps=word_timestamps,
+                    condition_on_previous_text=False,
+                )
+            finally:
+                _release_mlx_cache()
             text = result.get("text", "").strip()
             segments = []
             for s in result.get("segments", []):
