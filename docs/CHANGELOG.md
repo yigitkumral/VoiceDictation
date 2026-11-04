@@ -6,6 +6,7 @@
 - Gerçek kod yolu, ayrı süreç, sentetik metin: footprint 2072 → 350 MB. Üç dönüşümlü turda temizlik medyanı 516–520 → 552–555 ms; en uzun metin 2,84–2,90 → 2,59–2,63 sn. Dosya önbelleği sıcakken model yüklemesi 1,3 → 0,25 sn.
 - Çıktı birebir aynı değildir: 51 sentetik metinde 42'si aynı, filtre kabulü 30 → 29. Yalnız iş parçacığı sayısını değiştirmek de 4 çıktıyı değiştiriyor. Kelime filtresi korunur. `-c 1536`'ya sığmayan metinde özgün Whisper metni kalır (gerçek sunucuda denendi). Gerçek dikte kabulü açık, TODO'da.
 - 240 Python testi geçti (2'si yeni, `dev/tests/test_cleanup_v3.py`).
+- Mac daemon'u aynı gün yeniden başlatıldı: 3 test diktesi sonrası `llama-server` 2092 → 347 MB, daemon 2162 MB, IOAccelerator 1,5 GB. Yerel uçtan 5,2 sn seste Whisper 440–526 ms, temizlik 261–383 ms.
 
 ## 2 Kasım 2026 — Dikte sonu noktalaması korunur
 
