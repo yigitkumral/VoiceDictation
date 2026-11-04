@@ -18,8 +18,9 @@ from unittest.mock import Mock, patch
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def load_cleanup():
+def load_cleanup(is_mac=False):
     ns = dict(_diagnostic_event=Mock(), re=re, os=os, subprocess=subprocess, tempfile=tempfile, threading=threading, json=json,
+              IS_MAC=is_mac,
               cleanup_enabled=True, cleanup_lock=threading.Lock(), cleanup_stats=threading.local(),
               should_quit=threading.Event(),
               _cleanup_server=None, _cleanup_server_lock=threading.RLock(), log=Mock(), time=time,
@@ -327,6 +328,38 @@ class CleanupServerTests(unittest.TestCase):
                     ns["_stop_cleanup_server"]()
                 process.terminate.assert_called()
                 self.assertFalse(server["thread"].is_alive())
+
+    def _launch_command(self, is_mac, backend):
+        ns = load_cleanup(is_mac=is_mac)
+        ns["_cleanup_available"] = lambda: True
+        ns["_cleanup_backends"] = lambda env: [backend]
+        process = Mock()
+        process.poll.return_value = None
+        process.terminate.side_effect = lambda: setattr(process.poll, "return_value", 0)
+        ns["_cleanup_request"] = Mock(side_effect=[dict(status="ok"), dict(content="")])
+        with patch.object(subprocess, "Popen", return_value=process) as launch:
+            try:
+                ns["_start_cleanup_server"]()
+                self.assertTrue(ns["_cleanup_server"]["ready"].wait(2))
+                return launch.call_args.args[0]
+            finally:
+                ns["_stop_cleanup_server"]()
+
+    def test_mac_cpu_process_avoids_second_copy_of_weights(self):
+        command = self._launch_command(True, dict(binary="llama-server", device="none", layers="0", name="CPU"))
+        self.assertIn("--no-repack", command)
+        self.assertEqual(command[command.index("--cache-ram") + 1], "0")
+        self.assertEqual(command[command.index("-c") + 1], "1536")
+        self.assertEqual(command[command.index("-t") + 1], "6")
+
+    def test_windows_process_arguments_stay_the_same(self):
+        for backend in (dict(binary="llama-server.exe", device="none", layers="0", name="CPU"),
+                        dict(binary="llama-cuda.exe", device="CUDA0", layers="all", name="CUDA0")):
+            command = self._launch_command(False, backend)
+            self.assertNotIn("--no-repack", command)
+            self.assertNotIn("--cache-ram", command)
+            self.assertEqual(command[command.index("-c") + 1], "2048")
+            self.assertEqual(command[command.index("-t") + 1], "4")
 
     def test_stop_during_launch_cannot_orphan_process(self):
         ns = load_cleanup()

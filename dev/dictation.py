@@ -3888,9 +3888,15 @@ def _cleanup_serve_backend(server, backend, env, started):
     process = None
     try:
         args = [backend["binary"], "-m", CLEANUP_MODEL, "--host", "127.0.0.1", "--port", server["port"],
-                "-c", "2048", "-np", "1", "-ngl", backend["layers"], "--device", backend["device"], "-t", "4",
+                "-c", "1536" if IS_MAC else "2048", "-np", "1", "-ngl", backend["layers"],
+                "--device", backend["device"], "-t", "6" if IS_MAC else "4",
                 "--poll", "0", "--offline", "--no-warmup", "--no-webui", "--no-slots", "--no-agent",
                 "--cache-prompt", "--sleep-idle-seconds", "-1", "--log-disable"]
+        if IS_MAC:
+            # Repack agirliklari anonim bellege ikinci kez kopyalar (1,7 GB); kapaliyken dosya
+            # sayfalarindan okunur. -t 6 yavaslamayi karsilar. Sabit onek KV'de kalir, prompt
+            # cache gerekmez. 1536: 1200 karakter + cikti sigar; sigmazsa ozgun metin kalir.
+            args += ["--no-repack", "--cache-ram", "0"]
         # Stop ile Popen arasindaki yaris kilitlidir; olusan process her zaman sahiplenilir.
         with _cleanup_server_lock:
             if server["stop"].is_set():

@@ -1,5 +1,12 @@
 # CHANGELOG — VoiceDictation
 
+## 4 Kasım 2026 — Mac: temizlik sunucusunun bellek kullanımı
+
+- Mac'te `llama-server` CPU'da ağırlıkları `CPU_REPACK` ile anonim belleğe ikinci kez kopyalıyordu (1743 MiB). `--no-repack` bu kopyayı kaldırır; `-t 6` yavaşlamayı karşılar, `--cache-ram 0` ve `-c 1536` kalanı kısar. Windows argümanları değişmedi.
+- Gerçek kod yolu, ayrı süreç, sentetik metin: footprint 2072 → 350 MB. Üç dönüşümlü turda temizlik medyanı 516–520 → 552–555 ms; en uzun metin 2,84–2,90 → 2,59–2,63 sn. Dosya önbelleği sıcakken model yüklemesi 1,3 → 0,25 sn.
+- Çıktı birebir aynı değildir: 51 sentetik metinde 42'si aynı, filtre kabulü 30 → 29. Yalnız iş parçacığı sayısını değiştirmek de 4 çıktıyı değiştiriyor. Kelime filtresi korunur. `-c 1536`'ya sığmayan metinde özgün Whisper metni kalır (gerçek sunucuda denendi). Gerçek dikte kabulü açık, TODO'da.
+- 240 Python testi geçti (2'si yeni, `dev/tests/test_cleanup_v3.py`).
+
 ## 2 Kasım 2026 — Dikte sonu noktalaması korunur
 
 - `quick_transcribe`, `_clean_transcription`'dan sonra `_strip_known_artifacts` çağırdığı için korunan `.?!…` işaretleri burada yine siliniyordu. `keep_end=True` ile dikte yolu bu işaretleri korur, baştaki noktalama ve sondaki `,;:` atılır; toplantı ve dosya yolu eskisi gibi kalır.

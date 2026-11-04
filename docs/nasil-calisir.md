@@ -136,6 +136,8 @@ Uygulama model veya çalıştırıcı indirmez. Mevcut Qwen3-1.7B-Q8_0 (Apache-2
 llama.cpp `llama-server` çalıştırıcısında (MIT) başlangıçta arka planda yüklenir ve bellekte kalır.
 Windows'ta aynı model için onaylı b11852 CUDA 13.4 çalıştırıcısı `.local/llama-cuda/`, CPU yedeği
 `.local/llama/` altındadır. `--list-devices` ile CUDA0 doğrulanırsa `--device CUDA0 -ngl all` seçilir.
+Mac'te sunucu CPU'da `--no-repack -t 6 --cache-ram 0 -c 1536` ile açılır: ağırlıklar dosya sayfalarından
+okunur, anonim belleğe ikinci kez kopyalanmaz. Windows argümanları `-t 4 -c 2048` olarak kalır.
 Aygıt yoksa CPU kullanılır; GPU başlangıç, ön ısıtma veya çalışma zamanı API hatasında CPU'ya dönülür.
 Hata alan mevcut dikte ham metni kullanır; aynı istek otomatik yeniden gönderilmez. Menü **GPU hazır** /
 **CPU hazır** durumunu gösterir. Yeni model indirilmez; ayrıntılı ölçümler
